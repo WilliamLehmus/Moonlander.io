@@ -246,6 +246,49 @@ io.on('connection', (socket) => {
         }
     });
 
+    // PING
+    socket.on('ping', (data) => {
+        const code = playerRooms.get(socket.id);
+        if (code) {
+            const room = rooms.get(code);
+            if (room && room.ready) {
+                const player = room.game.players.get(socket.id);
+                if (player && !player.dead) {
+                    player.setPing(data.type);
+                }
+            }
+        }
+    });
+
+    // TETHER
+    socket.on('toggleTether', () => {
+        const code = playerRooms.get(socket.id);
+        if (code) {
+            const room = rooms.get(code);
+            if (room && room.ready) {
+                room.game.toggleTether(socket.id);
+            }
+        }
+    });
+
+    // JETTISON CARGO
+    socket.on('jettisonCargo', () => {
+        const code = playerRooms.get(socket.id);
+        if (code) {
+            const room = rooms.get(code);
+            if (room && room.ready) {
+                const player = room.game.players.get(socket.id);
+                if (player && !player.dead) {
+                    const dropped = player.jettisonCargo(0.25); // Drop 25%
+                    if (dropped > 0) {
+                        console.log(`Player ${socket.id} jettisoned ${dropped} cargo`);
+                        socket.emit('cargoJettisoned', { amount: dropped });
+                    }
+                }
+            }
+        }
+    });
+
     // DISCONNECT
     socket.on('disconnect', () => {
         console.log('Player disconnected:', socket.id);

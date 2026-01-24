@@ -1,7 +1,8 @@
 {
   "name": "moonlander-io",
   "version": "1.0.0",
-  "private": true,
+  "private": false,
+  "license": "MIT",
   "scripts": {
     "start": "concurrently \"npm run start:server\" \"npm run start:client\"",
     "start:server": "cd server && npm run start",

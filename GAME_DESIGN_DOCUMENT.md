@@ -31,14 +31,14 @@
 
 ### Genre & Inspiration
 - Physics-based flight simulation meets cooperative survival
-- Inspired by: Lunar Lander (1979), Deep Rock Galactic, Astroneer, Spelunky
+- Inspired by: Lunar Lander (1979), Deep Rock Galactic, Astroneer, Spelunky, Terraria
 
 ---
 
 ## Core Philosophy
 
 ### The "One More Run" Loop
-Every expedition should feel like a calculated risk. Players push deeper for better rewards but risk losing their cargo if they can't make it back. The tension between greed and survival creates memorable moments.
+Every expedition should feel like a calculated risk. Players push deeper for better rewards but risk losing their cargo if they can't make it back. The tension between greed and survival creates memorable moments. When all players are dead, the game is over and all the players are brought back to the lobby. The resources they collected are lost forever. 
 
 ### Emergent Cooperation
 The best co-op moments aren't scripted - they emerge from systems. When a player runs out of fuel in a deep cavern, their teammate must make the decision: risk everything to save them, or abandon them to preserve the resources already collected.
@@ -1312,6 +1312,59 @@ DETERMINISM_NOTES:
 
 ## Appendix D: Changelog
 
+### Version 1.5 (January 2026)
+- **Cooperative Gameplay Systems**: Full implementation of core cooperative mechanics
+  - **Tether System**: Press E to attach/detach tether with nearby players
+    - Max length 150 units, snaps at 180 units
+    - Visual rope with tension indicator (green/yellow/red)
+    - Physics-based rope constraint using Ammo.js forces
+  - **Fuel Transfer**: Press F while docked to transfer fuel to teammates
+    - Docking requires proximity (40 units) and velocity matching
+    - Transfer rate 50 fuel/second with visual indicator
+  - **Survival Pods**: Escape pods eject when lander is destroyed
+    - 60 seconds life support with countdown
+    - Weak emergency thrust available
+    - Pulsing SOS beacon visible to teammates
+    - Rescue by approaching within 50 units
+    - Rescued players respawn with 25% resources
+  - **Ping System**: Team communication with keys 1-4
+    - Yellow (circle): "Check this out"
+    - Red (triangle): "Danger/Help!"
+    - Green (diamond): "Resources here"
+    - Blue (arrow): "Regroup here"
+- **Mining System**: Complete resource extraction mechanics
+  - Hold SPACE to mine ores within range (80 units)
+  - Mining laser visual effect with impact glow
+  - 2-second mining time with progress bar
+  - Ores extracted to cargo with weight affecting physics
+  - Cargo auto-delivered when landing at base
+- **Environmental Hazards**: Dynamic cave dangers
+  - Gas pocket eruptions when mining deep ores (push players away)
+  - Stalactite chain reactions (falling debris damages players)
+  - Visual particle effects for eruptions and debris
+- **HUD Improvements**:
+  - Depth indicator showing current depth in meters
+  - Cargo capacity bar with amount/capacity display
+  - Mining progress indicator
+  - Minimap showing terrain, players, and pings
+  - Controls help overlay in corner
+  - Docking and tether status indicators
+
+### Version 1.4 (January 2026)
+- **Level Designer System**: New intelligent procedural generation module
+  - LevelDesigner.js specialist module for balanced map creation
+  - Difficulty profiles: EASY, NORMAL, HARD, NIGHTMARE
+  - Biome system: Surface, Shallow Caves, Deep Tunnels, Crystal Caverns, Abyssal Depths, The Core
+  - Chamber templates: Rest Stop, Mineral Shaft, Crossroads, Treasure Pocket, Hazard Zone, Artifact Chamber
+  - Automatic design analysis with balance recommendations
+  - Ore distribution based on biome and depth
+  - Cave smoothing and feature generation (stalactites/stalagmites)
+  - Risk/reward balancing: deeper = more valuable but more dangerous
+- **Enhanced Cave Generation**:
+  - Chambers carved along cave paths
+  - Better tunnel variety with profile-based sizing
+  - Cellular automata smoothing for natural cave edges
+
 ### Version 1.3 (January 2026)
 - **Dynamic Lighting System**: Implemented depth-based ambient lighting
   - Surface has natural sunlight, caves get progressively darker
@@ -1364,6 +1417,6 @@ DETERMINISM_NOTES:
 
 ---
 
-*Document Version: 1.3*
+*Document Version: 1.5*
 *Last Updated: January 2026*
 *Project: Moonlander.io*

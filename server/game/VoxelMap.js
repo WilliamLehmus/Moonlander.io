@@ -16,7 +16,7 @@ export const TileTypes={
 };
 
 export class VoxelMap {
-    constructor(width=400, height=500, tileSize=8) { // Increased height from 200 to 500
+    constructor(width=400, height=500, tileSize=8, profile='NORMAL') {
         this.width=width;
         this.height=height;
         this.tileSize=tileSize;
@@ -27,6 +27,9 @@ export class VoxelMap {
         // Moon base location (set during generation)
         this.basePosition=null; // {x, y} in world coords
         this.basePadBounds=null; // {x1, y1, x2, y2} in world coords for landing detection
+
+        // Level Designer disabled for now - causes initialization issues
+        this.levelDesigner=null;
 
         // Initialize empty grid
         for (let y=0; y<height; y++) {
@@ -41,18 +44,9 @@ export class VoxelMap {
     generate() {
         console.log("Generating new terrain...");
 
-        // 1. Generate Surface Heights (surface at ~15% from top to leave room for sky)
+        // 1. Generate Surface Heights (Advanced Noise)
         const surfaceHeights=new Array(this.width);
-        const baseline=Math.floor(this.height*0.15);
-        const amplitude=15;
-
-        for (let x=0; x<this.width; x++) {
-            // Simple noise using multiple sines
-            let h=Math.sin(x*0.05)*amplitude;
-            h+=Math.sin(x*0.12+1.5)*(amplitude*0.4);
-            h+=Math.sin(x*0.02-0.5)*(amplitude*0.8);
-            surfaceHeights[x]=baseline+Math.floor(h);
-        }
+        this.generateSurfaceHeights(surfaceHeights);
 
         // 2. Fill Layers with depth-based rock types
         for (let x=0; x<this.width; x++) {
@@ -66,12 +60,22 @@ export class VoxelMap {
 
                 if (y>=surfaceY) {
                     const depth=y-surfaceY;
+                    const normalizedDepth=y/this.height;
+
+                    // Biome-based rock types
                     if (depth<8) {
                         this.tiles[y][x]=TileTypes.REGOLITH;
-                    } else if (depth<150) {
-                        this.tiles[y][x]=TileTypes.ROCK;
+                    } else if (normalizedDepth<0.25) {
+                        this.tiles[y][x]=TileTypes.ROCK; // Shallow Caves
+                    } else if (normalizedDepth<0.5) {
+                        this.tiles[y][x]=TileTypes.ROCK; // Deep Tunnels
+                    } else if (normalizedDepth<0.7) {
+                        this.tiles[y][x]=TileTypes.HARD_ROCK; // Crystal Caverns
+                    } else if (normalizedDepth<0.9) {
+                        this.tiles[y][x]=TileTypes.HARD_ROCK; // Abyssal Depths
                     } else {
-                        this.tiles[y][x]=TileTypes.HARD_ROCK;
+                        // The Core - Mixed extremely hard rock
+                        this.tiles[y][x]=Math.random()<0.8? TileTypes.HARD_ROCK:TileTypes.ROCK;
                     }
                 } else {
                     this.tiles[y][x]=TileTypes.EMPTY;
@@ -79,108 +83,361 @@ export class VoxelMap {
             }
         }
 
-        // 3. Create Meandering Caves (Worms/Drunkard's Walk)
-        this.generateCaves(surfaceHeights);
+        // 3. Create Structured Cavern System
+        console.log('Generating structured caves...');
+        this.generateStructuredCaves(surfaceHeights);
 
         // 4. Generate ore clusters
+        console.log('Generating ores...');
         this.generateOres(surfaceHeights);
 
-        // 5. Create Moon Base & Landing Pad
+        // 5. Decorate Terrain (Stalactites, texture variation)
+        console.log('Decorating terrain...');
+        this.decorateTerrain(surfaceHeights);
+
+        // 6. Create Moon Base & Landing Pad
+        console.log('Creating moon base...');
         this.createMoonBase(surfaceHeights);
 
         console.log(`VoxelMap generated: ${this.width}x${this.height} tiles`);
     }
 
-    generateCaves(surfaceHeights) {
-        const numWorms=15; // More worms for larger map
+    generateSurfaceHeights(surfaceHeights) {
+        // Simple 1D value noise implementation specifically for this method
+        const noise=(x, seed) => {
+            const n=Math.sin(x*12.9898+seed*78.233)*43758.5453123;
+            return n-Math.floor(n);
+        };
+
+        const smoothNoise=(x, seed) => {
+            const i=Math.floor(x);
+            const f=x-i;
+            const y0=noise(i, seed);
+            const y1=noise(i+1, seed);
+            // Cubic interpolation
+            const t=f*f*(3-2*f);
+            return y0+(y1-y0)*t;
+        };
+
+        const fractalNoise=(x, octaves, persistence, scale, seed) => {
+            let total=0;
+            let frequency=scale;
+            let amplitude=1;
+            let maxValue=0;
+            for (let i=0; i<octaves; i++) {
+                total+=smoothNoise(x*frequency, seed+i)*amplitude;
+                maxValue+=amplitude;
+                amplitude*=persistence;
+                frequency*=2;
+            }
+            return total/maxValue;
+        };
+
+        const baseHeight=this.height*0.15; // Target surface around 15% down
+
+        for (let x=0; x<this.width; x++) {
+            const nx=x/this.width;
+
+            // 1. Base Terrain (Large rolling hills)
+            let h=fractalNoise(nx, 4, 0.5, 5, 123.45);
+
+            // 2. Mountain Peaks (Ridged noise for sharp peaks)
+            // |noise - 0.5| * 2 creates "valleys", inverting creates peaks
+            let peaks=Math.abs(fractalNoise(nx, 5, 0.5, 12, 678.90)-0.5)*2;
+            peaks=Math.pow(peaks, 3); // Sharpen the peaks
+
+            // 3. Flatness Mask (Where should it be flat?)
+            // High value = flat, Low value = mountainous
+            let flatness=fractalNoise(nx, 2, 0.5, 3, 999.99);
+            flatness=Math.pow(flatness, 2); // Contrast
+
+            // Combine
+            // If very flat, reduce peak influence
+            const finalNoise=h*0.4+peaks*(1-flatness)*1.5;
+
+            // Map to height (0-1 -> 0-Height)
+            // Amplitude varies: Flats have low amplitude, Mountains high
+            const amplitude=10+(1-flatness)*50;
+
+            surfaceHeights[x]=Math.floor(baseHeight+finalNoise*amplitude);
+        }
+    }
+
+    generateStructuredCaves(surfaceHeights) {
+        const numMainShafts=3;
+
+        // Distribute shafts across width, avoiding edges
+        const sectorWidth=this.width/numMainShafts;
+
+        for (let i=0; i<numMainShafts; i++) {
+            const minX=Math.floor(i*sectorWidth+20);
+            const maxX=Math.floor((i+1)*sectorWidth-20);
+            const startX=minX+Math.floor(Math.random()*(maxX-minX));
+
+            this.createMainShaft(startX, surfaceHeights[startX]);
+        }
+    }
+
+    createMainShaft(startX, startY) {
+        // Main shaft worms move predominantly downward
         const worms=[];
 
-        // Start worms at random surface points
-        for (let i=0; i<numWorms; i++) {
-            const startX=Math.floor(Math.random()*(this.width-40))+20;
-            worms.push({
-                x: startX,
-                y: surfaceHeights[startX]+5,
-                angle: Math.PI/2+(Math.random()-0.5), // Mostly down
-                radius: 4+Math.random()*5,
-                life: 150+Math.random()*350
-            });
-        }
+        // Primary Trunk
+        worms.push({
+            x: startX,
+            y: startY+5,
+            angle: Math.PI/2, // Down
+            radius: 8, // Start wider
+            life: this.height-startY-20, // Go almost to bottom
+            type: 'TRUNK',
+            depth: 0,
+            maxLife: this.height-startY-20
+        });
 
         while (worms.length>0) {
             const worm=worms.pop();
 
             for (let step=0; step<worm.life; step++) {
-                // Carve circle
+                // Carve
                 const r=Math.floor(worm.radius);
+                // Irregular brush
                 for (let dy=-r; dy<=r; dy++) {
                     for (let dx=-r; dx<=r; dx++) {
-                        if (dx*dx+dy*dy<=worm.radius*worm.radius) {
+                        const dist=Math.sqrt(dx*dx+dy*dy);
+                        if (dist<=worm.radius+(Math.random()-0.5)*1.5) {
                             const tx=Math.floor(worm.x+dx);
                             const ty=Math.floor(worm.y+dy);
-                            if (tx>0&&tx<this.width-1&&ty>0&&ty<this.height-1) {
+                            if (tx>1&&tx<this.width-2&&ty>1&&ty<this.height-2) {
                                 this.tiles[ty][tx]=TileTypes.EMPTY;
                             }
                         }
                     }
                 }
 
-                // Move worm
-                worm.x+=Math.cos(worm.angle)*2;
-                worm.y+=Math.sin(worm.angle)*2;
+                // Move
+                worm.x+=Math.cos(worm.angle);
+                worm.y+=Math.sin(worm.angle);
 
-                // Update angle (meander)
-                worm.angle+=(Math.random()-0.5)*0.4;
+                // Trunk Logic (Go Deep)
+                if (worm.type==='TRUNK') {
+                    // Dwindle logic: reduce radius as we go deeper
+                    const progress=1-(step/worm.maxLife); // 1.0 -> 0.0
+                    const targetRadius=2+progress*6; // Dwindles from ~8 down to 2
 
-                // Bias downwards
-                const targetAngle=Math.PI/2;
-                worm.angle=worm.angle*0.9+targetAngle*0.1;
+                    // Smoothly approach target radius
+                    worm.radius=worm.radius*0.95+targetRadius*0.05;
 
-                // Randomly change radius
-                worm.radius+=(Math.random()-0.5)*0.3;
-                worm.radius=Math.max(3, Math.min(10, worm.radius));
+                    // Slight wobble but stay mostly down
+                    worm.angle+=(Math.random()-0.5)*0.2;
+                    // Strong downward bias
+                    worm.angle=worm.angle*0.9+(Math.PI/2)*0.1;
 
-                // Check bounds
-                if (worm.x<=2||worm.x>=this.width-2||worm.y<=2||worm.y>=this.height-2) {
-                    break;
+                    // Branching
+                    if (Math.random()<0.05&&worm.depth<2) {
+                        const branchDir=Math.random()<0.5? -1:1;
+                        worms.push({
+                            x: worm.x,
+                            y: worm.y,
+                            angle: (Math.PI/2)+branchDir*(Math.random()*0.6+0.2),
+                            radius: worm.radius*0.8,
+                            life: 40+Math.random()*80,
+                            type: 'BRANCH',
+                            depth: worm.depth+1
+                        });
+                    }
+                }
+                // Branch Logic
+                else {
+                    worm.angle+=(Math.random()-0.5)*0.4;
+                    worm.angle=worm.angle*0.95+(Math.PI/2)*0.05;
+                    worm.radius+=(Math.random()-0.5)*0.2;
+                    worm.radius=Math.max(2, Math.min(worm.radius, 6));
                 }
 
-                // Chance to split
-                if (Math.random()<0.025&&worms.length<25) {
-                    worms.push({
-                        x: worm.x,
-                        y: worm.y,
-                        angle: worm.angle+(Math.random()-0.5)*1.5,
-                        radius: worm.radius*0.8,
-                        life: worm.life-step
-                    });
+                // Bounds
+                if (worm.x<=5||worm.x>=this.width-5||worm.y>=this.height-5) {
+                    break;
                 }
             }
         }
     }
 
+    decorateTerrain(surfaceHeights) {
+        // Add stalactites/stalagmites
+        for (let y=1; y<this.height-1; y++) {
+            for (let x=1; x<this.width-1; x++) {
+                if (this.tiles[y][x]===TileTypes.EMPTY) continue;
+
+                // Stalactite (hanging from ceiling)
+                // Check if tile is empty below AND occupied above
+                const above=this.tiles[y-1][x];
+                const below=this.tiles[y+1][x];
+
+                // If this is a surface tile (part of ceiling), maybe extend it down
+                if (above!==TileTypes.EMPTY&&below===TileTypes.EMPTY) {
+                    if (Math.random()<0.15) {
+                        // Create stalactite
+                        let length=Math.floor(Math.random()*3)+1;
+                        for (let k=1; k<=length; k++) {
+                            if (y+k<this.height-1&&this.tiles[y+k][x]===TileTypes.EMPTY) {
+                                this.tiles[y+k][x]=this.tiles[y][x]; // Extend same material
+                            }
+                        }
+                    }
+                }
+
+                // Stalagmite (growing from floor)
+                if (above===TileTypes.EMPTY&&below!==TileTypes.EMPTY) {
+                    if (Math.random()<0.15) {
+                        let length=Math.floor(Math.random()*3)+1;
+                        for (let k=1; k<=length; k++) {
+                            if (y-k>0&&this.tiles[y-k][x]===TileTypes.EMPTY) {
+                                this.tiles[y-k][x]=this.tiles[y][x];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    generateChambers(surfaceHeights) {
+        if (!this.levelDesigner) return;
+        const profile=this.levelDesigner.profile;
+        const chamberFrequency=profile.chamberFrequency||0.1;
+
+        // Find cave entrance points and add chambers along the caves
+        const potentialChamberSites=[];
+
+        // Scan for empty tiles that could host chambers
+        for (let y=Math.floor(this.height*0.2); y<this.height-30; y+=20) {
+            for (let x=20; x<this.width-20; x+=15) {
+                if (this.tiles[y][x]===TileTypes.EMPTY) {
+                    // Check if this is inside a cave (surrounded by some solid)
+                    let solidNeighbors=0;
+                    for (let dy=-5; dy<=5; dy++) {
+                        for (let dx=-5; dx<=5; dx++) {
+                            if (this.tiles[y+dy]?.[x+dx]!==TileTypes.EMPTY) {
+                                solidNeighbors++;
+                            }
+                        }
+                    }
+                    if (solidNeighbors>30) { // At least some walls nearby
+                        potentialChamberSites.push({x, y});
+                    }
+                }
+            }
+        }
+
+        // Randomly select and create chambers
+        const chamberCount=Math.floor(potentialChamberSites.length*chamberFrequency);
+        const shuffled=potentialChamberSites.sort(() => Math.random()-0.5);
+
+        for (let i=0; i<Math.min(chamberCount, shuffled.length); i++) {
+            const site=shuffled[i];
+            const template=this.levelDesigner.selectChamberTemplate(site.y);
+            this.carveChamber(site.x, site.y, template);
+        }
+
+        console.log(`Created ${Math.min(chamberCount, shuffled.length)} chambers`);
+    }
+
+    carveChamber(centerX, centerY, template) {
+        const width=template.minWidth+Math.floor(Math.random()*(template.maxWidth-template.minWidth));
+        const height=template.minHeight+Math.floor(Math.random()*(template.maxHeight-template.minHeight));
+
+        const halfW=Math.floor(width/2);
+        const halfH=Math.floor(height/2);
+
+        // Carve elliptical chamber
+        for (let y=-halfH; y<=halfH; y++) {
+            for (let x=-halfW; x<=halfW; x++) {
+                // Ellipse check
+                const nx=x/halfW;
+                const ny=y/halfH;
+                if (nx*nx+ny*ny<=1) {
+                    const tx=centerX+x;
+                    const ty=centerY+y;
+                    if (tx>1&&tx<this.width-2&&ty>1&&ty<this.height-2) {
+                        this.tiles[ty][tx]=TileTypes.EMPTY;
+                    }
+                }
+            }
+        }
+
+        // Add flat floor for rest stops
+        if (template.features?.includes('flat_floor')) {
+            for (let x=-halfW+2; x<=halfW-2; x++) {
+                const tx=centerX+x;
+                const ty=centerY+halfH;
+                if (tx>1&&tx<this.width-2&&ty<this.height-2) {
+                    // Make floor flat by filling
+                    this.tiles[ty][tx]=TileTypes.HARD_ROCK;
+                }
+            }
+        }
+
+        // Add ore walls for mineral shafts
+        if (template.features?.includes('ore_walls')||template.features?.includes('rich_ore')) {
+            const depth=centerY/this.height;
+            let oreType=TileTypes.IRON_ORE;
+            if (depth>0.7) oreType=TileTypes.PLATINUM_ORE;
+            else if (depth>0.5) oreType=TileTypes.GOLD_ORE;
+            else if (depth>0.3) oreType=TileTypes.TITANIUM_ORE;
+
+            // Add ore around edges
+            for (let y=-halfH; y<=halfH; y++) {
+                for (let x=-halfW; x<=halfW; x++) {
+                    const nx=x/halfW;
+                    const ny=y/halfH;
+                    const dist=Math.sqrt(nx*nx+ny*ny);
+                    if (dist>0.7&&dist<=1.1&&Math.random()<0.3) {
+                        const tx=centerX+x;
+                        const ty=centerY+y;
+                        if (tx>1&&tx<this.width-2&&ty>1&&ty<this.height-2) {
+                            if (this.tiles[ty][tx]!==TileTypes.EMPTY) {
+                                this.tiles[ty][tx]=oreType;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Store chamber info
+        if (this.levelDesigner) {
+            this.levelDesigner.chambers.push({
+                x: centerX,
+                y: centerY,
+                width,
+                height,
+                template: template.name
+            });
+        }
+    }
+
     generateOres(surfaceHeights) {
         // Define ore types with depth ranges and rarity
-        const oreConfigs = [
-            { type: TileTypes.IRON_ORE, minDepth: 10, maxDepth: 300, rarity: 0.015, clusterSize: 8 },
-            { type: TileTypes.COPPER_ORE, minDepth: 20, maxDepth: 250, rarity: 0.012, clusterSize: 6 },
-            { type: TileTypes.TITANIUM_ORE, minDepth: 80, maxDepth: 400, rarity: 0.008, clusterSize: 5 },
-            { type: TileTypes.GOLD_ORE, minDepth: 150, maxDepth: 450, rarity: 0.004, clusterSize: 4 },
-            { type: TileTypes.PLATINUM_ORE, minDepth: 250, maxDepth: 500, rarity: 0.002, clusterSize: 3 },
-            { type: TileTypes.HELIUM3_DEPOSIT, minDepth: 300, maxDepth: 500, rarity: 0.001, clusterSize: 5 }
+        const oreConfigs=[
+            {type: TileTypes.IRON_ORE, minDepth: 10, maxDepth: 300, rarity: 0.015, clusterSize: 8},
+            {type: TileTypes.COPPER_ORE, minDepth: 20, maxDepth: 250, rarity: 0.012, clusterSize: 6},
+            {type: TileTypes.TITANIUM_ORE, minDepth: 80, maxDepth: 400, rarity: 0.008, clusterSize: 5},
+            {type: TileTypes.GOLD_ORE, minDepth: 150, maxDepth: 450, rarity: 0.004, clusterSize: 4},
+            {type: TileTypes.PLATINUM_ORE, minDepth: 250, maxDepth: 500, rarity: 0.002, clusterSize: 3},
+            {type: TileTypes.HELIUM3_DEPOSIT, minDepth: 300, maxDepth: 500, rarity: 0.001, clusterSize: 5}
         ];
 
         // Generate ore clusters
         for (const config of oreConfigs) {
-            for (let x = 5; x < this.width - 5; x++) {
-                for (let y = 5; y < this.height - 5; y++) {
-                    const surfaceY = surfaceHeights[Math.min(x, this.width - 1)];
-                    const depth = y - surfaceY;
+            for (let x=5; x<this.width-5; x++) {
+                for (let y=5; y<this.height-5; y++) {
+                    const surfaceY=surfaceHeights[Math.min(x, this.width-1)];
+                    const depth=y-surfaceY;
 
                     // Check if in valid depth range and tile is rock
-                    if (depth >= config.minDepth && depth <= config.maxDepth) {
-                        const tile = this.tiles[y][x];
-                        if ((tile === TileTypes.ROCK || tile === TileTypes.HARD_ROCK) && Math.random() < config.rarity) {
+                    if (depth>=config.minDepth&&depth<=config.maxDepth) {
+                        const tile=this.tiles[y][x];
+                        if ((tile===TileTypes.ROCK||tile===TileTypes.HARD_ROCK)&&Math.random()<config.rarity) {
                             // Create ore cluster
                             this.createOreCluster(x, y, config.type, config.clusterSize);
                         }
@@ -191,30 +448,30 @@ export class VoxelMap {
     }
 
     createOreCluster(centerX, centerY, oreType, maxSize) {
-        const clusterSize = Math.floor(maxSize * 0.5 + Math.random() * maxSize * 0.5);
-        const visited = new Set();
-        const queue = [[centerX, centerY]];
+        const clusterSize=Math.floor(maxSize*0.5+Math.random()*maxSize*0.5);
+        const visited=new Set();
+        const queue=[[centerX, centerY]];
 
-        let placed = 0;
-        while (queue.length > 0 && placed < clusterSize) {
-            const [x, y] = queue.shift();
-            const key = `${x},${y}`;
+        let placed=0;
+        while (queue.length>0&&placed<clusterSize) {
+            const [x, y]=queue.shift();
+            const key=`${x},${y}`;
 
             if (visited.has(key)) continue;
             visited.add(key);
 
-            if (x <= 1 || x >= this.width - 2 || y <= 1 || y >= this.height - 2) continue;
+            if (x<=1||x>=this.width-2||y<=1||y>=this.height-2) continue;
 
-            const tile = this.tiles[y][x];
+            const tile=this.tiles[y][x];
             // Only replace rock tiles, not empty or special tiles
-            if (tile === TileTypes.ROCK || tile === TileTypes.HARD_ROCK || tile === TileTypes.REGOLITH) {
-                this.tiles[y][x] = oreType;
+            if (tile===TileTypes.ROCK||tile===TileTypes.HARD_ROCK||tile===TileTypes.REGOLITH) {
+                this.tiles[y][x]=oreType;
                 placed++;
 
                 // Add neighbors with decreasing probability
-                const neighbors = [[x-1,y], [x+1,y], [x,y-1], [x,y+1]];
+                const neighbors=[[x-1, y], [x+1, y], [x, y-1], [x, y+1]];
                 for (const [nx, ny] of neighbors) {
-                    if (Math.random() < 0.7) {
+                    if (Math.random()<0.7) {
                         queue.push([nx, ny]);
                     }
                 }
@@ -224,108 +481,108 @@ export class VoxelMap {
 
     createMoonBase(surfaceHeights) {
         // Sprite dimensions (in tiles, approximate)
-        const landingPadWidthTiles = 16;  // Landing platform is wider
-        const landingPadHeightTiles = 8;
-        const baseWidthTiles = 14;        // Moon base building
-        const baseHeightTiles = 10;
-        const gapTiles = 2;               // Gap between pad and base
+        const landingPadWidthTiles=16;  // Landing platform is wider
+        const landingPadHeightTiles=8;
+        const baseWidthTiles=14;        // Moon base building
+        const baseHeightTiles=10;
+        const gapTiles=2;               // Gap between pad and base
 
-        const totalWidth = landingPadWidthTiles + gapTiles + baseWidthTiles + 10; // Extra margin
+        const totalWidth=landingPadWidthTiles+gapTiles+baseWidthTiles+10; // Extra margin
 
         // Find a relatively flat spot near the center-left of the map
-        let bestX = Math.floor(this.width * 0.3);
-        let minVariance = Infinity;
+        let bestX=Math.floor(this.width*0.3);
+        let minVariance=Infinity;
 
-        for (let x = 30; x < this.width - totalWidth - 30; x++) {
-            let variance = 0;
-            const startH = surfaceHeights[x];
-            for (let i = 0; i < totalWidth; i++) {
-                variance += Math.abs(surfaceHeights[x + i] - startH);
+        for (let x=30; x<this.width-totalWidth-30; x++) {
+            let variance=0;
+            const startH=surfaceHeights[x];
+            for (let i=0; i<totalWidth; i++) {
+                variance+=Math.abs(surfaceHeights[x+i]-startH);
             }
-            if (variance < minVariance) {
-                minVariance = variance;
-                bestX = x;
+            if (variance<minVariance) {
+                minVariance=variance;
+                bestX=x;
             }
         }
 
         // Use a consistent ground level for the entire base area
-        const groundLevel = surfaceHeights[bestX + Math.floor(totalWidth / 2)];
+        const groundLevel=surfaceHeights[bestX+Math.floor(totalWidth/2)];
 
         // Flatten the entire base area with extra margin
-        const flattenMargin = 5;
-        for (let x = bestX - flattenMargin; x < bestX + totalWidth + flattenMargin; x++) {
-            if (x <= 0 || x >= this.width - 1) continue;
+        const flattenMargin=5;
+        for (let x=bestX-flattenMargin; x<bestX+totalWidth+flattenMargin; x++) {
+            if (x<=0||x>=this.width-1) continue;
 
             // Clear everything above ground level
-            for (let y = 1; y < groundLevel; y++) {
-                this.tiles[y][x] = TileTypes.EMPTY;
+            for (let y=1; y<groundLevel; y++) {
+                this.tiles[y][x]=TileTypes.EMPTY;
             }
 
             // Create solid flat ground
-            for (let y = groundLevel; y < groundLevel + 8; y++) {
-                if (y < this.height - 1) {
-                    this.tiles[y][x] = TileTypes.HARD_ROCK;
+            for (let y=groundLevel; y<groundLevel+8; y++) {
+                if (y<this.height-1) {
+                    this.tiles[y][x]=TileTypes.HARD_ROCK;
                 }
             }
         }
 
         // Landing pad position (left side)
-        const padStartX = bestX;
-        const padEndX = padStartX + landingPadWidthTiles;
+        const padStartX=bestX;
+        const padEndX=padStartX+landingPadWidthTiles;
 
         // Mark landing pad tiles
-        for (let x = padStartX; x < padEndX; x++) {
-            this.tiles[groundLevel][x] = TileTypes.PAD;
+        for (let x=padStartX; x<padEndX; x++) {
+            this.tiles[groundLevel][x]=TileTypes.PAD;
         }
 
         // Base position (right side, after gap)
-        const baseStartX = padEndX + gapTiles;
-        const baseEndX = baseStartX + baseWidthTiles;
+        const baseStartX=padEndX+gapTiles;
+        const baseEndX=baseStartX+baseWidthTiles;
 
         // Mark base tiles (the sprite will be drawn over these)
-        for (let y = groundLevel - baseHeightTiles; y <= groundLevel; y++) {
-            for (let x = baseStartX; x < baseEndX; x++) {
-                if (y > 0 && y < this.height && x > 0 && x < this.width) {
-                    this.tiles[y][x] = TileTypes.BASE;
+        for (let y=groundLevel-baseHeightTiles; y<=groundLevel; y++) {
+            for (let x=baseStartX; x<baseEndX; x++) {
+                if (y>0&&y<this.height&&x>0&&x<this.width) {
+                    this.tiles[y][x]=TileTypes.BASE;
                 }
             }
         }
 
         // Store positions for rendering
         // Landing pad center (where ships land)
-        const padCenterX = padStartX + Math.floor(landingPadWidthTiles / 2);
-        const padWorldPos = this.gridToWorld(padCenterX, groundLevel);
+        const padCenterX=padStartX+Math.floor(landingPadWidthTiles/2);
+        const padWorldPos=this.gridToWorld(padCenterX, groundLevel);
 
         // Base center (for sprite rendering)
-        const baseCenterX = baseStartX + Math.floor(baseWidthTiles / 2);
-        const baseWorldPos = this.gridToWorld(baseCenterX, groundLevel);
+        const baseCenterX=baseStartX+Math.floor(baseWidthTiles/2);
+        const baseWorldPos=this.gridToWorld(baseCenterX, groundLevel);
 
         // Landing pad bounds for landing detection
-        const padLeftWorld = this.gridToWorld(padStartX, groundLevel);
-        const padRightWorld = this.gridToWorld(padEndX - 1, groundLevel);
+        const padLeftWorld=this.gridToWorld(padStartX, groundLevel);
+        const padRightWorld=this.gridToWorld(padEndX-1, groundLevel);
 
-        this.basePadBounds = {
-            x1: padLeftWorld.x - this.tileSize / 2,
-            y1: padLeftWorld.y - this.tileSize * 6, // Height above pad for landing detection
-            x2: padRightWorld.x + this.tileSize / 2,
-            y2: padLeftWorld.y + this.tileSize / 2
+        this.basePadBounds={
+            x1: padLeftWorld.x-this.tileSize/2,
+            y1: padLeftWorld.y-this.tileSize*6, // Height above pad for landing detection
+            x2: padRightWorld.x+this.tileSize/2,
+            y2: padLeftWorld.y+this.tileSize/2
         };
 
         // Store base and pad positions for rendering
-        this.basePosition = {
+        this.basePosition={
             x: baseWorldPos.x,
             y: baseWorldPos.y
         };
 
-        this.landingPadPosition = {
+        this.landingPadPosition={
             x: padWorldPos.x,
             y: padWorldPos.y
         };
 
         // Spawn position is above the landing pad
-        this.spawnPosition = {
+        this.spawnPosition={
             x: padWorldPos.x,
-            y: padWorldPos.y - 50
+            y: padWorldPos.y-50
         };
 
         console.log(`Moon base created: pad at (${this.landingPadPosition.x}, ${this.landingPadPosition.y}), base at (${this.basePosition.x}, ${this.basePosition.y})`);
@@ -417,16 +674,16 @@ export class VoxelMap {
 
     // Check if a tile is on the surface (has at least one empty neighbor)
     isSurfaceTile(x, y) {
-        if (this.tiles[y][x] === TileTypes.EMPTY) return false;
+        if (this.tiles[y][x]===TileTypes.EMPTY) return false;
 
         // Check all 4 cardinal neighbors
-        const neighbors = [
+        const neighbors=[
             [x-1, y], [x+1, y], [x, y-1], [x, y+1]
         ];
 
         for (const [nx, ny] of neighbors) {
-            if (nx < 0 || nx >= this.width || ny < 0 || ny >= this.height) continue;
-            if (this.tiles[ny][nx] === TileTypes.EMPTY) {
+            if (nx<0||nx>=this.width||ny<0||ny>=this.height) continue;
+            if (this.tiles[ny][nx]===TileTypes.EMPTY) {
                 return true; // Has an empty neighbor, so it's a surface tile
             }
         }
@@ -467,11 +724,11 @@ export class VoxelMap {
         if (this.landingPadPosition) {
             return {
                 x: this.landingPadPosition.x,
-                y: this.landingPadPosition.y - 50
+                y: this.landingPadPosition.y-50
             };
         }
-        const spawnGridX = Math.floor(this.width / 2);
-        const spawnGridY = 20;
+        const spawnGridX=Math.floor(this.width/2);
+        const spawnGridY=20;
         return this.gridToWorld(spawnGridX, spawnGridY);
     }
 }
