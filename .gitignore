@@ -1,1 +1,32 @@
-/node_modules
+# Dependencies
+node_modules/
+.npm/
+
+# Build outputs
+/client/dist/
+/server/dist/
+
+# Environment variables
+.env
+.env.local
+*.env*
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# MacOS system files
+.DS_Store
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# Project specific
+.claude/
+.gemini/
