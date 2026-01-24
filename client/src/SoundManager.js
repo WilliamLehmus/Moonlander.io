@@ -5,7 +5,8 @@ export class SoundManager {
         this.musicVolume=1.0;
         this.soundsLoaded=false;
         this.sounds={};
-        this.music=null;
+        this.menuMusic=null;
+        this.gameMusic=null;
 
         // Thrust state tracking
         this.isThrusting=false;
@@ -23,9 +24,13 @@ export class SoundManager {
             thrust: '/Sounds/Constant_thrust.mp3'
         };
 
-        const musicSrc='/Music/Track1.mp3';
-        this.music=new Audio(musicSrc);
-        this.music.loop=true;
+        const menuMusicSrc='/Music/Track1.mp3';
+        this.menuMusic=new Audio(menuMusicSrc);
+        this.menuMusic.loop=true;
+
+        const gameMusicSrc='/Music/Track2.mp3';
+        this.gameMusic=new Audio(gameMusicSrc);
+        this.gameMusic.loop=true;
 
         const loadPromises=Object.entries(soundFiles).map(([key, src]) => {
             return new Promise((resolve, reject) => {
@@ -43,19 +48,34 @@ export class SoundManager {
         });
 
         // Add music loading to promises to ensure it's ready
-        const musicLoadPromise=new Promise((resolve) => {
-            if (this.music) {
-                this.music.addEventListener('canplaythrough', () => resolve(this.music), {once: true});
-                this.music.addEventListener('error', (e) => {
-                    console.warn(`Failed to load music: ${musicSrc}`, e);
+        // Add music loading to promises to ensure it's ready
+        const menuMusicLoadPromise=new Promise((resolve) => {
+            if (this.menuMusic) {
+                this.menuMusic.addEventListener('canplaythrough', () => resolve(this.menuMusic), {once: true});
+                this.menuMusic.addEventListener('error', (e) => {
+                    console.warn(`Failed to load menu music: ${menuMusicSrc}`, e);
                     resolve(null);
                 });
-                this.music.load();
+                this.menuMusic.load();
             } else {
                 resolve(null);
             }
         });
-        loadPromises.push(musicLoadPromise);
+        loadPromises.push(menuMusicLoadPromise);
+
+        const gameMusicLoadPromise=new Promise((resolve) => {
+            if (this.gameMusic) {
+                this.gameMusic.addEventListener('canplaythrough', () => resolve(this.gameMusic), {once: true});
+                this.gameMusic.addEventListener('error', (e) => {
+                    console.warn(`Failed to load game music: ${gameMusicSrc}`, e);
+                    resolve(null);
+                });
+                this.gameMusic.load();
+            } else {
+                resolve(null);
+            }
+        });
+        loadPromises.push(gameMusicLoadPromise);
 
         await Promise.all(loadPromises);
         this.soundsLoaded=true;
@@ -96,22 +116,52 @@ export class SoundManager {
             if (sound) sound.volume=sfxVol;
         });
 
-        if (this.music) {
-            this.music.volume=this.getEffectiveMusicVolume();
+        if (this.menuMusic) {
+            this.menuMusic.volume=this.getEffectiveMusicVolume();
+        }
+        if (this.gameMusic) {
+            this.gameMusic.volume=this.getEffectiveMusicVolume();
         }
     }
 
-    startMusic() {
-        if (this.music&&this.soundsLoaded) {
-            this.music.volume=this.getEffectiveMusicVolume();
-            this.music.play().catch(e => console.warn('Music play failed', e));
+    playMenuMusic() {
+        if (!this.soundsLoaded) return;
+
+        // Stop game music if playing
+        if (this.gameMusic) {
+            this.gameMusic.pause();
+            this.gameMusic.currentTime=0;
+        }
+
+        if (this.menuMusic) {
+            this.menuMusic.volume=this.getEffectiveMusicVolume();
+            this.menuMusic.play().catch(e => console.warn('Menu music play failed', e));
         }
     }
 
-    stopMusic() {
-        if (this.music) {
-            this.music.pause();
-            this.music.currentTime=0; // Reset to beginning
+    playGameMusic() {
+        if (!this.soundsLoaded) return;
+
+        // Stop menu music if playing
+        if (this.menuMusic) {
+            this.menuMusic.pause();
+            this.menuMusic.currentTime=0;
+        }
+
+        if (this.gameMusic) {
+            this.gameMusic.volume=this.getEffectiveMusicVolume();
+            this.gameMusic.play().catch(e => console.warn('Game music play failed', e));
+        }
+    }
+
+    stopAllMusic() {
+        if (this.menuMusic) {
+            this.menuMusic.pause();
+            this.menuMusic.currentTime=0;
+        }
+        if (this.gameMusic) {
+            this.gameMusic.pause();
+            this.gameMusic.currentTime=0;
         }
     }
 

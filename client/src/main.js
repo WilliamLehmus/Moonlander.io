@@ -48,8 +48,17 @@ let gameLoopRunning=false;
 let pendingMapData=null; // Store map data if it arrives before renderer is ready
 let isMenuOpen=false;
 
-// Initialize Sound Manager immediately so settings work? or on user interaction?
-// Browsers block audio until interaction. Best to load on join/create.
+// Initialize audio on first user interaction
+document.addEventListener('click', () => {
+  if (!soundManager.soundsLoaded) {
+    soundManager.loadSounds().then(() => {
+      if (!currentRoom) {
+        soundManager.playMenuMusic();
+      }
+    });
+  }
+}, {once: true});
+
 
 // ============================================
 // LOBBY FUNCTIONS
@@ -74,15 +83,13 @@ async function enterGame(roomCode, host) {
   currentRoom=roomCode;
   isHost=host;
 
-  // Loading sounds logic wrapper
+  // Ensure sounds are loaded and play game music
   if (!soundManager.soundsLoaded) {
-    // Start loading sounds but don't block everything?
-    // Actually we probably want wait or at least kick it off
     soundManager.loadSounds().then(() => {
-      soundManager.startMusic();
+      soundManager.playGameMusic();
     });
   } else {
-    soundManager.startMusic();
+    soundManager.playGameMusic();
   }
 
   // Hide lobby, show game
@@ -118,7 +125,7 @@ function exitGame() {
   isHost=false;
   pendingMapData=null;
 
-  soundManager.stopMusic();
+  soundManager.playMenuMusic();
 
   // Reset game state
   gameState={players: [], baseResources: {spareParts: 0, fuel: 0}, respawnCost: 50};

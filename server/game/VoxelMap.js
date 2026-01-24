@@ -568,6 +568,8 @@ export class VoxelMap {
             y2: padLeftWorld.y+this.tileSize/2
         };
 
+
+
         // Store base and pad positions for rendering
         this.basePosition={
             x: baseWorldPos.x,
@@ -596,9 +598,7 @@ export class VoxelMap {
             return false;
         }
 
-        const grid=this.worldToGrid(worldX, worldY+this.tileSize);
-        const tile=this.get(grid.x, grid.y);
-        return tile===TileTypes.PAD;
+        return true;
     }
 
     get(x, y) {
@@ -703,6 +703,24 @@ export class VoxelMap {
             }
         }
         console.log(`Created ${count} collision bodies (optimized)`);
+
+        // Create landing platform collision body if bounds exist
+        if (this.basePadBounds&&this.physicsWorld&&this.physicsWorld.isReady) {
+            const platformY=this.basePadBounds.y1+20; // Slightly down from top of detection zone
+            const platformWidth=(this.basePadBounds.x2-this.basePadBounds.x1);
+            const platformHeight=4; // Thin platform
+            const platformX=(this.basePadBounds.x1+this.basePadBounds.x2)/2;
+
+            // Create a static box
+            this.physicsWorld.createBox(
+                platformX,
+                platformY,
+                platformWidth,
+                platformHeight,
+                0 // mass 0 = static
+            );
+            console.log(`Created landing platform at y=${platformY}`);
+        }
     }
 
     serialize() {

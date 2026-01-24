@@ -7,7 +7,9 @@ export class Input {
             left: false,
             right: false,
             mining: false,
-            transferFuel: false
+            mining: false,
+            transferFuel: false,
+            transferCargo: false
         };
 
         // Mouse position in canvas coordinates
@@ -81,6 +83,12 @@ export class Input {
                     changed=true;
                 }
                 break;
+            case 'KeyT':
+                if (this.state.transferCargo!==isDown) {
+                    this.state.transferCargo=isDown;
+                    changed=true;
+                }
+                break;
             case 'KeyE':
                 if (isDown) this.toggleTether(); // Toggle tether on key down
                 break;
@@ -108,7 +116,7 @@ export class Input {
     }
 
     sendPing(type) {
-        this.socket.emit('ping', { type });
+        this.socket.emit('ping', {type});
     }
 
     toggleTether() {
@@ -145,7 +153,8 @@ export class Input {
             right: this.state.right,
             mining: this.state.mining,
             transferFuel: this.state.transferFuel,
-            spotlightAngle: this.spotlightAngle
+            spotlightAngle: this.spotlightAngle,
+            transferCargo: this.state.transferCargo
         });
     }
 }

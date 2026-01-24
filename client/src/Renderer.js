@@ -448,7 +448,7 @@ export class Renderer {
 
         const darknessTileDepth=this.fullDarkDepth*this.tileSize;
         const darkness=Math.min(1, depthBelowSurface/darknessTileDepth);
-        return darkness*0.95; // Max 95% darkness to keep some ambient
+        return darkness; // Allow full 100% darkness (was capped at 0.95)
     }
 
     // Calculate light intensity based on damage (1 = full, 0 = no light)
@@ -735,7 +735,10 @@ export class Renderer {
 
     // Draw ore glow effects visible through darkness when within spotlight cone
     drawOreGlow(players, myId) {
-        if (!this.voxelMap) return;
+        // Disabled: We want strictly limited visibility. No X-ray vision for ores.
+        // Ores will only be visible if the spotlight mask (drawSpotlight) reveals them.
+        return;
+
 
         const TileTypes={
             IRON_ORE: 10, TITANIUM_ORE: 11, COPPER_ORE: 12,
@@ -1051,23 +1054,87 @@ export class Renderer {
                 const wx=x*this.tileSize;
                 const wy=y*this.tileSize;
 
-                this.ctx.fillStyle=colors.main;
-                this.ctx.fillRect(wx, wy, this.tileSize, this.tileSize);
+                // OCCLUSION LOGIC: Determine exposure level
+                let exposureLevel=3; // Default to Deep (Concealed)
 
-                // Skip PAD tiles too - landing platform sprite will cover them
-                if (tile===TileTypes.PAD) continue;
+                // Check direct neighbors (Up, Down, Left, Right) for AIR (0)
+                // Boundary checks included
+                const u=(y>0&&this.voxelMap[y-1][x]===0);
+                const d=(y<this.mapHeight-1&&this.voxelMap[y+1][x]===0);
+                const l=(x>0&&this.voxelMap[y][x-1]===0);
+                const r=(x<this.mapWidth-1&&this.voxelMap[y][x+1]===0);
 
-                // Add glow effect for ore tiles
-                if (tile>=TileTypes.IRON_ORE&&colors.glow) {
-                    this.ctx.fillStyle=colors.glow;
-                    this.ctx.globalAlpha=0.3+Math.sin(performance.now()/500+x+y)*0.15;
-                    this.ctx.fillRect(wx+2, wy+2, this.tileSize-4, this.tileSize-4);
-                    this.ctx.globalAlpha=1;
+                if (u||d||l||r) {
+                    exposureLevel=1; // Surface
+                } else {
+                    // Check secondary neighbors (radius 2)
+                    // We check if any neighbor (u,d,l,r) touches air.
+                    // This effectively checks the "cross" shape at distance 2.
+                    // Also check diagonals to be generous (square radius 2)?
+                    // Let's stick to the "Next tile behind outer voxel" rule.
+
+                    // Simple check: iterate -2 to +2. If any 0 found, it's Near.
+                    let foundAir=false;
+                    for (let oy=-2; oy<=2; oy++) {
+                        for (let ox=-2; ox<=2; ox++) {
+                            const ny=y+oy;
+                            const nx=x+ox;
+                            if (Math.abs(ox)<=1&&Math.abs(oy)<=1) continue; // Skip center and dist 1 (already checked)
+
+                            if (ny>=0&&ny<this.mapHeight&&nx>=0&&nx<this.mapWidth) {
+                                if (this.voxelMap[ny][nx]===0) {
+                                    foundAir=true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (foundAir) break;
+                    }
+                    if (foundAir) exposureLevel=2; // Near Surface
                 }
 
-                this.ctx.strokeStyle=colors.border;
-                this.ctx.lineWidth=0.5;
-                this.ctx.strokeRect(wx, wy, this.tileSize, this.tileSize);
+                // Render based on Exposure Level
+                if (exposureLevel===3) {
+                    // Deep: Completely concealed (Black Rock)
+                    this.ctx.fillStyle='#050505'; // Almost black
+                    this.ctx.fillRect(wx, wy, this.tileSize, this.tileSize);
+                    // No borders, no details
+                } else {
+                    // Surface or Near Surface: Draw normally (with opacity for Near)
+
+                    if (exposureLevel===2) {
+                        this.ctx.save();
+                        this.ctx.globalAlpha=0.4; // 40% visibility for "inner" layer
+                        // Draw black background first so opacity doesn't show background clear color
+                        this.ctx.fillStyle='#000';
+                        this.ctx.fillRect(wx, wy, this.tileSize, this.tileSize);
+                    }
+
+                    this.ctx.fillStyle=colors.main;
+                    this.ctx.fillRect(wx, wy, this.tileSize, this.tileSize);
+
+                    // Skip PAD tiles too - landing platform sprite will cover them
+                    if (tile===TileTypes.PAD) {
+                        if (exposureLevel===2) this.ctx.restore();
+                        continue;
+                    }
+
+                    // Add glow effect for ore tiles (only if visible)
+                    if (tile>=TileTypes.IRON_ORE&&colors.glow) {
+                        this.ctx.fillStyle=colors.glow;
+                        this.ctx.globalAlpha=(exposureLevel===2? 0.2:1)*(0.3+Math.sin(performance.now()/500+x+y)*0.15);
+                        this.ctx.fillRect(wx+2, wy+2, this.tileSize-4, this.tileSize-4);
+                        if (exposureLevel!==2) this.ctx.globalAlpha=1;
+                    }
+
+                    this.ctx.strokeStyle=colors.border;
+                    this.ctx.lineWidth=0.5;
+                    this.ctx.strokeRect(wx, wy, this.tileSize, this.tileSize);
+
+                    if (exposureLevel===2) {
+                        this.ctx.restore();
+                    }
+                }
             }
         }
     }
@@ -1086,7 +1153,7 @@ export class Renderer {
             this.ctx.drawImage(
                 this.landingPlatformSprite,
                 padX-padWidth/2,
-                padY-padHeight+70, // Position so bottom aligns with ground (+60 offset to fix hovering)
+                padY-padHeight+80, // Position so bottom aligns with ground (+60 offset to fix hovering)
                 padWidth,
                 padHeight
             );
@@ -1770,6 +1837,95 @@ export class Renderer {
         const aliveCount=state?.aliveCount||0;
         const totalCount=state?.players?.length||0;
         this.ctx.fillText(`PLAYERS: ${aliveCount}/${totalCount} alive`, this.canvas.width-20, 70);
+        // Draw Station UI if landed
+        if (myPlayer.onPad) {
+            this.drawStationUI(myPlayer, state);
+        }
+    }
+
+    drawStationUI(player, state) {
+        const ctx=this.ctx;
+        const width=this.canvas.width;
+        const height=this.canvas.height;
+        const baseRes=state.baseResources;
+
+        // Panel dimensions
+        const panelW=400;
+        const panelH=150;
+        const x=(width-panelW)/2;
+        const y=80; // Below top HUD
+
+        // Background
+        ctx.fillStyle='rgba(0, 0, 0, 0.8)';
+        ctx.strokeStyle='#00f0ff';
+        ctx.lineWidth=2;
+        ctx.beginPath();
+        ctx.roundRect(x, y, panelW, panelH, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        // Title
+        ctx.fillStyle='#00f0ff';
+        ctx.font='bold 16px "Orbitron", sans-serif';
+        ctx.textAlign='center';
+        ctx.fillText('MOON STATION ALPHA', x+panelW/2, y+25);
+
+        // Grid layout for stats
+        const col1=x+20;
+        const col2=x+panelW/2+20;
+        const rowStart=y+50;
+        const rowH=20;
+
+        ctx.textAlign='left';
+        ctx.font='12px "Orbitron", sans-serif';
+
+        // Column 1: Station Resources
+        ctx.fillStyle='#ffaa00';
+        ctx.fillText(`Fuel Reserves: ${Math.floor(baseRes.fuel)} / ${baseRes.maxFuel}`, col1, rowStart);
+
+        ctx.fillStyle='#cccccc';
+        ctx.fillText(`Spare Parts: ${Math.floor(baseRes.spareParts)} / ${baseRes.maxSpareParts}`, col1, rowStart+rowH);
+
+        ctx.fillStyle='#00ffaa';
+        ctx.fillText(`Build Materials: ${Math.floor(baseRes.processedMaterials||0)}`, col1, rowStart+rowH*2);
+
+        // Column 2: Status & Actions
+        ctx.fillStyle='#ffffff';
+        const currentOre=(baseRes.iron+baseRes.copper+baseRes.titanium+baseRes.gold+baseRes.platinum+baseRes.helium3);
+        ctx.fillText(`Ore Storage: ${Math.floor(currentOre)} / ${baseRes.oreCapacity}`, col2, rowStart);
+
+        // Processing animation
+        const time=Date.now()/1000;
+        const dots=".".repeat(Math.floor(time%4));
+        ctx.fillStyle='#ffff00';
+        ctx.fillText(`Refining${dots}`, col2, rowStart+rowH*1);
+
+        // Transfer Prompt
+        if (player.cargo.length>0) {
+            ctx.fillStyle='#ff0055';
+            ctx.font='bold 14px "Orbitron", sans-serif';
+            ctx.fillText('[HOLD T] Transfer Cargo', col2, rowStart+rowH*3);
+
+            if (player.inputs?.transferCargo) {
+                // Transferring feedback
+                ctx.fillStyle='#00ff00';
+                ctx.fillRect(col2, rowStart+rowH*3.2, 100, 2);
+            }
+        } else {
+            ctx.fillStyle='#888888';
+            ctx.fillText('Cargo Hold Empty', col2, rowStart+rowH*3);
+        }
+
+        // Repair/Refuel Status Indicators
+        if (player.damage>0&&baseRes.spareParts>0) {
+            ctx.fillStyle='#ff0000';
+            ctx.fillText('REPAIRING...', x+20, y+panelH-15);
+        }
+        if (player.fuel<1000&&baseRes.fuel>0) {
+            ctx.fillStyle='#ffaa00';
+            ctx.fillText('REFUELING...', x+120, y+panelH-15);
+        }
+
     }
 
     showMessage(text, duration=3000) {

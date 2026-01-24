@@ -12,7 +12,7 @@ export class Player {
 
         this.fuel=1000;
         this.damage=0; // 0-11 damage levels
-        this.inputs={thrust: false, left: false, right: false, mining: false, transferFuel: false};
+        this.inputs={thrust: false, left: false, right: false, mining: false, transferFuel: false, transferCargo: false};
         this.color=`hsl(${Math.random()*360}, 70%, 50%)`;
         this.dead=false;
         this.landed=false;
