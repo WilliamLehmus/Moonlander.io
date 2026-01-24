@@ -46,7 +46,8 @@ const ORE_CONFIG={
 export class Game {
     constructor() {
         this.players=new Map();
-        this.voxelMap=new VoxelMap(400, 500, 8); // 400x500 tiles at 8px = 3200x4000 world (deeper map)
+        // 400x1200 tiles at 8px = 3200x9600 world (much deeper map)
+        this.voxelMap=new VoxelMap(400, 1200, 8);
         this.physics=new PhysicsWorld();
         this.lastTime=Date.now();
         this.ready=false;
@@ -72,6 +73,13 @@ export class Game {
             // Total value delivered
             totalValue: 0
         };
+
+        // Exploration Fog of War
+        // Grid of 20x20 tile chunks (160x160 world units)
+        this.chunkSize=20;
+        this.chunksX=Math.ceil(this.voxelMap.width/this.chunkSize);
+        this.chunksY=Math.ceil(this.voxelMap.height/this.chunkSize);
+        this.explorationGrid=new Uint8Array(this.chunksX*this.chunksY); // 0 = unexplored, 1 = explored
     }
 
     setIO(io, roomCode=null) {
@@ -433,6 +441,38 @@ export class Game {
         // Sync Player Logic (Inputs -> Force)
         for (const player of this.players.values()) {
             player.update(dt);
+        }
+
+        // Update Exploration
+        this.updateExploration();
+    }
+
+    updateExploration() {
+        if (!this.ready) return;
+
+        const EXPLORE_RADIUS=3; // Chunks radius (3 * 20 * 8 = 480px, approx screen half-width)
+
+        for (const player of this.players.values()) {
+            if (player.dead) continue;
+
+            const pos=player.getPosition();
+            const grid=this.voxelMap.worldToGrid(pos.x, pos.y);
+
+            const chunkX=Math.floor(grid.x/this.chunkSize);
+            const chunkY=Math.floor(grid.y/this.chunkSize);
+
+            // Mark surrounding chunks as explored
+            for (let dy=-EXPLORE_RADIUS; dy<=EXPLORE_RADIUS; dy++) {
+                for (let dx=-EXPLORE_RADIUS; dx<=EXPLORE_RADIUS; dx++) {
+                    const cx=chunkX+dx;
+                    const cy=chunkY+dy;
+
+                    if (cx>=0&&cx<this.chunksX&&cy>=0&&cy<this.chunksY) {
+                        const idx=cy*this.chunksX+cx;
+                        this.explorationGrid[idx]=1;
+                    }
+                }
+            }
         }
     }
 
@@ -930,7 +970,8 @@ export class Game {
             respawnCost: RESPAWN_COST,
             aliveCount: this.getAlivePlayerCount(),
             basePosition: this.voxelMap.basePosition,
-            basePadBounds: this.voxelMap.basePadBounds
+            basePadBounds: this.voxelMap.basePadBounds,
+            explorationGrid: this.explorationGrid // Send explored chunks
         };
     }
 }

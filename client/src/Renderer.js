@@ -1645,8 +1645,22 @@ export class Renderer {
         // Draw terrain (very simplified - just sample points)
         this.ctx.fillStyle='#444';
         const sampleStep=8; // Sample every N tiles
+        const chunkSize=20; // Must match server
+        const chunksX=Math.ceil(this.mapWidth/chunkSize);
+
+        // Default to all explored if no grid provided (backwards compatibility)
+        const explorationGrid=state.explorationGrid;
+
         for (let gy=0; gy<this.mapHeight; gy+=sampleStep) {
             for (let gx=0; gx<this.mapWidth; gx+=sampleStep) {
+                // Check exploration status
+                if (explorationGrid) {
+                    const cx=Math.floor(gx/chunkSize);
+                    const cy=Math.floor(gy/chunkSize);
+                    const idx=cy*chunksX+cx;
+                    if (!explorationGrid[idx]) continue; // Skip unexplored
+                }
+
                 const tile=this.voxelMap[gy]?.[gx];
                 if (tile&&tile>0) {
                     const mx=mapX+gx*this.tileSize*scale;
@@ -1660,7 +1674,10 @@ export class Renderer {
                     } else if (tile===3) {
                         this.ctx.fillStyle='#aaa'; // Base
                     } else {
-                        this.ctx.fillStyle='#444'; // Rock
+                        // Different shades for depth in minimap
+                        const depth=gy/this.mapHeight;
+                        const val=Math.floor(68-depth*20);
+                        this.ctx.fillStyle=`rgb(${val}, ${val}, ${val})`;
                     }
 
                     this.ctx.fillRect(mx, my, sampleStep*this.tileSize*scale, sampleStep*this.tileSize*scale);
