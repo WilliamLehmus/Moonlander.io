@@ -4,7 +4,7 @@
         "miningSpeedMultiplier": 1.0,
         "powerGenerationMultiplier": 1.2,
         "powerConsumptionMultiplier": 1.0,
-        "lightLossDepth": 20,
+        "lightLossDepth": 10,
         "cableMaxLength": 150
     },
     "resources": {
