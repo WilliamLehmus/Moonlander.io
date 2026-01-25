@@ -1,6 +1,23 @@
 # Moonlander.io - Game Design Document
 ## A Cooperative Lunar Exploration Experience
 
+# NEW FEATURES  Batch 3
+- Moonlander fuel: When out of fuel. The propulsion is already being disabled. Also disable the thruster particle effects. 
+- When pointing the mouse cursor at another player, show a dotted line to it and the interaction options you have such as open cargo to transfer items between you and the other player, or tether for towing, or repair from your cargo supply using your supplies. 
+- Tethering: When tethered to another player, you can tow them (or they can tow you, physics based on mass and thrust) Tethering also shares power between the two players. . 
+- Jettison sound: Implement sound effect for jettisoning cargo. (jettison.mp3)
+- EVA: Add controls for EVA mode (exit vehicle 'x' Exit Vehicle, 'e' Enter Vehicle) in the controls Ui. 
+- Generate sprites for the following buildings and implement them in the game (and construction menu). The buildings are placed next to the moon base and don't have any collision with the player or the moonlander. The sprites are scaled at 50% of the original size. Check the rest of this document for more details the effects the buildings have, and if undocumented refine, expand and implement them. 
+| Ore Storage | Ore capacity | 1000 | +500 |
+| Fuel Depot | Max fuel | 10000 | +5000 |
+| Parts Warehouse | Max spare parts | 1000 | +500 |
+| Fuel Refinery | Fuel production rate | 1x | +0.5x |
+| Solar Array | Power generation | 10/sec | +10/sec |
+| Fuel Generator | Fuel→Power conversion | 0 | +20/sec |
+| Communications Antenna | Minimap range | 400m | +400m |
+| Ship Factory | Ship types available | 1 | +1 |
+| Crafting Station | Crafting tier unlocked | 0 | +1 |
+
 # NEW FEATURES 2026-01-25 (Batch 2) - IMPLEMENTED ✓
 
 ## Summary of Implemented Features
