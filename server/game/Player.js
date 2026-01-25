@@ -1,33 +1,74 @@
+
 import Ammo from 'ammo.js';
 
+const SHIP_TYPES={
+    scout: {
+        name: 'Scout',
+        width: 20, height: 20, mass: 1,
+        maxFuel: 500, fuelConsumption: 30,
+        cargoCapacity: 500,
+        thrustForce: 80,
+        maxPower: 100
+    },
+    cargo: {
+        name: 'Cargo Hauler',
+        width: 30, height: 30, mass: 2.5,
+        maxFuel: 1000, fuelConsumption: 45,
+        cargoCapacity: 1500,
+        thrustForce: 150,
+        maxPower: 150
+    },
+    eva: {
+        name: 'Astronaut',
+        width: 6, height: 12, mass: 0.1,
+        maxFuel: 0, fuelConsumption: 0,
+        cargoCapacity: 50,
+        thrustForce: 15,
+        maxPower: 20,
+        maxOxygen: 100,
+        oxygenConsumption: 1.5 // Units per second
+    }
+};
+
 export class Player {
-    constructor(id, physicsWorld, spawnX=400, spawnY=100, config) {
+    constructor(id, physicsWorld, spawnX=400, spawnY=100, config, nickname='Explorer') {
         this.id=id;
+        this.nickname=nickname;
         this.physicsWorld=physicsWorld;
         this.config=config||{};
 
+        this.shipType='scout';
+        const stats=SHIP_TYPES[this.shipType];
+
         // Create RigidBody
-        // Box shape 20x20 (smaller to fit through 8px tile gaps)
-        this.body=this.physicsWorld.createBox(spawnX, spawnY, 20, 20, 1);
+        // Box shape based on ship type
+        this.body=this.physicsWorld.createBox(spawnX, spawnY, stats.width, stats.height, stats.mass);
         this.body.setActivationState(4); // DISABLE_DEACTIVATION
 
         const diff=this.config.difficulty||{};
 
-        // Fuel system - reduced capacity, requires careful management
-        this.fuel=500;           // Starting fuel (reduced from 1000)
-        this.maxFuel=500;        // Max fuel capacity (reduced from 1000)
-        this.fuelConsumption=30*(diff.fuelConsumptionMultiplier||1); // Fuel per second when thrusting
+        // Fuel system
+        this.fuel=stats.maxFuel;
+        this.maxFuel=stats.maxFuel;
+        this.fuelConsumption=stats.fuelConsumption*(diff.fuelConsumptionMultiplier||1);
 
-        // Power system - runs electric equipment
-        this.power=100;          // Current power
-        this.maxPower=100;       // Max power capacity
-        this.powerRegen=2*(diff.powerGenerationMultiplier||1);       // Power regeneration per second (solar)
-        this.lightsOn=true;      // Whether lights are active
-        this.lightPowerDrain=3*(diff.powerConsumptionMultiplier||1);  // Power per second for lights
-        this.miningPowerDrain=15*(diff.powerConsumptionMultiplier||1); // Power per second while mining
+        // Power system
+        this.power=stats.maxPower;
+        this.maxPower=stats.maxPower;
+        this.powerRegen=this.shipType==='eva'? 1.0:2.0; // Slow regen for EVA (ion pack)
+        this.powerRegen*=(diff.powerGenerationMultiplier||1);
+        this.lightsOn=true;
+        this.lightPowerDrain=3*(diff.powerConsumptionMultiplier||1);
+        this.miningPowerDrain=15*(diff.powerConsumptionMultiplier||1);
+
+        // Oxygen system (EVA only)
+        this.oxygen=100;
+        this.maxOxygen=100;
+        this.oxygenConsumption=0; // Set when going EVA
 
         this.damage=0; // 0-11 damage levels
-        this.inputs={thrust: false, left: false, right: false, mining: false, transferFuel: false, transferCargo: false};
+        this.inputs={thrust: false, left: false, right: false, mining: false, transferFuel: false, transferCargo: false, interact: false};
+        this.lastInteract=false; // To detect edge-trigger
         this.color=`hsl(${Math.random()*360}, 70%, 50%)`;
         this.dead=false;
         this.landed=false;
@@ -35,6 +76,9 @@ export class Player {
         this.deathTime=null; // When the player died
         this.spawnX=spawnX;
         this.spawnY=spawnY;
+
+        // Thrust force (can change with ship type)
+        this.thrustForce=stats.thrustForce;
 
         // Spotlight direction (angle in radians, 0 = right, PI/2 = down)
         this.spotlightAngle=0;
@@ -47,7 +91,7 @@ export class Player {
 
         // Cargo system
         this.cargo=[]; // Array of {type, amount}
-        this.cargoCapacity=500; // Max cargo units
+        this.cargoCapacity=stats.cargoCapacity; // Max cargo units
         this.cargoWeight=0; // Current weight affecting physics
 
         // Ping system
@@ -134,7 +178,8 @@ export class Player {
 
     // Update physics body mass based on cargo
     updateMass() {
-        const baseMass=1;
+        const stats=SHIP_TYPES[this.shipType]||SHIP_TYPES.scout;
+        const baseMass=stats.mass;
         const cargoMass=this.getCargoWeight();
         const totalMass=baseMass+cargoMass;
 
@@ -226,7 +271,8 @@ export class Player {
     update(dt) {
         if (this.dead||!this.body) return;
 
-        const THRUST_FORCE=80;
+        const stats=SHIP_TYPES[this.shipType]||SHIP_TYPES.scout;
+        this.thrustForce=stats.thrustForce; // Ensure this is always up-to-date
 
         const ammo=this.physicsWorld.ammo;
 
@@ -253,15 +299,47 @@ export class Player {
         }
 
         // Thrust - uses fuel
-        if (this.inputs.thrust&&this.fuel>0) {
-            const angle=-this.getRotation(); // Negate to match visual rotation
-            // Sprite points UP at angle=0, so adjust by -PI/2 for thrust direction
-            const thrustAngle=angle-Math.PI/2;
-            const forceX=Math.cos(thrustAngle)*THRUST_FORCE;
-            const forceY=Math.sin(thrustAngle)*THRUST_FORCE;
+        // EVA Movement (Walking/Jetpack)
+        if (this.shipType==='eva') {
+            // Apply high damping to stop quickly (walking friction)
+            this.body.setDamping(0.9, 0.0); // High linear damping, zero angular
+            this.body.setAngularFactor(new ammo.btVector3(0, 0, 0)); // No rotation for stick figure
 
-            this.body.applyCentralForce(new ammo.btVector3(forceX, forceY, 0));
-            this.fuel-=this.fuelConsumption*dt;
+            const WALK_FORCE=30;
+            const JUMP_FORCE=150;
+
+            if (this.inputs.left) {
+                this.body.applyCentralForce(new ammo.btVector3(-WALK_FORCE, 0, 0));
+            } else if (this.inputs.right) {
+                this.body.applyCentralForce(new ammo.btVector3(WALK_FORCE, 0, 0));
+            }
+
+            if (this.inputs.thrust&&this.power>0) { // Jump / Jetpack - USES POWER for EVA
+                this.body.applyCentralForce(new ammo.btVector3(0, -this.thrustForce||15, 0)); // Up is negative Y
+                this.power-=5*dt; // Ion jetpack is inefficient
+                if (this.power<0) this.power=0;
+            }
+
+            // Oxygen consumption
+            this.oxygen=Math.max(0, this.oxygen-this.oxygenConsumption*dt);
+            if (this.oxygen<=0&&!this.dead) {
+                this.takeDamage(0.5*dt); // Suffocation damage
+            }
+        } else {
+            // Ship Movement
+            this.body.setDamping(0.05, 0.05); // Basic space damping
+            this.body.setAngularFactor(new ammo.btVector3(0, 0, 1)); // Allow Z rotation
+
+            if (this.inputs.thrust&&this.fuel>0) {
+                const angle=-this.getRotation(); // Negate to match visual rotation
+                // Sprite points UP at angle=0, so adjust by -PI/2 for thrust direction
+                const thrustAngle=angle-Math.PI/2;
+                const forceX=Math.cos(thrustAngle)*this.thrustForce;
+                const forceY=Math.sin(thrustAngle)*this.thrustForce;
+
+                this.body.applyCentralForce(new ammo.btVector3(forceX, forceY, 0));
+                this.fuel-=this.fuelConsumption*dt;
+            }
         }
     }
 
@@ -314,6 +392,8 @@ export class Player {
 
         return {
             id: this.id,
+            nickname: this.nickname,
+            shipType: this.shipType,
             x: pos.x,
             y: pos.y,
             vx: vel.vx,
@@ -323,6 +403,7 @@ export class Player {
             maxFuel: this.maxFuel,
             damage: this.damage,
             thrusting: this.inputs.thrust,
+            thrustForce: this.thrustForce, // Added for EVA
             color: this.color,
             dead: this.dead,
             landed: this.landed,
@@ -333,6 +414,9 @@ export class Player {
             power: this.power,
             maxPower: this.maxPower,
             lightsOn: this.lightsOn,
+            // Oxygen system
+            oxygen: this.oxygen,
+            maxOxygen: this.maxOxygen,
             // Mining and cargo
             mining: this.mining,
             miningTarget: this.miningTarget,
@@ -452,6 +536,113 @@ export class Player {
             cargo.amount=Math.floor(cargo.amount*0.25);
         }
         this.cargo=this.cargo.filter(c => c.amount>0);
+
+        return true;
+    }
+
+    // Change ship type (must be parked at base)
+    setShipType(type, restoreState=null) {
+        // Need to access SHIP_TYPES constant defined outside class
+        const SHIP_TYPES={
+            scout: {
+                width: 20, height: 20, mass: 1,
+                maxFuel: 500, fuelConsumption: 30,
+                cargoCapacity: 500,
+                thrustForce: 80,
+                maxPower: 100
+            },
+            cargo: {
+                width: 30, height: 30, mass: 2.5,
+                maxFuel: 1000, fuelConsumption: 45,
+                cargoCapacity: 1500,
+                thrustForce: 150,
+                maxPower: 150
+            },
+            eva: {
+                width: 6, height: 12, mass: 0.1,
+                maxFuel: 0, fuelConsumption: 0,
+                cargoCapacity: 50,
+                thrustForce: 15,
+                maxPower: 20,
+                maxOxygen: 100,
+                oxygenConsumption: 1.5
+            }
+        };
+
+        const oldStats=SHIP_TYPES[this.shipType]||SHIP_TYPES.scout;
+
+        // Return existing ship stats before switching (for spawning the empty ship)
+        const previousShipState={
+            type: this.shipType,
+            fuel: this.fuel,
+            power: this.power,
+            damage: this.damage,
+            cargo: [...this.cargo], // Clone cargo
+            width: oldStats.width,
+            height: oldStats.height
+        };
+
+        if (!SHIP_TYPES[type]) return false;
+        if (this.shipType===type) return true;
+
+        const newStats=SHIP_TYPES[type];
+        this.shipType=type;
+
+        // If switching to EVA: Reset resources to full jetpack
+        // If switching to Ship (Boarding): Will be handled by caller (transferring stats from vehicle)
+        if (type==='eva') {
+            this.fuel=newStats.maxFuel;
+            this.power=newStats.maxPower;
+            this.cargo=[]; // Drop cargo (handled by spawing ship)
+        } else {
+            // New ship default stats (unless overwritten by boarding logic)
+            // But usually setShipType is called for 'upgrading' at base or boarding.
+            // If boarding, we should set fuel/cargo from the boarded ship.
+            // We'll leave that to the Entity logic in Game.js
+            this.fuel=newStats.maxFuel;
+            this.power=newStats.maxPower;
+            this.oxygen=newStats.maxOxygen||100;
+        }
+
+        // Restore state if provided (boarding a vehicle)
+        if (restoreState) {
+            this.fuel=restoreState.fuel;
+            this.power=restoreState.power;
+            this.damage=restoreState.damage;
+            this.cargo=restoreState.cargo||[];
+        }
+
+        // Update stats
+        this.maxFuel=newStats.maxFuel;
+        this.maxPower=newStats.maxPower;
+        this.maxOxygen=newStats.maxOxygen||100;
+        this.oxygenConsumption=newStats.oxygenConsumption||0;
+        this.powerRegen=type==='eva'? 1.0:2.0;
+        this.powerRegen*=(this.config.difficulty?.powerGenerationMultiplier||1);
+        this.fuelConsumption=newStats.fuelConsumption*(this.config.difficulty?.fuelConsumptionMultiplier||1);
+        this.thrustForce=newStats.thrustForce;
+
+        // Recreate body with new dimensions
+        const pos=this.getPosition();
+        const vel=this.getVelocity();
+        // const rot = this.getRotation(); // Angle in Z - not used for new body orientation (always upright)
+
+        // Remove old body
+        if (this.body) {
+            this.physicsWorld.world.removeRigidBody(this.body);
+        }
+
+        // Create new body
+        // Note: We'll reset rotation to 0 to be safe as per design "must be parked"
+        this.body=this.physicsWorld.createBox(pos.x, pos.y, newStats.width, newStats.height, newStats.mass);
+        this.body.setActivationState(4); // DISABLE_DEACTIVATION
+
+        // Restore velocity (usually 0 if parked)
+        const ammo=this.physicsWorld.ammo;
+        this.body.setLinearVelocity(new ammo.btVector3(vel.vx, vel.vy, 0));
+
+        // Recalculate mass with cargo
+        this.updateMass();
 
         return true;
     }

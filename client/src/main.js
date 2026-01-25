@@ -22,6 +22,7 @@ const roomInfoEl=document.getElementById('roomInfo');
 const roomCodeEl=document.getElementById('roomCode');
 const playerCountEl=document.getElementById('playerCount');
 const leaveBtn=document.getElementById('leaveBtn');
+const nicknameInput=document.getElementById('nickname');
 const canvas=document.getElementById('game');
 
 // Escape Menu Elements
@@ -31,6 +32,13 @@ const sfxVolumeInput=document.getElementById('sfxVolume');
 const musicVolumeInput=document.getElementById('musicVolume'); // Not in HTML yet, handled separately or add now?
 const resumeBtn=document.getElementById('resumeBtn');
 const quitBtn=document.getElementById('quitBtn');
+const stationMenuEl=document.getElementById('stationMenu');
+const closeStationBtn=document.getElementById('closeStationBtn');
+const shipListEl=document.getElementById('shipList');
+const buildingListEl=document.getElementById('buildingList');
+const hangarStatusEl=document.getElementById('hangarStatus');
+const tabBtns=document.querySelectorAll('.tab-btn');
+const stationTabs=document.querySelectorAll('.station-tab');
 
 // Add Music Volume slider logic
 // Wait, I didn't add the music volume slider to HTML yet. I should update HTML first or just assume it's there.
@@ -47,6 +55,8 @@ let isHost=false;
 let gameLoopRunning=false;
 let pendingMapData=null; // Store map data if it arrives before renderer is ready
 let isMenuOpen=false;
+let isChatOpen=false;
+let chatMessages=[]; // Store recent chat messages
 
 // Initialize audio on first user interaction
 document.addEventListener('click', () => {
@@ -164,7 +174,8 @@ createBtn.addEventListener('click', () => {
   joinBtn.disabled=true;
   showStatus('Creating game...');
 
-  socket.emit('createRoom', (response) => {
+  const nickname=nicknameInput.value.trim()||'Explorer';
+  socket.emit('createRoom', {nickname}, (response) => {
     createBtn.disabled=false;
     joinBtn.disabled=false;
 
@@ -187,12 +198,13 @@ joinBtn.addEventListener('click', () => {
   joinBtn.disabled=true;
   showStatus('Joining game...');
 
-  socket.emit('joinRoom', {code}, (response) => {
+  const nickname=nicknameInput.value.trim()||'Explorer';
+  socket.emit('joinRoom', {code, nickname}, (response) => {
     createBtn.disabled=false;
     joinBtn.disabled=false;
 
     if (response.success) {
-      console.log('Joined room:', response.code);
+      console.log('Joined room:', code);
       updatePlayerCount(response.playerCount);
     } else {
       showError(response.error||'Failed to join room');
@@ -356,23 +368,90 @@ socket.on('orePickup', (data) => {
   }
 });
 
+socket.on('chatMessage', (data) => {
+  // Add message to chat history
+  chatMessages.push({
+    playerId: data.playerId,
+    message: data.message,
+    timestamp: data.timestamp,
+    isMe: data.playerId===myId
+  });
+  // Keep only last 50 messages
+  if (chatMessages.length>50) {
+    chatMessages.shift();
+  }
+  // Pass to renderer for display
+  if (renderer) {
+    renderer.addChatMessage(data.playerId, data.nickname, data.message, data.playerId===myId);
+  }
+});
+
 // ============================================
 // GAME INPUT
 // ============================================
 
+// Chat input handling
+function openChat() {
+  if (isChatOpen) return;
+  isChatOpen=true;
+  // Create chat input if doesn't exist
+  let chatInput=document.getElementById('chatInput');
+  if (!chatInput) {
+    chatInput=document.createElement('input');
+    chatInput.id='chatInput';
+    chatInput.type='text';
+    chatInput.placeholder='Type a message...';
+    chatInput.maxLength=200;
+    chatInput.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);width:400px;padding:10px;background:rgba(0,0,0,0.8);border:2px solid #0af;color:#fff;font-family:monospace;font-size:14px;z-index:1000;outline:none;';
+    document.body.appendChild(chatInput);
+  }
+  chatInput.style.display='block';
+  chatInput.value='';
+  chatInput.focus();
+
+  chatInput.onkeydown=(e) => {
+    if (e.key==='Enter') {
+      const message=chatInput.value.trim();
+      if (message.length>0) {
+        socket.emit('chatMessage', {message});
+      }
+      closeChat();
+      e.preventDefault();
+    } else if (e.key==='Escape') {
+      closeChat();
+      e.preventDefault();
+    }
+    e.stopPropagation();
+  };
+}
+
+function closeChat() {
+  isChatOpen=false;
+  const chatInput=document.getElementById('chatInput');
+  if (chatInput) {
+    chatInput.style.display='none';
+    chatInput.blur();
+  }
+}
+
 // Handle respawn key press
 window.addEventListener('keydown', (e) => {
   if (!currentRoom) return;
+
+  // Don't process game keys while chat is open
+  if (isChatOpen) return;
 
   if (e.key==='Escape') {
     toggleMenu();
     return;
   }
 
-  // If menu is open, don't allow game input? Or allow typing if chat needed later.
-  // For now let's just not process game inputs if we want strictly modal.
-  // Note: Input.js handles movement independently. We might want to "pause" input?
-  // But game is multiplayer, real-time. So maybe just leaving it is fine.
+  // Open chat with Enter key
+  if (e.key==='Enter') {
+    openChat();
+    e.preventDefault();
+    return;
+  }
 
   if (e.key==='r'||e.key==='R') {
     const myPlayer=gameState.players.find(p => p.id===myId);
@@ -380,7 +459,106 @@ window.addEventListener('keydown', (e) => {
       socket.emit('respawn');
     }
   }
+
+  // Open Station Menu (B)
+  if (e.key==='b'||e.key==='B') {
+    const myPlayer=gameState.players.find(p => p.id===myId);
+    if (myPlayer&&myPlayer.onPad) {
+      openStationMenu();
+    }
+  }
 });
+
+// ============================================
+// STATION MENU FUNCTIONS
+// ============================================
+
+function openStationMenu() {
+  stationMenuEl.classList.remove('hidden');
+  renderShipList();
+  renderBuildingList();
+}
+
+function closeStationMenu() {
+  stationMenuEl.classList.add('hidden');
+}
+
+closeStationBtn.addEventListener('click', closeStationMenu);
+
+// Tab switching
+tabBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    // Deactivate all
+    tabBtns.forEach(b => b.classList.remove('active'));
+    stationTabs.forEach(t => t.classList.add('hidden'));
+
+    // Activate selected
+    btn.classList.add('active');
+    const tabId=`tab-${btn.dataset.tab}`;
+    document.getElementById(tabId).classList.remove('hidden');
+  });
+});
+
+const SHIP_TYPES=[
+  {id: 'scout', name: 'Scout', cargo: 500, fuel: 500, desc: 'Fast, agile, standard lander.'},
+  {id: 'cargo', name: 'Cargo Hauler', cargo: 1500, fuel: 1000, desc: 'Heavy, high capacity. Requires Ship Factory Lv2.', reqFactory: 2}
+];
+
+function renderShipList() {
+  shipListEl.innerHTML='';
+  const myPlayer=gameState.players.find(p => p.id===myId);
+  if (!myPlayer) return;
+
+  const factoryLevel=gameState.buildings?.shipFactory?.level||0;
+
+  SHIP_TYPES.forEach(ship => {
+    const card=document.createElement('div');
+    card.className=`ship-card ${myPlayer.shipType===ship.id? 'active':''}`;
+
+    const isLocked=ship.reqFactory&&factoryLevel<ship.reqFactory;
+    const isCurrent=myPlayer.shipType===ship.id;
+
+    card.innerHTML=`
+            <h4>${ship.name} ${isCurrent? '(Current)':''}</h4>
+            <div class="ship-stats">
+                <span>Cargo: ${ship.cargo}</span>
+                <span>Fuel: ${ship.fuel}</span>
+            </div>
+            <p style="font-size: 0.8rem; color: #888; margin-top: 5px;">${ship.desc}</p>
+            ${isLocked? `<p style="color: #f44; font-size: 0.8rem;">Requires Ship Factory Lv${ship.reqFactory}</p>`:''}
+            <button class="select-btn" ${isCurrent||isLocked? 'disabled':''} onclick="switchShip('${ship.id}')">
+                ${isCurrent? 'Selected':(isLocked? 'Locked':'Switch')}
+            </button>
+        `;
+
+    // Attach event listener directly to avoid global scope issues
+    const btn=card.querySelector('button');
+    if (!isCurrent&&!isLocked) {
+      btn.onclick=() => handleSwitchShip(ship.id);
+    }
+
+    shipListEl.appendChild(card);
+  });
+}
+
+function handleSwitchShip(type) {
+  hangarStatusEl.textContent='Switching ship...';
+  hangarStatusEl.style.color='#ccc';
+
+  socket.emit('switchShip', {type}, (response) => {
+    if (response.success) {
+      hangarStatusEl.textContent='Ship switched successfully!';
+      hangarStatusEl.style.color='#4f4';
+      // Re-render to update UI
+      // We need to wait for gameState update to see the new ship type reflected in myPlayer
+      // But for UI feedback we can just update the button state after a small delay or rely on next render loop
+      setTimeout(renderShipList, 200);
+    } else {
+      hangarStatusEl.textContent=`Failed: ${response.reason}`;
+      hangarStatusEl.style.color='#f44';
+    }
+  });
+}
 
 // ============================================
 // GAME LOOP

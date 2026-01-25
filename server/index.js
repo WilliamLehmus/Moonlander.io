@@ -50,7 +50,7 @@ class Room {
         this.code=code;
         this.hostId=hostId;
         this.game=new Game();
-        this.players=new Set();
+        this.players=new Map(); // socketId -> nickname
         this.gameLoop=null;
         this.ready=false;
     }
@@ -63,8 +63,8 @@ class Room {
         console.log(`Room ${this.code} initialized`);
 
         // Add any players who joined during initialization
-        for (const socketId of this.players) {
-            this.game.addPlayer(socketId);
+        for (const [socketId, nickname] of this.players) {
+            this.game.addPlayer(socketId, nickname);
         }
 
         // Start game loop for this room
@@ -74,10 +74,10 @@ class Room {
         }, 1000/60);
     }
 
-    addPlayer(socketId) {
-        this.players.add(socketId);
+    addPlayer(socketId, nickname) {
+        this.players.set(socketId, nickname);
         if (this.ready) {
-            this.game.addPlayer(socketId);
+            this.game.addPlayer(socketId, nickname);
         }
     }
 
@@ -92,7 +92,7 @@ class Room {
             console.log(`Room ${this.code} destroyed (empty)`);
         } else if (socketId===this.hostId) {
             // Transfer host to another player
-            this.hostId=Array.from(this.players)[0];
+            this.hostId=Array.from(this.players.keys())[0];
             io.to(this.code).emit('hostChanged', {newHostId: this.hostId});
             console.log(`Room ${this.code} host transferred to ${this.hostId}`);
         }
@@ -126,8 +126,9 @@ io.on('connection', (socket) => {
     socket.emit('connected', {id: socket.id});
 
     // CREATE ROOM
-    socket.on('createRoom', async (callback) => {
+    socket.on('createRoom', async (data, callback) => {
         try {
+            const nickname=data?.nickname||'Explorer';
             // Check if player is already in a room
             if (playerRooms.has(socket.id)) {
                 callback({success: false, error: 'Already in a room'});
@@ -140,7 +141,7 @@ io.on('connection', (socket) => {
             playerRooms.set(socket.id, code);
 
             socket.join(code);
-            room.addPlayer(socket.id);
+            room.addPlayer(socket.id, nickname);
 
             console.log(`Room ${code} created by ${socket.id}`);
 
@@ -162,7 +163,8 @@ io.on('connection', (socket) => {
 
     // JOIN ROOM
     socket.on('joinRoom', (data, callback) => {
-        const code=data.code?.toUpperCase();
+        const {code, nickname}=data;
+        const room=rooms.get(code?.toUpperCase());
 
         // Check if player is already in a room
         if (playerRooms.has(socket.id)) {
@@ -171,7 +173,6 @@ io.on('connection', (socket) => {
         }
 
         // Check if room exists
-        const room=rooms.get(code);
         if (!room) {
             callback({success: false, error: 'Room not found'});
             return;
@@ -185,8 +186,8 @@ io.on('connection', (socket) => {
 
         // Join the room
         socket.join(code);
-        room.addPlayer(socket.id);
         playerRooms.set(socket.id, code);
+        room.addPlayer(socket.id, nickname||'Explorer');
 
         console.log(`Player ${socket.id} joined room ${code}`);
 
@@ -215,6 +216,18 @@ io.on('connection', (socket) => {
             playerRooms.delete(socket.id);
             socket.emit('leftRoom');
             console.log(`Player ${socket.id} left room ${code}`);
+        }
+    });
+
+    // UPGRADE BUILDING
+    socket.on('upgradeBuilding', (data, callback) => {
+        const code=playerRooms.get(socket.id);
+        if (code) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const result=room.game.upgradeBuilding(data.buildingKey);
+                if (callback) callback({success: result});
+            }
         }
     });
 
@@ -289,6 +302,40 @@ io.on('connection', (socket) => {
                         socket.emit('cargoJettisoned', {amount: dropped});
                     }
                 }
+            }
+        }
+    });
+
+    // SWITCH SHIP
+    socket.on('switchShip', (data, callback) => {
+        const code=playerRooms.get(socket.id);
+        if (code) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const result=room.game.switchShip(socket.id, data.type);
+                if (callback) callback(result);
+            }
+        }
+    });
+
+    // CHAT MESSAGE
+    socket.on('chatMessage', (data) => {
+        const code=playerRooms.get(socket.id);
+        if (code&&data.message&&typeof data.message==='string') {
+            const room=rooms.get(code);
+            if (!room) return;
+
+            const nickname=room.players.get(socket.id)||'Explorer';
+            const message=data.message.trim().substring(0, 200);
+            if (message.length>0) {
+                // Broadcast to all players in room
+                io.to(code).emit('chatMessage', {
+                    playerId: socket.id,
+                    nickname: nickname,
+                    message: message,
+                    timestamp: Date.now()
+                });
+                console.log(`[${code}] ${socket.id}: ${message}`);
             }
         }
     });

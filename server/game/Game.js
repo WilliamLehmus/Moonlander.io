@@ -21,6 +21,8 @@ const MIN_FUEL_TRANSFER=100;
 const POD_RESCUE_RANGE=50;
 const GAS_FORCE=80;
 const STALACTITE_FALL_CHANCE=0.2;
+const MAX_HEIGHT_CEILING=-100; // Players cannot fly higher than this (y coordinate, negative is up)
+const GAS_POCKET_CHANCE=0.15; // 15% chance of gas pocket at depth
 
 // Ore values and mining yields
 // Values increase significantly with depth/rarity
@@ -123,6 +125,14 @@ export class Game {
         this.chunksX=Math.ceil(this.voxelMap.width/this.chunkSize);
         this.chunksY=Math.ceil(this.voxelMap.height/this.chunkSize);
         this.explorationGrid=new Uint8Array(this.chunksX*this.chunksY); // 0 = unexplored, 1 = explored
+
+        // Ship wreckages - destroyed ships that can be salvaged
+        this.wreckages=new Map(); // wreckageId -> {x, y, cargo, spareParts, playerId, body}
+        this.nextWreckageId=1;
+
+        // Parked vehicles (ships without players)
+        this.vehicles=new Map(); // vehicleId -> {id, x, y, angle, type, fuel, power, damage, cargo, body}
+        this.nextVehicleId=1;
     }
 
     // Get the effective value for a building stat
@@ -249,9 +259,9 @@ export class Game {
         console.log('Game init: complete');
     }
 
-    addPlayer(id) {
+    addPlayer(id, nickname) {
         const spawnPos=this.voxelMap.getSpawnPosition();
-        const player=new Player(id, this.physics, spawnPos.x, spawnPos.y, this.config);
+        const player=new Player(id, this.physics, spawnPos.x, spawnPos.y, this.config, nickname);
         this.players.set(id, player);
         return player;
     }
@@ -448,8 +458,105 @@ export class Game {
     handleInput(id, input) {
         const player=this.players.get(id);
         if (player) {
+            // Check for EVA toggle (interact key 'e') - Edge Trigger
+            if (input.interact&&!player.lastInteract&&!player.dead) {
+                this.toggleEVA(id);
+            }
+            player.lastInteract=!!input.interact;
             player.setInput(input);
         }
+    }
+
+    // Toggle between EVA and Ship
+    toggleEVA(playerId) {
+        const player=this.players.get(playerId);
+        if (!player||player.dead) return;
+
+        if (player.shipType==='eva') {
+            // Try to board nearby vehicle
+            const pos=player.getPosition();
+            let nearestVehicle=null;
+            let minDist=40;
+
+            for (const vehicle of this.vehicles.values()) {
+                const dx=vehicle.x-pos.x;
+                const dy=vehicle.y-pos.y;
+                const dist=Math.sqrt(dx*dx+dy*dy);
+                if (dist<minDist) {
+                    minDist=dist;
+                    nearestVehicle=vehicle;
+                }
+            }
+
+            if (nearestVehicle) {
+                this.boardVehicle(player, nearestVehicle);
+            }
+        } else {
+            // Exit ship
+            this.exitVehicle(player);
+        }
+    }
+
+    exitVehicle(player) {
+        // Must be landed or moving slowly to exit? 
+        // Let's allow exit anywhere if not too fast, but usually moonlander games are strict.
+        const vel=player.getVelocity();
+        const speed=Math.sqrt(vel.vx*vel.vx+vel.vy*vel.vy);
+        if (speed>30) {
+            // Too fast to exit!
+            return;
+        }
+
+        const stats=player.setShipType('eva'); // Returns previous ship state
+        if (!stats) return;
+
+        const pos=player.getPosition();
+        const vehicleId=`veh_${this.nextVehicleId++}`;
+
+        // Create physics body for parked vehicle
+        const body=this.physics.createBox(pos.x, pos.y, stats.width, stats.height, 1.5);
+        body.setActivationState(4);
+        body.setFriction(0.8);
+
+        const vehicle={
+            id: vehicleId,
+            x: pos.x,
+            y: pos.y,
+            angle: stats.angle||0,
+            type: stats.type,
+            fuel: stats.fuel,
+            power: stats.power,
+            damage: stats.damage,
+            cargo: stats.cargo,
+            body: body
+        };
+
+        this.vehicles.set(vehicleId, vehicle);
+        console.log(`Player ${player.id} exited ${stats.type}, vehicle created: ${vehicleId}`);
+
+        this.broadcast('vehicleCreated', {
+            id: vehicleId,
+            x: pos.x,
+            y: pos.y,
+            type: stats.type
+        });
+    }
+
+    boardVehicle(player, vehicle) {
+        console.log(`Player ${player.id} boarding ${vehicle.type} (${vehicle.id})`);
+
+        // Recreate player body and restore stats from vehicle
+        player.setShipType(vehicle.type, vehicle);
+
+        // Remove vehicle physics
+        if (vehicle.body) {
+            this.physics.world.removeRigidBody(vehicle.body);
+        }
+
+        // Remove from map
+        this.vehicles.delete(vehicle.id);
+
+        this.broadcast('vehicleRemoved', {id: vehicle.id});
     }
 
     update() {
@@ -566,6 +673,9 @@ export class Game {
         // Tether physics
         this.updateTethers(dt);
 
+        // Update vehicles
+        this.updateVehicles(dt);
+
         // Survival pods
         this.updatePods(dt);
 
@@ -577,8 +687,176 @@ export class Game {
             player.update(dt);
         }
 
+        // Enforce flight ceiling
+        this.enforceFlightCeiling();
+
         // Update Exploration
         this.updateExploration();
+    }
+
+    // Switch ship type for a player
+    switchShip(playerId, type) {
+        const player=this.players.get(playerId);
+        if (!player||player.dead) return {success: false, reason: 'invalid_player'};
+
+        // Must be on landing pad to switch
+        if (!player.onPad) {
+            return {success: false, reason: 'not_landed'};
+        }
+
+        // Check if ship type is unlocked (e.g. requires Ship Factory level)
+        // Hardcoded for now: Cargo ship requires level 2 factory
+        if (type==='cargo') {
+            const factoryLevel=this.buildings.shipFactory.level;
+            if (factoryLevel<2) {
+                return {success: false, reason: 'locked', requiredLevel: 2};
+            }
+        }
+
+        if (player.setShipType(type)) {
+            console.log(`Player ${player.id} switched to ${type}`);
+            return {success: true};
+        }
+
+        return {success: false, reason: 'unknown_error'};
+    }
+
+    // Create a wreckage when a player's ship is destroyed
+    createWreckage(player) {
+        const pos=player.getPosition();
+        const wreckageId=`wreck_${this.nextWreckageId++}`;
+
+        // Create physics body for wreckage (can be towed)
+        const body=this.physics.createBox(pos.x, pos.y, 25, 25, 2); // Heavier than player
+        body.setActivationState(4); // DISABLE_DEACTIVATION
+        body.setFriction(0.8);
+
+        // Copy cargo from player
+        const cargo=[...player.cargo];
+        const spareParts=Math.floor(20+Math.random()*30); // Salvageable parts from the ship
+
+        const wreckage={
+            id: wreckageId,
+            x: pos.x,
+            y: pos.y,
+            shipType: player.shipType||'scout',
+            angle: -player.getRotation(), // Capture rotation at death
+            cargo,
+            spareParts,
+            originalPlayerId: player.id,
+            body,
+            tetheredTo: null,
+            tetherLength: 0
+        };
+
+        this.wreckages.set(wreckageId, wreckage);
+
+        console.log(`Wreckage ${wreckageId} created at (${pos.x.toFixed(0)}, ${pos.y.toFixed(0)}) with ${cargo.length} cargo types`);
+
+        // Broadcast wreckage creation
+        this.broadcast('wreckageCreated', {
+            id: wreckageId,
+            x: pos.x,
+            y: pos.y,
+            hasCargo: cargo.length>0
+        });
+
+        return wreckageId;
+    }
+
+    // Salvage a wreckage at the landing pad
+    salvageWreckage(wreckageId) {
+        const wreckage=this.wreckages.get(wreckageId);
+        if (!wreckage) return;
+
+        // Add cargo to base storage
+        for (const cargoItem of wreckage.cargo) {
+            const oreConfig=ORE_CONFIG[cargoItem.type];
+            if (oreConfig) {
+                const oreNameMap={
+                    'Iron': 'iron', 'Copper': 'copper', 'Bitite': 'bitite',
+                    'Silver': 'silver', 'Titanium': 'titanium', 'Gold': 'gold',
+                    'Platinum': 'platinum', 'Diamond': 'diamond'
+                };
+                const storageKey=oreNameMap[oreConfig.name];
+                if (storageKey) {
+                    this.baseResources[storageKey]+=cargoItem.amount;
+                }
+            }
+        }
+
+        // Add salvaged spare parts
+        this.baseResources.spareParts=Math.min(
+            this.baseResources.maxSpareParts,
+            this.baseResources.spareParts+wreckage.spareParts
+        );
+
+        // Remove physics body
+        if (wreckage.body) {
+            this.physics.world.removeRigidBody(wreckage.body);
+        }
+
+        // Remove from wreckages
+        this.wreckages.delete(wreckageId);
+
+        console.log(`Wreckage ${wreckageId} salvaged: +${wreckage.spareParts} parts`);
+
+        // Broadcast
+        this.broadcast('wreckageSalvaged', {
+            id: wreckageId,
+            spareParts: wreckage.spareParts
+        });
+    }
+
+    // Update wreckage physics and check for salvage
+    updateWreckages(dt) {
+        for (const [id, wreckage] of this.wreckages) {
+            // Update position from physics
+            const transform=new this.physics.ammo.btTransform();
+            wreckage.body.getMotionState().getWorldTransform(transform);
+            const origin=transform.getOrigin();
+            const rot=transform.getRotation();
+
+            wreckage.x=origin.x();
+            wreckage.y=origin.y();
+
+            // Get rotation z
+            const z=rot.z();
+            const w=rot.w();
+            wreckage.angle=2*Math.atan2(z, w);
+
+            // Check if wreckage is on landing pad
+            if (this.voxelMap.isOnLandingPad(wreckage.x, wreckage.y)) {
+                const vel=wreckage.body.getLinearVelocity();
+                const speed=Math.sqrt(vel.x()*vel.x()+vel.y()*vel.y());
+                if (speed<10) { // Moving slowly enough to salvage
+                    this.salvageWreckage(id);
+                }
+            }
+        }
+    }
+
+    // Prevent players from flying too high (into space)
+    enforceFlightCeiling() {
+        for (const player of this.players.values()) {
+            if (player.dead) continue;
+
+            const pos=player.getPosition();
+
+            // If player is above ceiling, push them back down
+            if (pos.y<MAX_HEIGHT_CEILING) {
+                const ammo=this.physics.ammo;
+                const vel=player.getVelocity();
+
+                // Cancel upward velocity
+                if (vel.vy<0) {
+                    player.body.setLinearVelocity(new ammo.btVector3(vel.vx, Math.abs(vel.vy)*0.3, 0));
+                }
+
+                // Apply downward force
+                player.body.applyCentralForce(new ammo.btVector3(0, 50, 0));
+            }
+        }
     }
 
     updateExploration() {
@@ -881,11 +1159,13 @@ export class Game {
             return;
         }
 
-        // Find nearest player to tether to
+        // Find nearest player or wreckage to tether to
         const pos=player.getPosition();
         let nearest=null;
         let nearestDist=Infinity;
+        let nearestType='player';
 
+        // Check players
         for (const [id, other] of this.players) {
             if (id===playerId||other.dead) continue;
 
@@ -897,12 +1177,46 @@ export class Game {
             if (dist<=this.config.tether.attachRange&&dist<nearestDist) {
                 nearestDist=dist;
                 nearest=other;
+                nearestType='player';
+            }
+        }
+
+        // Check wreckages
+        for (const [id, wreckage] of this.wreckages) {
+            const dx=wreckage.x-pos.x;
+            const dy=wreckage.y-pos.y;
+            const dist=Math.sqrt(dx*dx+dy*dy);
+
+            if (dist<=this.config.tether.attachRange&&dist<nearestDist) {
+                nearestDist=dist;
+                nearest=wreckage;
+                nearestType='wreckage';
             }
         }
 
         if (nearest) {
-            this.attachTether(player, nearest);
+            if (nearestType==='player') {
+                this.attachTether(player, nearest);
+            } else {
+                this.attachTetherToWreckage(player, nearest);
+            }
         }
+    }
+
+    // Attach tether to wreckage
+    attachTetherToWreckage(player, wreckage) {
+        player.tetheredTo=wreckage.id;
+        wreckage.tetheredTo=player.id;
+
+        const pos=player.getPosition();
+        const dx=wreckage.x-pos.x;
+        const dy=wreckage.y-pos.y;
+        const dist=Math.sqrt(dx*dx+dy*dy);
+
+        player.tetherLength=dist;
+        wreckage.tetherLength=dist;
+
+        console.log(`Tether attached between ${player.id} and wreckage ${wreckage.id}`);
     }
 
     // Attach tether between two players
@@ -925,7 +1239,8 @@ export class Game {
     // Detach tether
     detachTether(player) {
         const otherId=player.tetheredTo;
-        const other=this.players.get(otherId);
+        let other=this.players.get(otherId);
+        if (!other) other=this.wreckages.get(otherId);
 
         player.tetheredTo=null;
         player.tetherLength=0;
@@ -934,7 +1249,8 @@ export class Game {
         if (other) {
             other.tetheredTo=null;
             other.tetherLength=0;
-            other.tetherTension=0;
+            // Wreckages don't have tetherTension property usually, but let's be safe
+            if (other.tetherTension!==undefined) other.tetherTension=0;
         }
 
         console.log(`Tether detached from ${player.id}`);
@@ -947,21 +1263,34 @@ export class Game {
         for (const [id, player] of this.players) {
             if (!player.tetheredTo||processed.has(id)) continue;
 
-            const other=this.players.get(player.tetheredTo);
-            if (!other||other.dead) {
-                // Other player gone or dead, detach
+            let other=this.players.get(player.tetheredTo);
+            let isWreckage=false;
+
+            if (!other) {
+                other=this.wreckages.get(player.tetheredTo);
+                isWreckage=!!other;
+            }
+
+            if (!other||(!isWreckage&&other.dead)) {
+                // Other object gone or dead, detach
                 this.detachTether(player);
                 continue;
             }
 
             processed.add(id);
-            processed.add(player.tetheredTo);
+            if (!isWreckage) processed.add(player.tetheredTo);
 
             // If this player is dead, tether can drag them
             // (This enables rescue towing)
 
             const pos1=player.getPosition();
-            const pos2=other.getPosition();
+            let pos2;
+
+            if (isWreckage) {
+                pos2={x: other.x, y: other.y};
+            } else {
+                pos2=other.getPosition();
+            }
 
             const dx=pos2.x-pos1.x;
             const dy=pos2.y-pos1.y;
@@ -969,7 +1298,11 @@ export class Game {
 
             // Update tether length
             player.tetherLength=dist;
-            other.tetherLength=dist;
+            if (isWreckage) {
+                other.tetherLength=dist;
+            } else {
+                other.tetherLength=dist;
+            }
 
             // Check for snap
             if (dist>this.config.tether.snapLength) {
@@ -982,7 +1315,7 @@ export class Game {
             const cableLen=this.config.difficulty.cableMaxLength||150;
             const tension=Math.max(0, (dist-cableLen)/(this.config.tether.snapLength-cableLen));
             player.tetherTension=tension;
-            other.tetherTension=tension;
+            if (!isWreckage) other.tetherTension=tension;
 
             // Apply constraint force when taut
             if (dist>cableLen) {
@@ -1000,7 +1333,14 @@ export class Game {
                 if (!player.dead) {
                     player.body.applyCentralForce(new ammo.btVector3(nx*forceMag, ny*forceMag, 0));
                 }
-                if (!other.dead) {
+
+                if (isWreckage) {
+                    // Apply force to wreckage
+                    if (other.body) {
+                        other.body.activate(true); // Ensure it's active
+                        other.body.applyCentralForce(new ammo.btVector3(-nx*forceMag, -ny*forceMag, 0));
+                    }
+                } else if (!other.dead) {
                     other.body.applyCentralForce(new ammo.btVector3(-nx*forceMag, -ny*forceMag, 0));
                 }
             }
@@ -1207,8 +1547,60 @@ export class Game {
             basePosition: this.voxelMap.basePosition,
             basePadBounds: this.voxelMap.basePadBounds,
             explorationGrid: this.explorationGrid, // Send explored chunks
-            antennaRange: this.getAntennaRange()  // For minimap range
+            antennaRange: this.getAntennaRange(),  // For minimap range
+            wreckages: this.serializeWreckages(),  // Send active wreckages
+            vehicles: this.serializeVehicles()     // Send parked vehicles
         };
+    }
+
+    // Serialize vehicles for client
+    serializeVehicles() {
+        const result=[];
+        for (const vehicle of this.vehicles.values()) {
+            result.push({
+                id: vehicle.id,
+                x: vehicle.x,
+                y: vehicle.y,
+                angle: vehicle.angle||0,
+                type: vehicle.type,
+                damage: vehicle.damage
+            });
+        }
+        return result;
+    }
+
+    updateVehicles(dt) {
+        for (const vehicle of this.vehicles.values()) {
+            const transform=new this.physics.ammo.btTransform();
+            vehicle.body.getMotionState().getWorldTransform(transform);
+            const origin=transform.getOrigin();
+            const rot=transform.getRotation();
+
+            vehicle.x=origin.x();
+            vehicle.y=origin.y();
+
+            const z=rot.z();
+            const w=rot.w();
+            vehicle.angle=2*Math.atan2(z, w);
+        }
+    }
+
+    // Serialize wreckages for client
+    serializeWreckages() {
+        const result=[];
+        for (const [id, wreckage] of this.wreckages) {
+            result.push({
+                id: wreckage.id,
+                x: wreckage.x,
+                y: wreckage.y,
+                angle: wreckage.angle||0,
+                shipType: wreckage.shipType,
+                cargo: wreckage.cargo,
+                spareParts: wreckage.spareParts,
+                tetheredTo: wreckage.tetheredTo
+            });
+        }
+        return result;
     }
 
     // Serialize buildings for client

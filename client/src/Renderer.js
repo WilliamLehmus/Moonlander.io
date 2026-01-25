@@ -183,6 +183,15 @@ export class Renderer {
             console.log(`Lander sprite loaded: ${this.spriteFrameWidth}x${this.spriteFrameHeight} per frame`);
         };
 
+        // Cargo ship sprite
+        this.cargoShipSprite=new Image();
+        this.cargoShipSprite.src='/sprites/moonlander_cargo_sprites.png';
+        this.cargoShipSpriteLoaded=false;
+        this.cargoShipSprite.onload=() => {
+            this.cargoShipSpriteLoaded=true;
+            console.log(`Cargo ship sprite loaded`);
+        };
+
         // Moon base sprite
         this.moonBaseSprite=new Image();
         this.moonBaseSprite.src='/sprites/moonbase_level1.png';
@@ -214,6 +223,10 @@ export class Renderer {
 
         // Floating text for ore pickups
         this.floatingTexts=[];
+
+        // Chat messages (displayed in bottom-left)
+        this.chatMessages=[];
+        this.chatDisplayDuration=8000; // 8 seconds to display
 
         // Lighting configuration
         this.surfaceY=0; // Will be set from map data (where full light starts)
@@ -967,6 +980,11 @@ export class Renderer {
             }
         }
 
+        // Draw parked vehicles
+        if (state.vehicles) {
+            this.drawVehicles(state.vehicles);
+        }
+
         // Draw players
         for (const player of state.players) {
             this.drawPlayer(player, player.id===myId);
@@ -995,6 +1013,13 @@ export class Renderer {
         // Draw ore glow effects on top of darkness (ores glow faintly in the dark)
         this.drawOreGlow(state.players, myId);
 
+        // Draw wreckages
+        if (state.wreckages&&state.wreckages.length>0) {
+            this.drawWreckages(state.wreckages);
+        }
+
+
+
         // Draw floating texts (ore pickups, etc.)
         this.drawFloatingTexts();
 
@@ -1003,6 +1028,9 @@ export class Renderer {
 
         // Draw minimap
         this.drawMinimap(myPlayer, state);
+
+        // Draw chat messages
+        this.drawChat();
 
         // Draw controls help (bottom left)
         this.drawControlsHelp();
@@ -1542,15 +1570,31 @@ export class Renderer {
     }
 
     drawPlayer(player, isMe) {
-        const {x, y, angle, color, thrusting, dead, damage=0}=player;
+        const {x, y, angle, color, thrusting, dead, damage=0, shipType}=player;
 
         if (dead) return;
+
+        if (shipType==='eva') {
+            this.drawEVAPlayer(player, isMe);
+            return;
+        }
 
         this.ctx.save();
         this.ctx.translate(x, y);
         this.ctx.rotate(angle);
 
         if (this.spriteLoaded) {
+            // Select sprite based on ship type
+            let sprite=this.landerSprite;
+            let width=40;
+            let height=40*(this.spriteFrameHeight/this.spriteFrameWidth);
+
+            if (player.shipType==='cargo'&&this.cargoShipSpriteLoaded) {
+                sprite=this.cargoShipSprite;
+                width=50; // Cargo ship is bigger
+                height=50*(this.spriteFrameHeight/this.spriteFrameWidth);
+            }
+
             // Draw sprite from sprite sheet
             // 4x3 grid, damage level 0-11
             const damageLevel=Math.min(11, Math.max(0, Math.floor(damage)));
@@ -1560,16 +1604,12 @@ export class Renderer {
             const srcX=frameX*this.spriteFrameWidth;
             const srcY=frameY*this.spriteFrameHeight;
 
-            // Draw sprite centered
-            const drawWidth=40;
-            const drawHeight=40*(this.spriteFrameHeight/this.spriteFrameWidth);
-
             this.ctx.drawImage(
-                this.landerSprite,
+                sprite,
                 srcX, srcY,
                 this.spriteFrameWidth, this.spriteFrameHeight,
-                -drawWidth/2, -drawHeight/2,
-                drawWidth, drawHeight
+                -width/2, -height/2,
+                width, height
             );
 
         } else {
@@ -1591,12 +1631,206 @@ export class Renderer {
         this.ctx.restore();
     }
 
+    drawEVAPlayer(player, isMe) {
+        const {x, y, vx, vy, color, thrusting, angle}=player;
+        const time=performance.now();
+
+        this.ctx.save();
+        this.ctx.translate(x, y);
+        // Stick figure stays upright, but leans slightly with velocity
+        const lean=vx*0.02;
+        this.ctx.rotate(lean);
+
+        this.ctx.strokeStyle=color;
+        this.ctx.lineWidth=2;
+        this.ctx.lineCap='round';
+
+        // Procedural animation
+        const speed=Math.sqrt(vx*vx+vy*vy);
+        const isWalking=speed>5&&!thrusting;
+        const walkPhase=(time*0.01*speed*0.1)%(Math.PI*2);
+
+        // Limbs positions
+        const torsoTop={x: 0, y: -6};
+        const torsoBottom={x: 0, y: 2};
+
+        // Head
+        this.ctx.beginPath();
+        this.ctx.arc(0, -9, 3, 0, Math.PI*2);
+        this.ctx.fillStyle=color;
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        // Torso
+        this.ctx.beginPath();
+        this.ctx.moveTo(torsoTop.x, torsoTop.y);
+        this.ctx.lineTo(torsoBottom.x, torsoBottom.y);
+        this.ctx.stroke();
+
+        // Arms
+        let leftArmEnd, rightArmEnd;
+        if (thrusting) {
+            // Arms out for stability
+            leftArmEnd={x: -6, y: -2};
+            rightArmEnd={x: 6, y: -2};
+        } else {
+            // Sway arms when walking
+            const armSway=isWalking? Math.sin(walkPhase)*5:0;
+            leftArmEnd={x: -4-armSway, y: 0+armSway*0.5};
+            rightArmEnd={x: 4+armSway, y: 0-armSway*0.5};
+        }
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(torsoTop.x, torsoTop.y);
+        this.ctx.lineTo(leftArmEnd.x, leftArmEnd.y);
+        this.ctx.moveTo(torsoTop.x, torsoTop.y);
+        this.ctx.lineTo(rightArmEnd.x, rightArmEnd.y);
+        this.ctx.stroke();
+
+        // Legs
+        let leftLegEnd, rightLegEnd;
+        if (thrusting) {
+            // Legs tuck in/down
+            leftLegEnd={x: -2, y: 8};
+            rightLegEnd={x: 2, y: 8};
+        } else {
+            // Walk cycle
+            const legSway=isWalking? Math.sin(walkPhase)*5:0;
+            const legLift=isWalking? Math.abs(Math.cos(walkPhase))*3:0;
+            leftLegEnd={x: -3-legSway, y: 8-legLift};
+            rightLegEnd={x: 3+legSway, y: 8-(isWalking? Math.abs(Math.cos(walkPhase+Math.PI))*3:0)};
+        }
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(torsoBottom.x, torsoBottom.y);
+        this.ctx.lineTo(leftLegEnd.x, leftLegEnd.y);
+        this.ctx.moveTo(torsoBottom.x, torsoBottom.y);
+        this.ctx.lineTo(rightLegEnd.x, rightLegEnd.y);
+        this.ctx.stroke();
+
+        this.ctx.restore();
+    }
+
+    drawVehicles(vehicles) {
+        for (const vehicle of vehicles) {
+            this.ctx.save();
+            this.ctx.translate(vehicle.x, vehicle.y);
+            this.ctx.rotate(vehicle.angle||0);
+
+            // Re-use ship drawing logic but for a static object
+            if (this.spriteLoaded) {
+                let sprite=this.landerSprite;
+                let width=40;
+                let height=40*(this.spriteFrameHeight/this.spriteFrameWidth);
+
+                if (vehicle.type==='cargo'&&this.cargoShipSpriteLoaded) {
+                    sprite=this.cargoShipSprite;
+                    width=50;
+                    height=50*(this.spriteFrameHeight/this.spriteFrameWidth);
+                }
+
+                const damageLevel=Math.min(11, Math.max(0, Math.floor(vehicle.damage||0)));
+                const frameX=damageLevel%4;
+                const frameY=Math.floor(damageLevel/4);
+
+                this.ctx.drawImage(
+                    sprite,
+                    frameX*this.spriteFrameWidth, frameY*this.spriteFrameHeight,
+                    this.spriteFrameWidth, this.spriteFrameHeight,
+                    -width/2, -height/2,
+                    width, height
+                );
+            } else {
+                this.ctx.fillStyle='#555';
+                this.ctx.fillRect(-10, -10, 20, 20);
+            }
+
+            // Draw "Parked" label above vehicle
+            this.ctx.rotate(-vehicle.angle||0);
+            this.ctx.fillStyle='rgba(0, 255, 255, 0.5)';
+            this.ctx.font='10px monospace';
+            this.ctx.textAlign='center';
+            this.ctx.fillText('[E] BOARD', 0, -30);
+
+            this.ctx.restore();
+        }
+    }
+
+    drawWreckages(wreckages) {
+        for (const wreckage of wreckages) {
+            this.ctx.save();
+            this.ctx.translate(wreckage.x, wreckage.y);
+            this.ctx.rotate(wreckage.angle||0);
+
+            if (this.spriteLoaded) {
+                // Select sprite based on ship type
+                let sprite=this.landerSprite;
+                let drawWidth=40;
+                let drawHeight=40*(this.spriteFrameHeight/this.spriteFrameWidth);
+
+                if (wreckage.shipType==='cargo'&&this.cargoShipSpriteLoaded) {
+                    sprite=this.cargoShipSprite;
+                    drawWidth=50; // Cargo ship is bigger
+                    drawHeight=50*(this.spriteFrameHeight/this.spriteFrameWidth);
+                }
+
+                // Draw sprite from sprite sheet - max damage frame (11)
+                const damageLevel=11;
+                const frameX=damageLevel%4;
+                const frameY=Math.floor(damageLevel/4);
+
+                const srcX=frameX*this.spriteFrameWidth;
+                const srcY=frameY*this.spriteFrameHeight;
+
+                // Darken it
+                this.ctx.filter='brightness(0.7) sepia(0.3)';
+
+                this.ctx.drawImage(
+                    sprite,
+                    srcX, srcY,
+                    this.spriteFrameWidth, this.spriteFrameHeight,
+                    -drawWidth/2, -drawHeight/2,
+                    drawWidth, drawHeight
+                );
+
+                this.ctx.filter='none';
+
+            } else {
+                // Fallback: draw procedural destroyed ship
+                this.ctx.fillStyle='#444'; // Dark gray
+                this.ctx.strokeStyle='#222';
+                this.ctx.lineWidth=2;
+
+                this.ctx.beginPath();
+                this.ctx.moveTo(15, 0);
+                this.ctx.lineTo(-10, -10);
+                this.ctx.lineTo(-5, 0);
+                this.ctx.lineTo(-10, 10);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+            }
+
+            // Draw cargo bag if it has cargo
+            if (wreckage.cargo&&wreckage.cargo.length>0) {
+                this.ctx.fillStyle='#dcb15b'; // Gold-ish bag color
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, 8, 0, Math.PI*2);
+                this.ctx.fill();
+                this.ctx.strokeStyle='#000';
+                this.ctx.stroke();
+            }
+
+            this.ctx.restore();
+        }
+    }
+
     drawControlsHelp() {
         const helpX=20;
         const helpY=this.canvas.height-200;
 
         this.ctx.fillStyle='rgba(0, 0, 0, 0.6)';
-        this.ctx.fillRect(helpX-5, helpY-20, 200, 195);
+        this.ctx.fillRect(helpX-5, helpY-20, 200, 215);
 
         this.ctx.fillStyle='#aaa';
         this.ctx.font='bold 12px monospace';
@@ -1610,7 +1844,9 @@ export class Renderer {
             ['W / UP', 'Thrust'],
             ['A / D', 'Rotate left/right'],
             ['SPACE', 'Mine ore (hold)'],
-            ['E', 'Attach/detach tether'],
+            ['E', 'Interact (Exit/Board)'],
+            ['G', 'Toggle tether'],
+            ['B', 'Open Station Menu'],
             ['F', 'Transfer fuel (docked)'],
             ['J', 'Jettison 25% cargo'],
             ['1', 'Ping: Check this out'],
@@ -1782,18 +2018,35 @@ export class Renderer {
         const barWidth=200;
         const barHeight=20;
 
-        // Fuel bar (use maxFuel from player)
-        const maxFuel=myPlayer.maxFuel||500;
-        const fuelPercent=Math.max(0, myPlayer.fuel/maxFuel);
-        this.ctx.fillStyle='#333';
-        this.ctx.fillRect(barX, barY, barWidth, barHeight);
-        this.ctx.fillStyle=fuelPercent>0.3? '#4a4':'#a44';
-        this.ctx.fillRect(barX, barY, barWidth*fuelPercent, barHeight);
-        this.ctx.strokeStyle='#fff';
-        this.ctx.lineWidth=2;
-        this.ctx.strokeRect(barX, barY, barWidth, barHeight);
-        this.ctx.fillStyle='#fff';
-        this.ctx.fillText(`FUEL: ${Math.floor(myPlayer.fuel)}/${maxFuel}`, barX, barY+barHeight+20);
+        // Fuel bar (only if not EVA)
+        const isEVA=myPlayer.shipType==='eva';
+        if (!isEVA) {
+            const maxFuel=myPlayer.maxFuel||500;
+            const fuelPercent=Math.max(0, myPlayer.fuel/maxFuel);
+            this.ctx.fillStyle='#333';
+            this.ctx.fillRect(barX, barY, barWidth, barHeight);
+            this.ctx.fillStyle=fuelPercent>0.3? '#4a4':'#a44';
+            this.ctx.fillRect(barX, barY, barWidth*fuelPercent, barHeight);
+            this.ctx.strokeStyle='#fff';
+            this.ctx.lineWidth=2;
+            this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+            this.ctx.fillStyle='#fff';
+            this.ctx.fillText(`FUEL: ${Math.floor(myPlayer.fuel)}/${maxFuel}`, barX, barY+barHeight+20);
+        } else {
+            // Oxygen bar for EVA
+            const oxygen=myPlayer.oxygen||0;
+            const maxOxygen=myPlayer.maxOxygen||100;
+            const oxPercent=Math.max(0, oxygen/maxOxygen);
+            this.ctx.fillStyle='#333';
+            this.ctx.fillRect(barX, barY, barWidth, barHeight);
+            this.ctx.fillStyle=oxPercent>0.5? '#0ff':oxPercent>0.2? '#aa4':'#f00';
+            this.ctx.fillRect(barX, barY, barWidth*oxPercent, barHeight);
+            this.ctx.strokeStyle='#fff';
+            this.ctx.lineWidth=2;
+            this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+            this.ctx.fillStyle='#fff';
+            this.ctx.fillText(`OXYGEN: ${Math.floor(oxygen)}%`, barX, barY+barHeight+20);
+        }
 
         // Power bar
         const maxPower=myPlayer.maxPower||100;
@@ -2113,6 +2366,60 @@ export class Renderer {
 
             this.ctx.restore();
         }
+    }
+
+    // Add a chat message
+    addChatMessage(playerId, nickname, message, isMe) {
+        this.chatMessages.push({
+            playerId: playerId.substring(0, 8),
+            nickname: nickname||playerId.substring(0, 8),
+            message,
+            isMe,
+            timestamp: Date.now()
+        });
+        // Keep only last 10 messages
+        if (this.chatMessages.length>10) {
+            this.chatMessages.shift();
+        }
+    }
+
+    // Draw chat messages in bottom middle
+    drawChat() {
+        const now=Date.now();
+        // Filter out expired messages
+        this.chatMessages=this.chatMessages.filter(m => now-m.timestamp<this.chatDisplayDuration);
+
+        if (this.chatMessages.length===0) return;
+
+        const ctx=this.ctx;
+        const centerX=this.canvas.width/2;
+        let y=this.canvas.height-180; // Above thrusters/bottom UI
+
+        ctx.save();
+        ctx.font='bold 14px monospace';
+        ctx.textAlign='center';
+
+        for (const msg of this.chatMessages) {
+            const age=now-msg.timestamp;
+            const fadeStart=this.chatDisplayDuration-2000;
+            const alpha=age>fadeStart? 1-(age-fadeStart)/2000:1;
+
+            ctx.globalAlpha=alpha;
+
+            const text=`${msg.nickname}: ${msg.message}`;
+
+            // Outline
+            ctx.strokeStyle='#000';
+            ctx.lineWidth=3;
+            ctx.strokeText(text, centerX, y);
+
+            ctx.fillStyle='#fff';
+            ctx.fillText(text, centerX, y);
+
+            y-=20; // Move up for next message
+        }
+
+        ctx.restore();
     }
 
     // Draw scrambled minimap when out of antenna range

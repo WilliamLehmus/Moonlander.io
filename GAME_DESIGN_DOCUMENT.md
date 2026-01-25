@@ -1,15 +1,50 @@
 # Moonlander.io - Game Design Document
 ## A Cooperative Lunar Exploration Experience
 
-# New features 2026-01-26 - Not implemented
-Player chat - Press enter to chat with all players in the game. 
-A destroyed ship will remain in place with all it's cargo and parts. 
-It can be salvaged by towing it to a landing pad where it's recycled.
-Implement a max height that the player fly upwards to. 
-Implement a craftable ship: moonlander_cargo_sprites.png, it's a cargo ship that is bulkier and heavier but can carry more cargo and can be used to transport ore and parts. The crafted ships are shared between players. Any player that lands at the landing pad where it was crafted can switch to it. A player parked at the landing pad can switch to any ship available at that landing pad. Implement a UI for crafting, it should show the available ships and the materials needed to craft them, a base building menu where the user can build cables and lights. Like outlined in the new features 2026-01-25, the cables / pipes system is implemented and quite expansive. Add a cargo hold to the landing pad and ship where the player can store cargo and parts. 
-Each ship has a limited space for cargo and parts. 
-A player can exit a ship, and walk around, it's a stick figure that that can move and jump and dig and mine and jump in to any parked ship without any player in it. 
+# NEW FEATURES 2026-01-26 - IMPLEMENTED ✓
 
+## Summary of Implemented Features
+
+### 1. Persistent Ship Wreckages ✓
+- **Wreckage Creation**: When a ship is destroyed, a physical wreckage is spawned in its place.
+- **Cargo Retention**: Wreckages retain all cargo the player had at the time of destruction.
+- **Spare Parts Salvage**: Wreckages contain a random amount of spare parts (20-30) that can be recovered.
+- **Dynamic Physics**: Wreckages are physical objects in the world that can be pushed, moved, and towed.
+
+### 2. Salvage & Recyling System ✓
+- **Tethering to Wreckages**: Players can use their tether ('E') to hook onto wreckages.
+- **Towing**: Real-world physics-based towing allows players to drag wreckages back to base.
+- **Recycling**: Bringing a wreckage to the landing pad automatically recycles it, depositing its cargo and spare parts into the base stores.
+
+### 3. Ship Hangar & Station Menu ✓
+- **Station Menu (B)**: A new UI accessible when landed at the base.
+- **Ship Switching**: Players can switch between different unlocked ship types.
+- **Persistence**: Ship stats (fuel, power, damage) are maintained or handled logically during switching.
+
+### 4. Advanced Ship Types ✓
+- **Cargo Hauler**: A bulkier, heavier ship with triple the cargo capacity (1500) and double the fuel capacity (1000). Requires Ship Factory Level 2.
+- **Detailed Calibration**: Each ship type has unique mass, dimensions, thrust force, and fuel consumption rates.
+- **Visual Distinction**: Custom sprites for different ship classes.
+
+### 5. Construction & Base Expansion UI ✓
+- **Base Operations**: Players can now view all base buildings, their current levels, and upgrade costs through the Station Menu.
+- **Upgrade Support**: Integrated with the resource system—upgrading requires specific materials (Basic, Industrial, Advanced, Quantum).
+- **Status Monitoring**: Real-time display of base resources, refining status, and antenna range.
+
+### 6. EVA Mode (Astronaut) ✓
+- **Exiting/Boarding**: Players can exit their ship anywhere (if moving slowly) using 'E'. The ship stays behind as a persistent parked vehicle.
+- **Astronaut Unit**: A stick-figure representation with procedural ragdoll-style animation.
+- **Walking & Physics**: Custom ground-based movement with physics damping.
+- **Ion Jetpack**: Uses **Power** instead of Fuel. Highly inefficient but allows for recharging over time.
+- **Survival**:
+    - **Oxygen**: Consumed while outside. Depletion leads to hull damage (suffocation).
+    - **Power Regen**: Slowly regenerates (1.0/sec) while in EVA.
+- **UI & Controls**:
+    - **Interact (E)**: Context-sensitive key for exiting ships, boarding parked vehicles, or toggling tethers.
+    - **HUD**: Dynamic display switching between Fuel and Oxygen bars.
+- **Precision Scale**: Access to tight caves and crevices unreachable by ship.
+
+---
 
 # NEW FEATURES 2026-01-25 - IMPLEMENTED ✓
 

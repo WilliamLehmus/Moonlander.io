@@ -14,6 +14,10 @@
     <h1>Moonlander.io</h1>
     <p class="subtitle">Cooperative Lunar Mining</p>
 
+    <div class="nickname-section">
+      <input type="text" id="nickname" placeholder="Enter Nickname" maxlength="15" />
+    </div>
+
     <div class="lobby-buttons">
       <button id="createBtn">Create Game</button>
 
@@ -61,6 +65,35 @@
       </div>
       <button id="resumeBtn">Resume Game</button>
       <button id="quitBtn" class="danger">Quit to Lobby</button>
+    </div>
+  </div>
+
+  <!-- Station Menu -->
+  <div id="stationMenu" class="modal hidden">
+    <div class="modal-content station-content">
+      <h2>Moon Base Operations</h2>
+
+      <div class="station-tabs">
+        <button class="tab-btn active" data-tab="hangar">Hangar</button>
+        <button class="tab-btn" data-tab="construction">Construction</button>
+      </div>
+
+      <div id="tab-hangar" class="station-tab active">
+        <h3>Available Ships</h3>
+        <div class="ship-list" id="shipList">
+          <!-- Ship items injected here via JS -->
+        </div>
+        <div id="hangarStatus" class="status-msg"></div>
+      </div>
+
+      <div id="tab-construction" class="station-tab hidden">
+        <h3>Base Upgrades</h3>
+        <div class="building-list" id="buildingList">
+          <!-- Buildings injected here -->
+        </div>
+      </div>
+
+      <button id="closeStationBtn">Close</button>
     </div>
   </div>
 
