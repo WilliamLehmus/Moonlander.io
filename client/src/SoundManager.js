@@ -51,7 +51,8 @@ export class SoundManager {
             refueling2: '/Sounds/refueling2.mp3',
             power_down: '/Sounds/power_down.mp3',
             refinery: '/Sounds/refinery.mp3',
-            low_fuel_warning: '/Sounds/low_fuel_warning.mp3'
+            low_fuel_warning: '/Sounds/low_fuel_warning.mp3',
+            jettison: '/Sounds/jettison.mp3'
         };
 
         const menuMusicSrc='/Music/Track1.mp3';

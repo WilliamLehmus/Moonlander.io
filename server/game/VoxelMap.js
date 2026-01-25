@@ -601,10 +601,34 @@ export class VoxelMap {
             y: padWorldPos.y
         };
 
+        // NEW: Store positions for all buildings
+        this.buildingPositions=[
+            {id: 'ore_storage', x: baseWorldPos.x+120, y: baseWorldPos.y},
+            {id: 'fuel_depot', x: baseWorldPos.x+240, y: baseWorldPos.y},
+            {id: 'parts_warehouse', x: baseWorldPos.x+360, y: baseWorldPos.y},
+            {id: 'fuel_refinery', x: baseWorldPos.x+480, y: baseWorldPos.y},
+            {id: 'solar_array', x: baseWorldPos.x+600, y: baseWorldPos.y},
+            {id: 'fuel_generator', x: baseWorldPos.x+720, y: baseWorldPos.y},
+            {id: 'communications_antenna', x: baseWorldPos.x+840, y: baseWorldPos.y},
+            {id: 'ship_factory', x: baseWorldPos.x+960, y: baseWorldPos.y},
+            {id: 'crafting_station', x: baseWorldPos.x+1080, y: baseWorldPos.y}
+        ];
+
+        // Ensure ground is flat under all buildings
+        const endBuildingX=baseStartX+(10*15); // Approximate 15 tiles per building
+        for (let x=baseStartX; x<baseStartX+150; x++) {
+            for (let y=groundLevel; y<groundLevel+8; y++) {
+                if (y<this.height-1&&x<this.width-1) {
+                    this.tiles[y][x]=TileTypes.HARD_ROCK;
+                }
+            }
+        }
+
+        // Spawn position is above the landing pad
         // Spawn position is above the landing pad
         this.spawnPosition={
             x: padWorldPos.x,
-            y: padWorldPos.y-50
+            y: padWorldPos.y-150
         };
 
         console.log(`Moon base created: pad at (${this.landingPadPosition.x}, ${this.landingPadPosition.y}), base at (${this.basePosition.x}, ${this.basePosition.y})`);
@@ -757,7 +781,8 @@ export class VoxelMap {
             let startX=-1;
             for (let x=0; x<this.width; x++) {
                 // Determine if this tile needs a collision body
-                const isSolid=this.tiles[y][x]!==TileTypes.EMPTY;
+                const tile=this.tiles[y][x];
+                const isSolid=tile!==TileTypes.EMPTY&&tile!==TileTypes.BASE;
                 const needsBody=isSolid&&this.isSurfaceTile(x, y);
 
                 if (needsBody) {
@@ -782,7 +807,8 @@ export class VoxelMap {
 
         // Create landing platform collision body if bounds exist
         if (this.basePadBounds&&this.physicsWorld&&this.physicsWorld.isReady) {
-            const platformY=this.basePadBounds.y1+20;
+            // Raised the collision box height to prevent sinking (was +10, now +3)
+            const platformY=this.basePadBounds.y1+3;
             const platformWidth=(this.basePadBounds.x2-this.basePadBounds.x1);
             const platformHeight=4;
             const platformX=(this.basePadBounds.x1+this.basePadBounds.x2)/2;
@@ -839,9 +865,18 @@ export class VoxelMap {
         };
     }
 
+    getBuildingLocation(id) {
+        if (!this.buildingPositions) return null;
+        return this.buildingPositions.find(p => p.id===id);
+    }
+
     getSpawnPosition() {
         if (this.spawnPosition) {
-            return this.spawnPosition;
+            // Add random X spread for multiple players (+/- 50 pixels)
+            return {
+                x: this.spawnPosition.x+(Math.random()-0.5)*100,
+                y: this.spawnPosition.y
+            };
         }
         if (this.landingPadPosition) {
             return {

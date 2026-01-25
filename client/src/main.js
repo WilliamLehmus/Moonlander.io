@@ -396,8 +396,8 @@ socket.on('orePickup', (data) => {
 });
 
 socket.on('playSound', (data) => {
-  if (data.type==='toggle_light') {
-    soundManager.playSound('toggle_light');
+  if (data.type&&soundManager.sounds[data.type]) {
+    soundManager.playSound(data.type);
   }
 });
 
@@ -548,7 +548,7 @@ function renderShipList() {
   const myPlayer=gameState.players.find(p => p.id===myId);
   if (!myPlayer) return;
 
-  const factoryLevel=gameState.buildings?.shipFactory?.level||0;
+  const factoryLevel=gameState.buildings?.ship_factory?.level||0;
 
   SHIP_TYPES.forEach(ship => {
     const card=document.createElement('div');
@@ -599,6 +599,62 @@ function handleSwitchShip(type) {
   });
 }
 
+function renderBuildingList() {
+  buildingListEl.innerHTML='';
+  if (!gameState.buildings) return;
+
+  const buildings=Object.entries(gameState.buildings);
+
+  // Sort: constructed first, then unbuilt
+  buildings.sort((a, b) => {
+    return (b[1].level>0? 1:0)-(a[1].level>0? 1:0);
+  });
+
+  buildings.forEach(([key, b]) => {
+    const card=document.createElement('div');
+    const isBuilt=b.level>0;
+    const isMax=b.level>=b.maxLevel;
+
+    card.className=`building-card ${isBuilt? '':'unbuilt'}`;
+
+    // Cost formatting
+    let costHtml='';
+    if (b.nextCost) {
+      const costs=[];
+      if (b.nextCost.basic) costs.push(`<span class="cost-basic">${b.nextCost.basic} Bas</span>`);
+      if (b.nextCost.industrial) costs.push(`<span class="cost-industrial">${b.nextCost.industrial} Ind</span>`);
+      if (b.nextCost.advanced) costs.push(`<span class="cost-advanced">${b.nextCost.advanced} Adv</span>`);
+      if (b.nextCost.quantum) costs.push(`<span class="cost-quantum">${b.nextCost.quantum} Qnt</span>`);
+      costHtml=`<div class="building-cost" style="margin-top:5px; font-size:0.8rem">Cost: ${costs.join(', ')}</div>`;
+    } else if (isMax) {
+      costHtml=`<div class="building-cost" style="margin-top:5px; font-size:0.8rem">Max Level Reached</div>`;
+    }
+
+    card.innerHTML=`
+        <div class="building-header" style="display:flex; justify-content:space-between; align-items:center">
+            <h4 style="margin:0">${b.name} <span class="level-badge" style="background:#444; padding:2px 5px; border-radius:3px; font-size:0.7em">Lv ${b.level}</span></h4>
+            ${!isBuilt? '<span class="new-badge" style="background:#f90; color:#000; padding:2px 5px; border-radius:3px; font-size:0.7em; font-weight:bold">NEW</span>':''}
+        </div>
+        <p class="building-desc" style="font-size: 0.8rem; color: #aaa; margin: 5px 0;">Effect: ${b.currentEffect||'None'} ${!isMax? '-> Increase':''}</p>
+        ${costHtml}
+        <button class="upgrade-btn select-btn" ${!b.canUpgrade||isMax? 'disabled':''} style="width:100%; margin-top:8px" onclick="handleUpgradeBuilding('${key}')">
+            ${!isBuilt? 'Construct':(isMax? 'Max Level':'Upgrade')}
+        </button>
+    `;
+
+    buildingListEl.appendChild(card);
+  });
+}
+
+// Make it global so HTML onclick works
+window.handleUpgradeBuilding=function(key) {
+  socket.emit('upgradeBuilding', {buildingKey: key}, (response) => {
+    if (response.success) {
+      soundManager.playSound('refinery'); // Use industrial sound for construction
+    }
+  });
+};
+
 // ============================================
 // GAME LOOP
 // ============================================
@@ -609,10 +665,10 @@ function gameLoop() {
   if (currentRoom&&renderer) {
     renderer.draw(gameState, myId);
 
-    // Update spotlight angle for input
     if (input) {
       const myPlayer=gameState.players.find(p => p.id===myId);
       if (myPlayer&&!myPlayer.dead) {
+        renderer.setMousePos(input.mouseX, input.mouseY);
         input.updateSpotlight(myPlayer.x, myPlayer.y, renderer.cameraX, renderer.cameraY);
 
         // Update thrust sound

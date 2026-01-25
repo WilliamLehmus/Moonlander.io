@@ -92,33 +92,35 @@ export class Game {
         // Buildings system
         // Each building has levels 0-5 (0 = not built, 1-5 = upgrade levels)
         this.buildings={
-            // Storage buildings
-            oreStorage: {level: 1, name: 'Ore Storage', effect: 'oreCapacity', baseValue: 1000, perLevel: 500},
-            fuelStorage: {level: 1, name: 'Fuel Depot', effect: 'maxFuel', baseValue: 10000, perLevel: 5000},
-            partsStorage: {level: 1, name: 'Parts Warehouse', effect: 'maxSpareParts', baseValue: 1000, perLevel: 500},
+            // Storage
+            ore_storage: {level: 0, name: 'Ore Storage', effect: 'oreCapacity', baseValue: 0, perLevel: 500},
+            fuel_depot: {level: 0, name: 'Fuel Depot', effect: 'maxFuel', baseValue: 0, perLevel: 5000},
+            parts_warehouse: {level: 0, name: 'Parts Warehouse', effect: 'maxSpareParts', baseValue: 0, perLevel: 500},
 
-            // Production buildings
-            fuelRefinery: {level: 1, name: 'Fuel Refinery', effect: 'fuelProduction', baseValue: 1, perLevel: 0.5},
-            solarArray: {level: 1, name: 'Solar Array', effect: 'powerGeneration', baseValue: 10, perLevel: 10},
-            fuelGenerator: {level: 0, name: 'Fuel Generator', effect: 'fuelPower', baseValue: 0, perLevel: 20},
+            // Production
+            fuel_refinery: {level: 0, name: 'Fuel Refinery', effect: 'fuelProduction', baseValue: 0, perLevel: 0.5},
+            solar_array: {level: 0, name: 'Solar Array', effect: 'powerGeneration', baseValue: 0, perLevel: 10},
+            fuel_generator: {level: 0, name: 'Fuel Generator', effect: 'fuelPower', baseValue: 0, perLevel: 20},
 
-            // Utility buildings
-            antenna: {level: 1, name: 'Communications Antenna', effect: 'antennaRange', baseValue: 400, perLevel: 400},
-            shipFactory: {level: 0, name: 'Ship Factory', effect: 'shipTypes', baseValue: 1, perLevel: 1},
-            craftingStation: {level: 0, name: 'Crafting Station', effect: 'crafting', baseValue: 0, perLevel: 1}
+            // Utility
+            communications_antenna: {level: 0, name: 'Comms Antenna', effect: 'antennaRange', baseValue: 0, perLevel: 400},
+            ship_factory: {level: 0, name: 'Ship Factory', effect: 'shipTypes', baseValue: 0, perLevel: 1},
+            crafting_station: {level: 0, name: 'Crafting Station', effect: 'crafting', baseValue: 0, perLevel: 1}
         };
 
         // Building upgrade costs (materials required per level)
+        // Building upgrade costs (materials required per level)
+        // Level 0 -> 1 is construction cost
         this.buildingCosts={
-            oreStorage: [{basic: 50}, {basic: 100, industrial: 25}, {industrial: 75, advanced: 10}, {advanced: 50, quantum: 5}, {quantum: 25}],
-            fuelStorage: [{basic: 50}, {basic: 100, industrial: 25}, {industrial: 75, advanced: 10}, {advanced: 50, quantum: 5}, {quantum: 25}],
-            partsStorage: [{basic: 50}, {basic: 100, industrial: 25}, {industrial: 75, advanced: 10}, {advanced: 50, quantum: 5}, {quantum: 25}],
-            fuelRefinery: [{basic: 75}, {industrial: 50}, {industrial: 100, advanced: 25}, {advanced: 75}, {advanced: 100, quantum: 10}],
-            solarArray: [{basic: 50}, {industrial: 40}, {industrial: 80, advanced: 15}, {advanced: 60}, {quantum: 20}],
-            fuelGenerator: [{industrial: 75}, {industrial: 100, advanced: 20}, {advanced: 50}, {advanced: 100, quantum: 15}, {quantum: 40}],
-            antenna: [{basic: 100}, {industrial: 75}, {industrial: 150, advanced: 25}, {advanced: 100}, {advanced: 150, quantum: 25}],
-            shipFactory: [{industrial: 100, advanced: 25}, {advanced: 75}, {advanced: 150, quantum: 20}, {quantum: 50}, {quantum: 100}],
-            craftingStation: [{basic: 75, industrial: 25}, {industrial: 75}, {advanced: 50}, {advanced: 100, quantum: 10}, {quantum: 30}]
+            ore_storage: [{basic: 50}, {basic: 100}, {industrial: 25}, {industrial: 75}, {advanced: 50}],
+            fuel_depot: [{basic: 50}, {basic: 100}, {industrial: 25}, {industrial: 75}, {advanced: 50}],
+            parts_warehouse: [{basic: 50}, {basic: 100}, {industrial: 25}, {industrial: 75}, {advanced: 50}],
+            fuel_refinery: [{basic: 75}, {industrial: 50}, {industrial: 100}, {advanced: 75}, {quantum: 10}],
+            solar_array: [{basic: 50}, {industrial: 40}, {industrial: 80}, {advanced: 60}, {quantum: 20}],
+            fuel_generator: [{industrial: 75}, {industrial: 100}, {advanced: 50}, {advanced: 100}, {quantum: 40}],
+            communications_antenna: [{basic: 100}, {industrial: 75}, {industrial: 150}, {advanced: 100}, {quantum: 25}],
+            ship_factory: [{industrial: 100}, {advanced: 75}, {advanced: 150}, {quantum: 50}, {quantum: 100}],
+            crafting_station: [{basic: 75}, {industrial: 75}, {advanced: 50}, {advanced: 100}, {quantum: 30}]
         };
 
         // Exploration Fog of War
@@ -145,8 +147,9 @@ export class Game {
     }
 
     // Get antenna range for minimap
+    // Get antenna range for minimap
     getAntennaRange() {
-        return this.getBuildingEffect('antenna');
+        return 200+this.getBuildingEffect('communications_antenna');
     }
 
     // Check if player can afford building upgrade
@@ -215,13 +218,18 @@ export class Game {
 
     // Apply all building effects to base resources
     applyBuildingEffects() {
-        // Storage buildings
-        this.baseResources.oreCapacity=this.getBuildingEffect('oreStorage');
-        this.baseResources.maxFuel=this.getBuildingEffect('fuelStorage');
-        this.baseResources.maxSpareParts=this.getBuildingEffect('partsStorage');
+        // Storage buildings (Base value + effect)
+        // Base stats (without buildings)
+        const baseOre=500;
+        const baseFuel=2000;
+        const baseParts=200;
+
+        this.baseResources.oreCapacity=baseOre+this.getBuildingEffect('ore_storage');
+        this.baseResources.maxFuel=baseFuel+this.getBuildingEffect('fuel_depot');
+        this.baseResources.maxSpareParts=baseParts+this.getBuildingEffect('parts_warehouse');
 
         // Power generation from solar
-        this.baseResources.powerGeneration=this.getBuildingEffect('solarArray');
+        this.baseResources.powerGeneration=10+this.getBuildingEffect('solar_array');
 
         // Fuel generator provides extra power from fuel (handled in processStationResources)
     }
@@ -1395,6 +1403,20 @@ export class Game {
                     }
                 } else if (!other.dead) {
                     other.body.applyCentralForce(new ammo.btVector3(-nx*forceMag, -ny*forceMag, 0));
+
+                    // POWER SHARING: Gradually equalize power between linked players
+                    if (player.power!==other.power) {
+                        const transferRate=5*dt; // 5 units per second
+                        if (player.power>other.power) {
+                            const diff=Math.min(transferRate, (player.power-other.power)/2);
+                            player.power-=diff;
+                            other.power+=diff;
+                        } else {
+                            const diff=Math.min(transferRate, (other.power-player.power)/2);
+                            other.power-=diff;
+                            player.power+=diff;
+                        }
+                    }
                 }
             }
         }
@@ -1614,8 +1636,26 @@ export class Game {
             antennaRange: this.getAntennaRange(),  // For minimap range
             wreckages: this.serializeWreckages(),  // Send active wreckages
             vehicles: this.serializeVehicles(),    // Send parked vehicles
-            refining: this.isRefining
+            refining: this.isRefining,
+            activeBuildings: this.getActiveBuildings() // NEW: Send only built buildings
         };
+    }
+
+    getActiveBuildings() {
+        const active=[];
+        for (const [key, building] of Object.entries(this.buildings)) {
+            if (building.level>0) {
+                const pos=this.voxelMap.getBuildingLocation(key);
+                if (pos) {
+                    active.push({
+                        id: key,
+                        x: pos.x,
+                        y: pos.y
+                    });
+                }
+            }
+        }
+        return active;
     }
 
     // Serialize vehicles for client

@@ -142,6 +142,9 @@ export class Renderer {
         this.soundManager=soundManager;
         this.ctx=canvas.getContext('2d');
 
+        this.mouseX=0;
+        this.mouseY=0;
+
         // Lighting system (must be created before resize)
         this.lightCanvas=document.createElement('canvas');
         this.lightCtx=this.lightCanvas.getContext('2d');
@@ -210,6 +213,23 @@ export class Renderer {
             console.log(`Landing platform sprite loaded: ${this.landingPlatformSprite.width}x${this.landingPlatformSprite.height}`);
         };
 
+        // NEW: Load building sprites
+        this.buildingSprites={};
+        const buildingSubtypes=[
+            'ore_storage', 'fuel_depot', 'parts_warehouse',
+            'fuel_refinery', 'solar_array', 'fuel_generator',
+            'communications_antenna', 'ship_factory', 'crafting_station'
+        ];
+        this.buildingsLoadedCount=0;
+        buildingSubtypes.forEach(id => {
+            const img=new Image();
+            img.src=`/sprites/${id}.png`;
+            img.onload=() => {
+                this.buildingSprites[id]=img;
+                this.buildingsLoadedCount++;
+            };
+        });
+
         // Particles
         this.particles=[];
 
@@ -253,6 +273,11 @@ export class Renderer {
         console.log(`Voxel map loaded: ${this.mapWidth}x${this.mapHeight} at ${this.tileSize}px`);
     }
 
+    setMousePos(x, y) {
+        this.mouseX=x;
+        this.mouseY=y;
+    }
+
     setTerrain(data) {
         if (data.tiles) {
             this.setVoxelMap(data);
@@ -270,6 +295,7 @@ export class Renderer {
         if (data.basePadBounds) {
             this.basePadBounds=data.basePadBounds;
         }
+        // Removed dynamic building positions from map data
         if (data.config&&data.config.difficulty) {
             console.log("Applying game config:", data.config);
             this.fullDarkDepth=data.config.difficulty.lightLossDepth||300;
@@ -283,8 +309,8 @@ export class Renderer {
     }
 
     spawnThrustParticles(player) {
-        const {x, y, angle, thrusting}=player;
-        if (!thrusting) return;
+        const {x, y, angle, thrusting, fuel}=player;
+        if (!thrusting||fuel<=0) return;
 
         // Sprite points UP at angle=0, so adjust by -PI/2 for calculations
         const thrustAngle=angle-Math.PI/2;
@@ -950,7 +976,7 @@ export class Renderer {
         this.drawVoxelTerrain();
 
         // Draw moon base structure
-        this.drawMoonBase();
+        this.drawMoonBase(state);
 
         // Draw particles (behind ships)
         for (const particle of this.particles) {
@@ -1023,6 +1049,9 @@ export class Renderer {
         }
 
 
+
+        // Draw targeted player interaction UI
+        this.drawInteractionUI(state.players, myId);
 
         // Draw floating texts (ore pickups, etc.)
         this.drawFloatingTexts();
@@ -1188,7 +1217,7 @@ export class Renderer {
         }
     }
 
-    drawMoonBase() {
+    drawMoonBase(state) {
         // Draw landing platform sprite
         if (this.landingPadPosition&&this.landingPlatformSpriteLoaded) {
             const padX=this.landingPadPosition.x;
@@ -1246,6 +1275,26 @@ export class Renderer {
             this.ctx.fillRect(x-50, y-5, 100, 10);
             this.ctx.fillStyle='#ffff00';
             this.ctx.fillRect(x-50, y-5, 100, 2);
+        }
+
+        // NEW: Draw active buildings from Game State
+        if (state&&state.activeBuildings&&this.buildingsLoadedCount>0) {
+            const baseScale=0.18;
+            const buildingScale=baseScale*0.5; // 50% scale
+
+            state.activeBuildings.forEach(b => {
+                const sprite=this.buildingSprites[b.id];
+                if (sprite) {
+                    const w=sprite.width*buildingScale;
+                    const h=sprite.height*buildingScale;
+                    this.ctx.drawImage(
+                        sprite,
+                        b.x-w/2,
+                        b.y-h+30, // Offset to align with ground
+                        w, h
+                    );
+                }
+            });
         }
     }
 
@@ -1848,7 +1897,8 @@ export class Renderer {
             ['W / UP', 'Thrust'],
             ['A / D', 'Rotate left/right'],
             ['SPACE', 'Mine ore (hold)'],
-            ['X / E', 'Interact (Exit/Board)'],
+            ['X', 'Exit Vehicle'],
+            ['E', 'Enter Vehicle / Interact'],
             ['G', 'Toggle tether'],
             ['B', 'Open Station Menu'],
             ['F', 'Transfer fuel (docked)'],
@@ -1879,6 +1929,73 @@ export class Renderer {
             this.ctx.font='12px monospace';
             this.ctx.fillText(desc, helpX+75, helpY+12+i*15);
         });
+    }
+
+    drawInteractionUI(players, myId) {
+        const myPlayer=players.find(p => p.id===myId);
+        if (!myPlayer||myPlayer.dead) return;
+
+        let targetPlayer=null;
+        const mouseWorldX=this.mouseX+this.cameraX;
+        const mouseWorldY=this.mouseY+this.cameraY;
+
+        // Find player under mouse
+        for (const player of players) {
+            if (player.id===myId||player.dead) continue;
+
+            const dx=player.x-mouseWorldX;
+            const dy=player.y-mouseWorldY;
+            const dist=Math.sqrt(dx*dx+dy*dy);
+
+            if (dist<30) { // Targeting radius
+                targetPlayer=player;
+                break;
+            }
+        }
+
+        if (targetPlayer) {
+            const screenX=targetPlayer.x-this.cameraX;
+            const screenY=targetPlayer.y-this.cameraY;
+            const myScreenX=myPlayer.x-this.cameraX;
+            const myScreenY=myPlayer.y-this.cameraY;
+
+            // Draw dotted line
+            this.ctx.save();
+            this.ctx.setLineDash([5, 5]);
+            this.ctx.strokeStyle='rgba(0, 255, 255, 0.6)';
+            this.ctx.lineWidth=2;
+            this.ctx.beginPath();
+            this.ctx.moveTo(myScreenX, myScreenY);
+            this.ctx.lineTo(screenX, screenY);
+            this.ctx.stroke();
+
+            // Draw interaction options near target
+            const optionsX=screenX+30;
+            const optionsY=screenY-30;
+
+            this.ctx.fillStyle='rgba(0, 0, 0, 0.8)';
+            this.ctx.strokeStyle='#0ff';
+            this.ctx.lineWidth=1;
+            this.ctx.beginPath();
+            this.ctx.roundRect(optionsX, optionsY, 150, 70, 5);
+            this.ctx.fill();
+            this.ctx.stroke();
+
+            this.ctx.fillStyle='#fff';
+            this.ctx.font='12px monospace';
+            this.ctx.textAlign='left';
+            this.ctx.fillText(`[T] Open Cargo`, optionsX+10, optionsY+20);
+            this.ctx.fillText(`[G] Tether / Tow`, optionsX+10, optionsY+40);
+            this.ctx.fillText(`[R] Use Spare Parts`, optionsX+10, optionsY+60);
+
+            // Draw targeted player name
+            this.ctx.fillStyle='#0ff';
+            this.ctx.font='bold 14px monospace';
+            this.ctx.textAlign='center';
+            this.ctx.fillText(targetPlayer.nickname||'Player', screenX, screenY-45);
+
+            this.ctx.restore();
+        }
     }
 
     drawMinimap(myPlayer, state) {

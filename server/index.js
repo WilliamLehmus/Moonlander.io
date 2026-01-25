@@ -307,6 +307,8 @@ io.on('connection', (socket) => {
                     if (dropped>0) {
                         console.log(`Player ${socket.id} jettisoned ${dropped} cargo`);
                         socket.emit('cargoJettisoned', {amount: dropped});
+                        // BROADCAST JETTISON SOUND
+                        room.game.broadcast('playSound', {type: 'jettison', playerId: socket.id});
                     }
                 }
             }
