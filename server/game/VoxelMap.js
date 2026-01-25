@@ -656,8 +656,32 @@ export class VoxelMap {
         if (tile===TileTypes.EMPTY||tile===TileTypes.BASE||tile===TileTypes.PAD) return false;
 
         this.tiles[gy][gx]=TileTypes.EMPTY;
+
+        // 1. Remove the old collision body (handles merged bodies internally)
         this.removeCollisionBody(gx, gy);
+
+        // 2. Check all 4 neighbors. If they are now surface tiles, ensure they have collision.
+        this.ensureTileCollision(gx-1, gy);
+        this.ensureTileCollision(gx+1, gy);
+        this.ensureTileCollision(gx, gy-1);
+        this.ensureTileCollision(gx, gy+1);
+
         return true;
+    }
+
+    ensureTileCollision(gx, gy) {
+        if (gx<0||gx>=this.width||gy<0||gy>=this.height) return;
+
+        // If it's solid and now on the surface, it needs a body
+        if (this.tiles[gy][gx]!==TileTypes.EMPTY&&this.isSurfaceTile(gx, gy)) {
+            if (!this.collisionBodies.has(`${gx},${gy}`)) {
+                this.createCollisionBody(gx, gy);
+            }
+        } else {
+            // If it's no longer a surface tile (rare during destruction, but possible if it was a floating pixel)
+            // Or if it was already empty. 
+            // We just leave it.
+        }
     }
 
     createCollisionBody(gx, gy) {
@@ -687,8 +711,22 @@ export class VoxelMap {
         const key=`${gx},${gy}`;
         const body=this.collisionBodies.get(key);
         if (body) {
+            // Remove the body from physics world
             this.physicsWorld.world.removeRigidBody(body);
-            this.collisionBodies.delete(key);
+
+            // If it's a merged body, clean up all its cell mappings in the Map
+            if (body._voxelRange) {
+                const {startX, endX, y}=body._voxelRange;
+                for (let x=startX; x<=endX; x++) {
+                    this.collisionBodies.delete(`${x},${y}`);
+                }
+            } else {
+                this.collisionBodies.delete(key);
+            }
+
+            // Clean up Ammo object (optional but good practice)
+            // Note: In some Ammo builds, you should destroy shapes etc. 
+            // but here we reuse shapes if possible or let Ammo handle it.
         }
     }
 
@@ -711,36 +749,82 @@ export class VoxelMap {
     }
 
     createAllCollisionBodies() {
-        console.log('Creating collision bodies (surface tiles only)...');
+        console.log('Creating collision bodies (Horizontal merging optimization)...');
         let count=0;
+
+        // Horizontal scanline merging
         for (let y=0; y<this.height; y++) {
+            let startX=-1;
             for (let x=0; x<this.width; x++) {
-                // Only create collision bodies for surface tiles
-                if (this.isSurfaceTile(x, y)) {
-                    this.createCollisionBody(x, y);
-                    count++;
+                // Determine if this tile needs a collision body
+                const isSolid=this.tiles[y][x]!==TileTypes.EMPTY;
+                const needsBody=isSolid&&this.isSurfaceTile(x, y);
+
+                if (needsBody) {
+                    if (startX===-1) startX=x;
+                } else {
+                    if (startX!==-1) {
+                        // Create a merged box for the range [startX, x-1]
+                        this.createMergedCollisionBody(startX, x-1, y);
+                        count++;
+                        startX=-1;
+                    }
                 }
             }
+            // Catch trailing segment
+            if (startX!==-1) {
+                this.createMergedCollisionBody(startX, this.width-1, y);
+                count++;
+            }
         }
-        console.log(`Created ${count} collision bodies (optimized)`);
+
+        console.log(`Created ${count} optimized collision bodies (down from ~${this.width*this.height*0.2})`);
 
         // Create landing platform collision body if bounds exist
         if (this.basePadBounds&&this.physicsWorld&&this.physicsWorld.isReady) {
-            const platformY=this.basePadBounds.y1+20; // Slightly down from top of detection zone
+            const platformY=this.basePadBounds.y1+20;
             const platformWidth=(this.basePadBounds.x2-this.basePadBounds.x1);
-            const platformHeight=4; // Thin platform
+            const platformHeight=4;
             const platformX=(this.basePadBounds.x1+this.basePadBounds.x2)/2;
 
-            // Create a static box
             this.physicsWorld.createBox(
                 platformX,
                 platformY,
                 platformWidth,
                 platformHeight,
-                0 // mass 0 = static
+                0
             );
             console.log(`Created landing platform at y=${platformY}`);
         }
+    }
+
+    createMergedCollisionBody(startX, endX, y) {
+        if (!this.physicsWorld||!this.physicsWorld.isReady) return null;
+
+        const widthTiles=(endX-startX)+1;
+        const width=widthTiles*this.tileSize;
+
+        // Center position of the merged box
+        const worldX=(startX*this.tileSize+endX*this.tileSize+this.tileSize)/2;
+        const worldY=y*this.tileSize+this.tileSize/2;
+
+        const body=this.physicsWorld.createBox(
+            worldX,
+            worldY,
+            width,
+            this.tileSize,
+            0
+        );
+
+        if (body) {
+            // Map every tile in the merged box to this body so destroyTile still works
+            for (let x=startX; x<=endX; x++) {
+                this.collisionBodies.set(`${x},${y}`, body);
+            }
+            // Store the range on the body for potential splitting in the future
+            body._voxelRange={startX, endX, y};
+        }
+        return body;
     }
 
     serialize() {

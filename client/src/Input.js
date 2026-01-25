@@ -10,7 +10,10 @@ export class Input {
             mining: false,
             transferFuel: false,
             transferCargo: false,
-            interact: false
+            interact: false,
+            toggleLights: false,
+            toggleSpotlight: false,
+            toggleAntenna: false
         };
 
         // Mouse position in canvas coordinates
@@ -110,6 +113,24 @@ export class Input {
             case 'KeyG':
                 if (isDown) this.toggleTether(); // Remapped tether to G
                 break;
+            case 'KeyL':
+                if (this.state.toggleSpotlight!==isDown) {
+                    this.state.toggleSpotlight=isDown;
+                    changed=true;
+                }
+                break;
+            case 'KeyK':
+                if (this.state.toggleLights!==isDown) {
+                    this.state.toggleLights=isDown;
+                    changed=true;
+                }
+                break;
+            case 'KeyH':
+                if (this.state.toggleAntenna!==isDown) {
+                    this.state.toggleAntenna=isDown;
+                    changed=true;
+                }
+                break;
             case 'KeyJ':
                 if (isDown) this.jettisonCargo(); // Drop 25% of cargo
                 break;
@@ -173,7 +194,10 @@ export class Input {
             transferFuel: this.state.transferFuel,
             spotlightAngle: this.spotlightAngle,
             transferCargo: this.state.transferCargo,
-            interact: this.state.interact
+            interact: this.state.interact,
+            toggleLights: this.state.toggleLights,
+            toggleSpotlight: this.state.toggleSpotlight,
+            toggleAntenna: this.state.toggleAntenna
         });
     }
 }

@@ -9,6 +9,22 @@ Moonlander power: The moonlander's power regeneration is enough to power the shi
 Moonlander fuel: The lowest fuel level is 0. A moonlander with 0 fuel will not be able to move or ignite it's thrusters. Power generation is decoupled from moonlanders fuel. It will still regenerate power if the moonlander is out of fuel according to the logic above. 
 Sounds: Implement toggle light and toggle spotlight sound effects (toggle_light.mp3). Implement a message received notificaton when someone types in the chat (message_notification_short.mp3) and add a UI slider to the settings to toggle notification volume. Default the message received notification volume to 50%.Implement mining laser sound (mining_laser_small.mp3) that is constantly played while mining.Implement a on death music sound track (on_death_music.mp3) that is played when a player dies. Implement a heartbeat sound (heartbeat.mp3) that is played when a player is in EVA mode and is running out of oxygen. Implement a sound effect that is played when a ore is mined (ore_mined.mp3). Implement a menu pop sound (menu_pop.mp3) that is played when a player clicks or changes a menu option. This also applies for all menu actions in a base such as opening the station menu or the construction menu.
 
+# NEW FEATURES Batch 2
+- Add a splash screen (splash_screen.png) in the main menu
+- Implement transfer cargo sound (transfer_cargo.mp3), speed up sound 50% and repeat as long as player is transferring cargo
+- Implement refueling sound effect (refueling1.mp3 & refueling2.mp3)
+- Implement power down sound effect (power_down.mp3) when ship runs out of power
+- Round of available supply on death screen to nearest integer.
+- Add two new music tracks to the game (Track3.mp3 & Track4.mp3). Implement
+blending between tracks so that there is no silence between tracks.
+- Implementing refinery sound when the refinery is refining resources (refinery.mp3). Make sure that the state management of the refinery is correct and that the sound is played when the refinery is refining resources and stopped when the refinery is not refining resources. The sound should be a loop.
+- Implement low fuel warning sound (low_fuel_warning.mp3) when the moonlander's fuel is below 25% and the moonlander is not docked to a base. The sound should be a loop.
+
+Bug fixes: 
+- on_death_music.mp3 is not played when a player dies (ie. when the player crashes the moonlander or runs out of oxygen)
+- The mining laser sound should only be played when the mining laser is actually mining resources. 
+
+
 ## Summary of Implemented Features
 
 ### 1. Persistent Ship Wreckages ✓
@@ -18,7 +34,7 @@ Sounds: Implement toggle light and toggle spotlight sound effects (toggle_light.
 - **Dynamic Physics**: Wreckages are physical objects in the world that can be pushed, moved, and towed.
 
 ### 2. Salvage & Recyling System ✓
-- **Tethering to Wreckages**: Players can use their tether ('E') to hook onto wreckages.
+- **Tethering to Wreckages**: Players can use their tether ('G') to hook onto wreckages.
 - **Towing**: Real-world physics-based towing allows players to drag wreckages back to base.
 - **Recycling**: Bringing a wreckage to the landing pad automatically recycles it, depositing its cargo and spare parts into the base stores.
 
@@ -26,6 +42,7 @@ Sounds: Implement toggle light and toggle spotlight sound effects (toggle_light.
 - **Station Menu (B)**: A new UI accessible when landed at the base.
 - **Ship Switching**: Players can switch between different unlocked ship types.
 - **Persistence**: Ship stats (fuel, power, damage) are maintained or handled logically during switching.
+- **Cargo Transfer (T)**: Players can transfer cargo from ship to base manually by holding 'T' while on the landing pad.
 
 ### 4. Advanced Ship Types ✓
 - **Cargo Hauler**: A bulkier, heavier ship with triple the cargo capacity (1500) and double the fuel capacity (1000). Requires Ship Factory Level 2.
@@ -38,7 +55,7 @@ Sounds: Implement toggle light and toggle spotlight sound effects (toggle_light.
 - **Status Monitoring**: Real-time display of base resources, refining status, and antenna range.
 
 ### 6. EVA Mode (Astronaut) ✓
-- **Exiting/Boarding**: Players can exit their ship anywhere (if moving slowly) using 'E'. The ship stays behind as a persistent parked vehicle.
+- **Exiting/Boarding**: Players can exit their ship anywhere (if moving slowly) using 'X'. The ship stays behind as a persistent parked vehicle.
 - **Astronaut Unit**: A stick-figure representation with procedural ragdoll-style animation.
 - **Walking & Physics**: Custom ground-based movement with physics damping.
 - **Ion Jetpack**: Uses **Power** instead of Fuel. Highly inefficient but allows for recharging over time.
@@ -46,7 +63,7 @@ Sounds: Implement toggle light and toggle spotlight sound effects (toggle_light.
     - **Oxygen**: Consumed while outside. Depletion leads to hull damage (suffocation).
     - **Power Regen**: Slowly regenerates (1.0/sec) while in EVA.
 - **UI & Controls**:
-    - **Interact (E)**: Context-sensitive key for exiting ships, boarding parked vehicles, or toggling tethers.
+    - **Interact (X / E)**: Context-sensitive key for exiting ships, boarding parked vehicles, or toggling tethers.
     - **HUD**: Dynamic display switching between Fuel and Oxygen bars.
 - **Precision Scale**: Access to tight caves and crevices unreachable by ship.
 
@@ -152,6 +169,36 @@ The game now supports a `game_config.json` file on the server, allowing admins t
   - `attachRange`: Max distance to attach tether (default 80)
   - `strength`: Force multiplier for tether physics (default 0.8)
   - `snapLength`: Length at which tether breaks (default 180)
+
+---
+
+# NEW FEATURES 2026-01-25 (Batch 1) - IMPLEMENTED ✓
+
+## Summary of Implemented Features
+
+### 1. Power System & Lighting ✓
+- **Lander Power**: Ships have a max power of 100-150.
+- **System Toggles**: T-light, Spotlight, and Antenna can be toggled to save power.
+    - **Position Lights (K)**: Small identification lights.
+    - **Spotlight (L)**: High-intensity beam for mining and navigation.
+    - **Antenna (H)**: Transmits position for minimap visibility to others.
+- **Auto-Shutdown**: Systems shut off when power hits 0.
+- **Damage Impact**: Power generation efficiency drops as the ship takes damage.
+
+### 2. Advanced Fuel Mechanics ✓
+- **Zero-Fuel Stall**: Ship cannot move or thrust when fuel is 0.
+- **Decoupled Charging**: Power continues to regenerate from solar panels even if fuel is empty.
+
+### 3. Integrated Audio Feedback ✓
+- **System Sounds**: Mechanical clicks for toggling lights and antenna.
+- **Continuous Mining**: Loop sound for the mining laser.
+- **Low Oxygen Alarm**: Heartbeat sound triggers at <25% oxygen in EVA.
+- **Death & Victory**: Specific music tracks for ship destruction and resource collection.
+
+### 4. Communication & Chat ✓
+- **Notification System**: Audio ping for incoming chat messages.
+- **Customizable Audio**: UI sliders for Master, Music, SFX, and Notification volumes.
+- **Minimap Stealth**: Teammates with antennas OFF are hidden from the minimap.
 
 ---
 
@@ -1425,16 +1472,20 @@ DETERMINISM_NOTES:
 | W / Up Arrow | Main Thrust |
 | A / Left Arrow | Rotate Counter-clockwise |
 | D / Right Arrow | Rotate Clockwise |
-| Space | Action (Mine / Tether / Interact) |
-| E | Secondary Action |
-| Tab | Map |
-| Q | Quick Ping |
-| 1-4 | Ping Types |
-| F | Toggle Flashlight |
-| R | Repair (when stationary) |
-| C | Cargo Menu |
-| Shift | Precision Mode (reduced thrust) |
-| Escape | Pause Menu |
+| Space | Mine ore (hold) |
+| X / E | Interaction (Exit moonlander / Board boat / Toggle stations) |
+| G | Toggle Tether |
+| B | Open Station Menu (when landed) |
+| F | Fuel Transfer (docked) |
+| T | Cargo Transfer (landed, hold) |
+| K | Toggle Position Lights |
+| L | Toggle Spotlight |
+| H | Toggle Antenna |
+| J | Jettison 25% Cargo |
+| 1-4 | Pings |
+| R | Respawn (when dead) |
+| Enter | Open Chat |
+| Escape | Settings / Pause |
 
 **Gamepad Controls**
 | Input | Action |
@@ -1488,7 +1539,7 @@ DETERMINISM_NOTES:
 
 ### Version 1.5 (January 2026)
 - **Cooperative Gameplay Systems**: Full implementation of core cooperative mechanics
-  - **Tether System**: Press E to attach/detach tether with nearby players
+  - **Tether System**: Press G to attach/detach tether with nearby players
     - Max length 150 units, snaps at 180 units
     - Visual rope with tension indicator (green/yellow/red)
     - Physics-based rope constraint using Ammo.js forces

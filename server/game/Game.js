@@ -464,6 +464,18 @@ export class Game {
             if (input.interact&&!player.lastInteract&&!player.dead) {
                 this.toggleEVA(id);
             }
+
+            // Check for system toggles for sounds
+            if (input.toggleLights&&!player.lastLightsInput) {
+                this.broadcast('playSound', {type: 'toggle_light', playerId: id});
+            }
+            if (input.toggleSpotlight&&!player.lastSpotlightInput) {
+                this.broadcast('playSound', {type: 'toggle_light', playerId: id});
+            }
+            if (input.toggleAntenna&&!player.lastAntennaInput) {
+                this.broadcast('playSound', {type: 'toggle_light', playerId: id});
+            }
+
             player.lastInteract=!!input.interact;
             player.setInput(input);
         }

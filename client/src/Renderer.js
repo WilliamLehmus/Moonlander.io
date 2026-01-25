@@ -538,10 +538,14 @@ export class Renderer {
                 const finalIntensity=intensity*flicker;
 
                 // Position lights (small lights on the lander body)
-                this.drawPositionLights(lCtx, screenX, screenY, player.angle, finalIntensity);
+                if (player.lightsOn!==false) {
+                    this.drawPositionLights(lCtx, screenX, screenY, player.angle, finalIntensity);
+                }
 
-                // Spotlight (follows mouse for local player, uses stored angle for others)
-                this.drawSpotlight(lCtx, screenX, screenY, player.spotlightAngle||0, finalIntensity, player.id===myId);
+                // Spotlight
+                if (player.spotlightOn!==false) {
+                    this.drawSpotlight(lCtx, screenX, screenY, player.spotlightAngle||0, finalIntensity, player.id===myId);
+                }
             }
         }
 
@@ -1844,17 +1848,19 @@ export class Renderer {
             ['W / UP', 'Thrust'],
             ['A / D', 'Rotate left/right'],
             ['SPACE', 'Mine ore (hold)'],
-            ['X', 'Interact (Exit/Board)'],
+            ['X / E', 'Interact (Exit/Board)'],
             ['G', 'Toggle tether'],
             ['B', 'Open Station Menu'],
             ['F', 'Transfer fuel (docked)'],
+            ['T', 'Transfer cargo (landed)'],
             ['J', 'Jettison 25% cargo'],
-            ['1', 'Ping: Check this out'],
-            ['2', 'Ping: Danger/Help!'],
-            ['3', 'Ping: Resources here'],
-            ['4', 'Ping: Regroup here'],
+            ['K', 'Toggle position lights'],
+            ['L', 'Toggle spotlight'],
+            ['H', 'Toggle antenna'],
+            ['1-4', 'Pings (Alert/Help/Res)'],
             ['R', 'Respawn (when dead)'],
-            ['Mouse', 'Aim spotlight']
+            ['ENTER', 'Open Chat'],
+            ['ESC', 'Settings / Quit']
         ];
 
         controls.forEach((ctrl, i) => {
@@ -1966,14 +1972,18 @@ export class Renderer {
             const py=mapY+player.y*scale;
 
             // Draw player dot
+            // Only draw teammates if their antenna is on
             if (player.id===myPlayer.id) {
                 this.ctx.fillStyle='#0f0'; // Self is green
-            } else {
+                this.ctx.beginPath();
+                this.ctx.arc(px, py, 3, 0, Math.PI*2);
+                this.ctx.fill();
+            } else if (player.antennaOn!==false) {
                 this.ctx.fillStyle='#0af'; // Teammates are cyan
+                this.ctx.beginPath();
+                this.ctx.arc(px, py, 3, 0, Math.PI*2);
+                this.ctx.fill();
             }
-            this.ctx.beginPath();
-            this.ctx.arc(px, py, 3, 0, Math.PI*2);
-            this.ctx.fill();
 
             // Draw ping if active
             if (player.activePing) {
@@ -2052,6 +2062,9 @@ export class Renderer {
         const maxPower=myPlayer.maxPower||100;
         const powerPercent=Math.max(0, (myPlayer.power||0)/maxPower);
         const lightsOn=myPlayer.lightsOn!==false;
+        const spotlightOn=myPlayer.spotlightOn!==false;
+        const antennaOn=myPlayer.antennaOn!==false;
+
         this.ctx.fillStyle='#333';
         this.ctx.fillRect(barX, barY+50, barWidth, barHeight);
         this.ctx.fillStyle=powerPercent>0.3? '#44a':powerPercent>0.1? '#aa4':'#a44';
@@ -2059,7 +2072,13 @@ export class Renderer {
         this.ctx.strokeStyle='#0af';
         this.ctx.strokeRect(barX, barY+50, barWidth, barHeight);
         this.ctx.fillStyle='#0af';
-        this.ctx.fillText(`POWER: ${Math.floor(myPlayer.power||0)}/${maxPower}${lightsOn? '':' [LIGHTS OFF]'}`, barX, barY+barHeight+70);
+        this.ctx.fillText(`POWER: ${Math.floor(myPlayer.power||0)}/${maxPower}`, barX, barY+barHeight+70);
+
+        // System status
+        this.ctx.font='10px monospace';
+        const systemsText=`LIGHTS:${lightsOn? 'ON':'OFF'} SPOTLIGHT:${spotlightOn? 'ON':'OFF'} ANTENNA:${antennaOn? 'ON':'OFF'}`;
+        this.ctx.fillText(systemsText, barX, barY+barHeight+85);
+        this.ctx.font='16px monospace';
 
         // Damage bar
         const damage=myPlayer.damage||0;

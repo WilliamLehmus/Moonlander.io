@@ -8,7 +8,8 @@ const SHIP_TYPES={
         maxFuel: 500, fuelConsumption: 30,
         cargoCapacity: 500,
         thrustForce: 80,
-        maxPower: 100
+        maxPower: 100,
+        basePowerRegen: 2.0
     },
     cargo: {
         name: 'Cargo Hauler',
@@ -16,7 +17,8 @@ const SHIP_TYPES={
         maxFuel: 1000, fuelConsumption: 45,
         cargoCapacity: 1500,
         thrustForce: 150,
-        maxPower: 150
+        maxPower: 150,
+        basePowerRegen: 2.0
     },
     eva: {
         name: 'Astronaut',
@@ -26,7 +28,8 @@ const SHIP_TYPES={
         thrustForce: 15,
         maxPower: 20,
         maxOxygen: 100,
-        oxygenConsumption: 1.5 // Units per second
+        oxygenConsumption: 1.5, // Units per second
+        basePowerRegen: 1.0
     }
 };
 
@@ -55,11 +58,15 @@ export class Player {
         // Power system
         this.power=stats.maxPower;
         this.maxPower=stats.maxPower;
-        this.powerRegen=this.shipType==='eva'? 1.0:2.0; // Slow regen for EVA (ion pack)
-        this.powerRegen*=(diff.powerGenerationMultiplier||1);
-        this.lightsOn=true;
-        this.lightPowerDrain=3*(diff.powerConsumptionMultiplier||1);
-        this.miningPowerDrain=15*(diff.powerConsumptionMultiplier||1);
+        this.basePowerRegen=stats.basePowerRegen;
+        this.powerRegen=this.basePowerRegen*(diff.powerGenerationMultiplier||1);
+        this.lightsOn=true;      // Position lights
+        this.spotlightOn=true;   // Main spotlight
+        this.antennaOn=false;    // Communications antenna
+        this.lightPowerDrain=0.5*(diff.powerConsumptionMultiplier||1);
+        this.spotlightPowerDrain=1.0*(diff.powerConsumptionMultiplier||1);
+        this.antennaPowerDrain=0.5*(diff.powerConsumptionMultiplier||1);
+        this.miningPowerDrain=7.5*(diff.powerConsumptionMultiplier||1); // Decreased by 50%
 
         // Oxygen system (EVA only)
         this.oxygen=100;
@@ -67,7 +74,7 @@ export class Player {
         this.oxygenConsumption=0; // Set when going EVA
 
         this.damage=0; // 0-11 damage levels
-        this.inputs={thrust: false, left: false, right: false, mining: false, transferFuel: false, transferCargo: false, interact: false};
+        this.inputs={thrust: false, left: false, right: false, mining: false, transferFuel: false, transferCargo: false, interact: false, toggleAntenna: false, toggleSpotlight: false, toggleLights: false};
         this.lastInteract=false; // To detect edge-trigger
         this.color=`hsl(${Math.random()*360}, 70%, 50%)`;
         this.dead=false;
@@ -140,6 +147,25 @@ export class Player {
         }
         // Update mining state
         this.mining=input.mining||false;
+
+        // Toggle handling (on server to play sounds or update state)
+        if (input.toggleAntenna&&!this.lastAntennaInput) {
+            this.antennaOn=!this.antennaOn;
+            if (this.antennaOn&&this.power<=0) this.antennaOn=false;
+        }
+        this.lastAntennaInput=!!input.toggleAntenna;
+
+        if (input.toggleSpotlight&&!this.lastSpotlightInput) {
+            this.spotlightOn=!this.spotlightOn;
+            if (this.spotlightOn&&this.power<=0) this.spotlightOn=false;
+        }
+        this.lastSpotlightInput=!!input.toggleSpotlight;
+
+        if (input.toggleLights&&!this.lastLightsInput) {
+            this.lightsOn=!this.lightsOn;
+            if (this.lightsOn&&this.power<=0) this.lightsOn=false;
+        }
+        this.lastLightsInput=!!input.toggleLights;
     }
 
     // Get total cargo weight
@@ -262,6 +288,8 @@ export class Player {
         this.power=this.maxPower;
         this.oxygen=this.maxOxygen||100;
         this.lightsOn=true;
+        this.spotlightOn=true;
+        this.antennaOn=false;
         this.landed=false;
         this.spawnX=spawnX;
         this.spawnY=spawnY;
@@ -283,16 +311,32 @@ export class Player {
         const ammo=this.physicsWorld.ammo;
 
         // Power regeneration (solar panels, faster when on surface/pad)
-        const regenRate=this.onPad? this.powerRegen*3:this.powerRegen;
+        // Power generation decreases with the moonlander's damage taken.
+        const damageFactor=Math.max(0, 1-(this.damage/12));
+        const effectiveRegen=this.powerRegen*damageFactor;
+        const regenRate=this.onPad? effectiveRegen*3:effectiveRegen;
         this.power=Math.min(this.maxPower, this.power+regenRate*dt);
 
-        // Power consumption for lights
-        if (this.lightsOn&&this.power>0) {
-            this.power-=this.lightPowerDrain*dt;
+        // Power consumption for systems
+        let totalDrain=0;
+        if (this.lightsOn) totalDrain+=this.lightPowerDrain;
+        if (this.spotlightOn) totalDrain+=this.spotlightPowerDrain;
+        if (this.antennaOn) totalDrain+=this.antennaPowerDrain;
+
+        if (this.power>0) {
+            this.power-=totalDrain*dt;
             if (this.power<=0) {
                 this.power=0;
-                this.lightsOn=false; // Lights auto-off when no power
+                // Auto-off systems when power is depleted (except for EVA oxygen which is separate)
+                this.lightsOn=false;
+                this.spotlightOn=false;
+                this.antennaOn=false;
             }
+        } else {
+            // Already out of power
+            this.lightsOn=false;
+            this.spotlightOn=false;
+            this.antennaOn=false;
         }
 
         // Rotation (positive Z = CCW in physics, but we want visual CW for right)
@@ -337,6 +381,7 @@ export class Player {
             this.body.setAngularFactor(new ammo.btVector3(0, 0, 1)); // Allow Z rotation
 
             if (this.inputs.thrust&&this.fuel>0) {
+                // If fuel is 0, cannot move (already checked above, but let's be explicit)
                 const angle=-this.getRotation(); // Negate to match visual rotation
                 // Sprite points UP at angle=0, so adjust by -PI/2 for thrust direction
                 const thrustAngle=angle-Math.PI/2;
@@ -345,6 +390,9 @@ export class Player {
 
                 this.body.applyCentralForce(new ammo.btVector3(forceX, forceY, 0));
                 this.fuel-=this.fuelConsumption*dt;
+                if (this.fuel<0) this.fuel=0;
+            } else if (this.inputs.thrust&&this.fuel<=0) {
+                // Out of fuel message or effect could be added here
             }
         }
     }
@@ -364,10 +412,22 @@ export class Player {
         return false;
     }
 
-    // Toggle lights
+    // Toggle systems
     toggleLights() {
         if (this.power>0||!this.lightsOn) {
             this.lightsOn=!this.lightsOn;
+        }
+    }
+
+    toggleSpotlight() {
+        if (this.power>0||!this.spotlightOn) {
+            this.spotlightOn=!this.spotlightOn;
+        }
+    }
+
+    toggleAntenna() {
+        if (this.power>0||!this.antennaOn) {
+            this.antennaOn=!this.antennaOn;
         }
     }
 
@@ -420,6 +480,8 @@ export class Player {
             power: this.power,
             maxPower: this.maxPower,
             lightsOn: this.lightsOn,
+            spotlightOn: this.spotlightOn,
+            antennaOn: this.antennaOn,
             // Oxygen system
             oxygen: this.oxygen,
             maxOxygen: this.maxOxygen,
@@ -557,7 +619,8 @@ export class Player {
                 thrustForce: 80,
                 maxPower: 100,
                 maxOxygen: 100,
-                oxygenConsumption: 0 // No consumption while in ship
+                oxygenConsumption: 0,
+                basePowerRegen: 2.0
             },
             cargo: {
                 width: 30, height: 30, mass: 2.5,
@@ -566,7 +629,8 @@ export class Player {
                 thrustForce: 150,
                 maxPower: 150,
                 maxOxygen: 150,
-                oxygenConsumption: 0
+                oxygenConsumption: 0,
+                basePowerRegen: 2.0
             },
             eva: {
                 width: 6, height: 12, mass: 0.1,
@@ -575,7 +639,8 @@ export class Player {
                 thrustForce: 15,
                 maxPower: 20,
                 maxOxygen: 100,
-                oxygenConsumption: 1.5
+                oxygenConsumption: 1.5,
+                basePowerRegen: 1.0
             }
         };
 
@@ -628,8 +693,8 @@ export class Player {
         this.maxPower=newStats.maxPower;
         this.maxOxygen=newStats.maxOxygen||100;
         this.oxygenConsumption=newStats.oxygenConsumption||0;
-        this.powerRegen=type==='eva'? 1.0:2.0;
-        this.powerRegen*=(this.config.difficulty?.powerGenerationMultiplier||1);
+        this.basePowerRegen=newStats.basePowerRegen||2.0;
+        this.powerRegen=this.basePowerRegen*(this.config.difficulty?.powerGenerationMultiplier||1);
         this.fuelConsumption=newStats.fuelConsumption*(this.config.difficulty?.fuelConsumptionMultiplier||1);
         this.thrustForce=newStats.thrustForce;
 

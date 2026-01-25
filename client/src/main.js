@@ -34,8 +34,9 @@ if (savedNickname) {
 // Escape Menu Elements
 const escapeMenuEl=document.getElementById('escapeMenu');
 const masterVolumeInput=document.getElementById('masterVolume');
+const musicVolumeInput=document.getElementById('musicVolume');
 const sfxVolumeInput=document.getElementById('sfxVolume');
-const musicVolumeInput=document.getElementById('musicVolume'); // Not in HTML yet, handled separately or add now?
+const notificationVolumeInput=document.getElementById('notificationVolume');
 const resumeBtn=document.getElementById('resumeBtn');
 const quitBtn=document.getElementById('quitBtn');
 const stationMenuEl=document.getElementById('stationMenu');
@@ -166,8 +167,10 @@ function toggleMenu() {
   isMenuOpen=!isMenuOpen;
   if (isMenuOpen) {
     escapeMenuEl.classList.remove('hidden');
+    soundManager.playSound('menu_pop');
   } else {
     escapeMenuEl.classList.add('hidden');
+    soundManager.playSound('menu_pop');
   }
 }
 
@@ -253,6 +256,11 @@ musicVolumeInput.addEventListener('input', (e) => {
 sfxVolumeInput.addEventListener('input', (e) => {
   const val=parseInt(e.target.value)/100;
   soundManager.setSfxVolume(val);
+});
+
+notificationVolumeInput.addEventListener('input', (e) => {
+  const val=parseInt(e.target.value)/100;
+  soundManager.setNotificationVolume(val);
 });
 
 resumeBtn.addEventListener('click', () => {
@@ -374,6 +382,15 @@ socket.on('orePickup', (data) => {
   if (renderer) {
     renderer.spawnOrePickupText(data.oreName, data.amount, data.x, data.y, data.color||'#fff');
   }
+  if (data.playerId===myId) {
+    soundManager.playSound('ore_mined');
+  }
+});
+
+socket.on('playSound', (data) => {
+  if (data.type==='toggle_light') {
+    soundManager.playSound('toggle_light');
+  }
 });
 
 socket.on('chatMessage', (data) => {
@@ -391,6 +408,9 @@ socket.on('chatMessage', (data) => {
   // Pass to renderer for display
   if (renderer) {
     renderer.addChatMessage(data.playerId, data.nickname, data.message, data.playerId===myId);
+  }
+  if (data.playerId!==myId) {
+    soundManager.playNotification();
   }
 });
 
@@ -483,12 +503,14 @@ window.addEventListener('keydown', (e) => {
 
 function openStationMenu() {
   stationMenuEl.classList.remove('hidden');
+  soundManager.playSound('menu_pop');
   renderShipList();
   renderBuildingList();
 }
 
 function closeStationMenu() {
   stationMenuEl.classList.add('hidden');
+  soundManager.playSound('menu_pop');
 }
 
 closeStationBtn.addEventListener('click', closeStationMenu);
@@ -504,6 +526,7 @@ tabBtns.forEach(btn => {
     btn.classList.add('active');
     const tabId=`tab-${btn.dataset.tab}`;
     document.getElementById(tabId).classList.remove('hidden');
+    soundManager.playSound('menu_pop');
   });
 });
 
@@ -586,10 +609,25 @@ function gameLoop() {
 
         // Update thrust sound
         soundManager.setThrust(input.state.up);
+
+        // Update mining sound
+        const canMine=(myPlayer.power>=(myPlayer.miningPowerDrain||7.5)*0.1);
+        soundManager.setMining(myPlayer.mining&&canMine);
+
+        // Update heartbeat sound (EVA low oxygen)
+        const isLowOxygen=myPlayer.shipType==='eva'&&myPlayer.oxygen<25;
+        soundManager.setHeartbeat(isLowOxygen);
       } else {
         // Stop thrust sound if dead
         soundManager.setThrust(false);
+        soundManager.setMining(false);
+        soundManager.setHeartbeat(false);
+
+        if (myPlayer&&myPlayer.dead&&!this.wasDead) {
+          soundManager.playDeathMusic();
+        }
       }
+      this.wasDead=myPlayer? myPlayer.dead:false;
     }
   }
 }
