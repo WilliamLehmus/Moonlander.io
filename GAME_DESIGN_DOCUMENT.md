@@ -1,6 +1,139 @@
 # Moonlander.io - Game Design Document
 ## A Cooperative Lunar Exploration Experience
 
+# New features 2026-01-26 - Not implemented
+Player chat - Press enter to chat with all players in the game. 
+A destroyed ship will remain in place with all it's cargo and parts. 
+It can be salvaged by towing it to a landing pad where it's recycled.
+Implement a max height that the player fly upwards to. 
+Implement a craftable ship: moonlander_cargo_sprites.png, it's a cargo ship that is bulkier and heavier but can carry more cargo and can be used to transport ore and parts. The crafted ships are shared between players. Any player that lands at the landing pad where it was crafted can switch to it. A player parked at the landing pad can switch to any ship available at that landing pad. Implement a UI for crafting, it should show the available ships and the materials needed to craft them, a base building menu where the user can build cables and lights. Like outlined in the new features 2026-01-25, the cables / pipes system is implemented and quite expansive. Add a cargo hold to the landing pad and ship where the player can store cargo and parts. 
+Each ship has a limited space for cargo and parts. 
+A player can exit a ship, and walk around, it's a stick figure that that can move and jump and dig and mine and jump in to any parked ship without any player in it. 
+
+
+# NEW FEATURES 2026-01-25 - IMPLEMENTED ✓
+
+## Summary of Implemented Features
+
+### 1. Power System ✓
+- **Lander now has a Power property** (100 max, regenerates at 2/sec, 3x faster on landing pad)
+- **Lights consume power** (3 power/sec when on) - auto-off when depleted
+- **Mining laser consumes power** (15 power/sec while mining)
+- Power bar added to HUD (blue color, shows LIGHTS OFF warning if disabled)
+
+### 2. Fuel System Changes ✓
+- **Reduced fuel capacity**: 500 units (was 1000)
+- **Increased fuel consumption**: 30/sec while thrusting (was 20)
+- Fuel is now a critical resource requiring careful management
+
+### 3. Ore Pickup Floating Text ✓
+- When mining ore, floating text shows "+X OreName" (e.g., "+20 Copper")
+- Text floats upward and fades out over 2 seconds
+- Color matches the ore type
+
+### 4. Enhanced Base UI ✓
+- Shows all 8 ore types in storage
+- Shows all 4 tiers of building materials
+- Processing status indicator
+- Antenna range display
+- Total value counter
+- Repair/Refuel/Charging status indicators
+
+### 5. Building Materials System (4 Tiers) ✓
+| Tier | Name | Source Ores | Use |
+|------|------|-------------|-----|
+| 1 | Basic | Iron, Copper | Early buildings |
+| 2 | Industrial | Silver, Titanium | Mid-tier buildings |
+| 3 | Advanced | Gold, Platinum | Late-game buildings |
+| 4 | **Quantum** | Diamond | End-game buildings |
+
+### 6. Base Buildings System ✓
+9 upgradeable buildings implemented (levels 0-5):
+
+| Building | Effect | Base Value | Per Level |
+|----------|--------|------------|-----------|
+| Ore Storage | Ore capacity | 1000 | +500 |
+| Fuel Depot | Max fuel | 10000 | +5000 |
+| Parts Warehouse | Max spare parts | 1000 | +500 |
+| Fuel Refinery | Fuel production rate | 1x | +0.5x |
+| Solar Array | Power generation | 10/sec | +10/sec |
+| Fuel Generator | Fuel→Power conversion | 0 | +20/sec |
+| Communications Antenna | Minimap range | 400m | +400m |
+| Ship Factory | Ship types available | 1 | +1 |
+| Crafting Station | Crafting tier unlocked | 0 | +1 |
+
+### 7. Antenna Range System ✓
+- 5 antenna levels providing increasing minimap range
+- Level 1: 400m, Level 2: 800m, Level 3: 1200m, Level 4: 1600m, Level 5: 2000m
+- **When player depth exceeds antenna range**:
+  - Minimap displays "NO SIGNAL" with static noise
+  - Player cannot see their position or base
+  - Must upgrade antenna or return to range
+
+### 8. Ore System (8 Types) ✓
+| Ore | Depth Range | Value | Yield | Color |
+|-----|-------------|-------|-------|-------|
+| Iron | 10-400m | 5 | 25 | Brown |
+| Copper | 50-300m | 10 | 20 | Orange |
+| Bitite | 100-800m | 15 | 18 | Dark gray |
+| Silver | 150-500m | 25 | 15 | Silver |
+| Titanium | 250-700m | 40 | 12 | Blue-gray |
+| Gold | 350-900m | 75 | 10 | Gold |
+| Platinum | 600-1000m | 150 | 8 | White |
+| Diamond | 900-1200m | 500 | 3 | Crystal blue |
+
+**Bitite** is the fuel-producing material (like bitumen) - processed into fuel at the refinery.
+
+### 9. Configurable Gameplay System ✓
+The game now supports a `game_config.json` file on the server, allowing admins to tweak gameplay values without code changes.
+
+**Configurable Settings:**
+- **Difficulty:**
+  - `fuelConsumptionMultiplier`: Multiply fuel usage rate (default 1.0)
+  - `miningSpeedMultiplier`: Multiply mining speed (default 1.0)
+  - `powerGenerationMultiplier`: Multiply solar/reactor power gen (default 1.0)
+  - `powerConsumptionMultiplier`: Multiply power drain for lights/tools (default 1.0)
+  - `lightLossDepth`: Depth where total darkness begins (default 300)
+  - `cableMaxLength`: Maximum length of tethers (default 150)
+
+- **Resources:**
+  - `respawnCost`: Spare parts cost to respawn (default 50)
+  - `repairCostPerDamage`: Spare parts per 1 HP repair (default 5)
+  - `refuelCostPerUnit`: Base fuel cost per 1 unit player refuel (default 0.1)
+  - `refuelRate`: Fuel units per second while docked/landed (default 100)
+  - `repairRate`: HP per second while docked/landed (default 1)
+
+- **Mining:**
+  - `range`: Max distance for mining laser (default 80)
+  - `speedBase`: Base mining progress per second (default 0.5)
+
+- **Tether:**
+  - `attachRange`: Max distance to attach tether (default 80)
+  - `strength`: Force multiplier for tether physics (default 0.8)
+  - `snapLength`: Length at which tether breaks (default 180)
+
+---
+
+## Future Features (Not Yet Implemented)
+
+### Cables System
+Uses rope physics. 3 types:
+- **Red (Power)**: Provides power to lights/subsurface bases
+- **Blue (Signal)**: Connected bases share data
+- **Green (Fuel)**: Fuel piping
+
+### Ship Factory Ships
+- Cargo Ship: Large ore capacity
+- Construction Ship: Build subterranean outposts
+- Advanced Miner: Twin mining lasers
+
+### Placeable Items
+- Lights (requires power cable)
+- Subterranean bases
+- Cable segments
+
+
+
 ---
 
 ## Table of Contents
@@ -1417,6 +1550,40 @@ DETERMINISM_NOTES:
 
 ---
 
-*Document Version: 1.5*
-*Last Updated: January 2026*
+### Version 1.6 (January 25, 2026)
+- **Power System**: Added power management to landers
+  - 100 max power, regenerates 2/sec (3x on landing pad)
+  - Lights drain 3 power/sec, auto-disable when empty
+  - Mining laser drains 15 power/sec, cannot mine without power
+  - Power bar added to HUD
+- **Fuel Rebalance**: Made fuel more critical
+  - Reduced capacity from 1000 to 500
+  - Increased consumption from 20/sec to 30/sec
+- **New Ore Types**: Expanded from 6 to 8 ore types
+  - Added Bitite (fuel material, 100-800m)
+  - Added Silver (200-400m zone)
+  - Added Diamond (extremely rare, 900-1200m)
+  - Rebalanced depth distribution for all ores
+- **4-Tier Building Materials**:
+  - Basic (from Iron, Copper)
+  - Industrial (from Silver, Titanium)
+  - Advanced (from Gold, Platinum)
+  - Quantum (from Diamond)
+- **Base Buildings System**: 9 upgradeable buildings (levels 1-5)
+  - Storage: Ore Storage, Fuel Depot, Parts Warehouse
+  - Production: Fuel Refinery, Solar Array, Fuel Generator
+  - Utility: Communications Antenna, Ship Factory, Crafting Station
+- **Antenna Minimap Range**: Depth-limited minimap visibility
+  - 5 antenna levels (400m per level)
+  - "NO SIGNAL" scrambled display when out of range
+- **Ore Pickup Floating Text**: Visual feedback when mining
+  - Shows "+X OreName" floating upward
+  - Color-coded by ore type
+- **Enhanced Base UI**:
+  - Shows all 8 ore types in storage
+  - Shows all 4 material tiers
+  - Processing status, antenna range, total value
+
+*Document Version: 1.6*
+*Last Updated: January 25, 2026*
 *Project: Moonlander.io*

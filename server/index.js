@@ -22,21 +22,21 @@ if (process.env.NODE_ENV==='production') {
     app.use(express.static(join(__dirname, '../client/dist')));
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT=process.env.PORT||3000;
 
 // ============================================
 // ROOM MANAGEMENT SYSTEM
 // ============================================
 
-const rooms = new Map(); // roomCode -> Room object
-const playerRooms = new Map(); // socketId -> roomCode
+const rooms=new Map(); // roomCode -> Room object
+const playerRooms=new Map(); // socketId -> roomCode
 
 // Generate a random 6-character room code
 function generateRoomCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusing chars (0,O,1,I)
-    let code = '';
-    for (let i = 0; i < 6; i++) {
-        code += chars[Math.floor(Math.random() * chars.length)];
+    const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusing chars (0,O,1,I)
+    let code='';
+    for (let i=0; i<6; i++) {
+        code+=chars[Math.floor(Math.random()*chars.length)];
     }
     // Ensure uniqueness
     if (rooms.has(code)) {
@@ -47,19 +47,19 @@ function generateRoomCode() {
 
 class Room {
     constructor(code, hostId) {
-        this.code = code;
-        this.hostId = hostId;
-        this.game = new Game();
-        this.players = new Set();
-        this.gameLoop = null;
-        this.ready = false;
+        this.code=code;
+        this.hostId=hostId;
+        this.game=new Game();
+        this.players=new Set();
+        this.gameLoop=null;
+        this.ready=false;
     }
 
     async initialize() {
         // Create a socket.io namespace/room for this game
         this.game.setIO(io, this.code);
         await this.game.init();
-        this.ready = true;
+        this.ready=true;
         console.log(`Room ${this.code} initialized`);
 
         // Add any players who joined during initialization
@@ -68,10 +68,10 @@ class Room {
         }
 
         // Start game loop for this room
-        this.gameLoop = setInterval(() => {
+        this.gameLoop=setInterval(() => {
             this.game.update();
             io.to(this.code).emit('gameState', this.game.getState());
-        }, 1000 / 60);
+        }, 1000/60);
     }
 
     addPlayer(socketId) {
@@ -86,14 +86,14 @@ class Room {
         this.game.removePlayer(socketId);
 
         // If host leaves or room is empty, destroy the room
-        if (this.players.size === 0) {
+        if (this.players.size===0) {
             this.destroy();
             rooms.delete(this.code);
             console.log(`Room ${this.code} destroyed (empty)`);
-        } else if (socketId === this.hostId) {
+        } else if (socketId===this.hostId) {
             // Transfer host to another player
-            this.hostId = Array.from(this.players)[0];
-            io.to(this.code).emit('hostChanged', { newHostId: this.hostId });
+            this.hostId=Array.from(this.players)[0];
+            io.to(this.code).emit('hostChanged', {newHostId: this.hostId});
             console.log(`Room ${this.code} host transferred to ${this.hostId}`);
         }
     }
@@ -101,7 +101,7 @@ class Room {
     destroy() {
         if (this.gameLoop) {
             clearInterval(this.gameLoop);
-            this.gameLoop = null;
+            this.gameLoop=null;
         }
     }
 
@@ -123,19 +123,19 @@ io.on('connection', (socket) => {
     console.log('Player connected:', socket.id);
 
     // Send available actions to new connection
-    socket.emit('connected', { id: socket.id });
+    socket.emit('connected', {id: socket.id});
 
     // CREATE ROOM
     socket.on('createRoom', async (callback) => {
         try {
             // Check if player is already in a room
             if (playerRooms.has(socket.id)) {
-                callback({ success: false, error: 'Already in a room' });
+                callback({success: false, error: 'Already in a room'});
                 return;
             }
 
-            const code = generateRoomCode();
-            const room = new Room(code, socket.id);
+            const code=generateRoomCode();
+            const room=new Room(code, socket.id);
             rooms.set(code, room);
             playerRooms.set(socket.id, code);
 
@@ -148,36 +148,38 @@ io.on('connection', (socket) => {
             await room.initialize();
 
             // Send map data to the host
-            socket.emit('mapData', room.game.terrain.serialize());
-            socket.emit('joinedRoom', { code, isHost: true });
+            const mapData=room.game.terrain.serialize();
+            mapData.config=room.game.config;
+            socket.emit('mapData', mapData);
+            socket.emit('joinedRoom', {code, isHost: true});
 
-            callback({ success: true, code });
+            callback({success: true, code});
         } catch (error) {
             console.error('Error creating room:', error);
-            callback({ success: false, error: 'Failed to create room: ' + error.message });
+            callback({success: false, error: 'Failed to create room: '+error.message});
         }
     });
 
     // JOIN ROOM
     socket.on('joinRoom', (data, callback) => {
-        const code = data.code?.toUpperCase();
+        const code=data.code?.toUpperCase();
 
         // Check if player is already in a room
         if (playerRooms.has(socket.id)) {
-            callback({ success: false, error: 'Already in a room' });
+            callback({success: false, error: 'Already in a room'});
             return;
         }
 
         // Check if room exists
-        const room = rooms.get(code);
+        const room=rooms.get(code);
         if (!room) {
-            callback({ success: false, error: 'Room not found' });
+            callback({success: false, error: 'Room not found'});
             return;
         }
 
         // Check if room is ready
         if (!room.ready) {
-            callback({ success: false, error: 'Room is still initializing' });
+            callback({success: false, error: 'Room is still initializing'});
             return;
         }
 
@@ -189,24 +191,26 @@ io.on('connection', (socket) => {
         console.log(`Player ${socket.id} joined room ${code}`);
 
         // Send map data to the joining player
-        socket.emit('mapData', room.game.terrain.serialize());
-        socket.emit('joinedRoom', { code, isHost: false });
+        const mapData=room.game.terrain.serialize();
+        mapData.config=room.game.config;
+        socket.emit('mapData', mapData);
+        socket.emit('joinedRoom', {code, isHost: false});
 
         // Notify other players
-        socket.to(code).emit('playerJoined', { playerId: socket.id, playerCount: room.players.size });
+        socket.to(code).emit('playerJoined', {playerId: socket.id, playerCount: room.players.size});
 
-        callback({ success: true, code, playerCount: room.players.size });
+        callback({success: true, code, playerCount: room.players.size});
     });
 
     // LEAVE ROOM
     socket.on('leaveRoom', () => {
-        const code = playerRooms.get(socket.id);
+        const code=playerRooms.get(socket.id);
         if (code) {
-            const room = rooms.get(code);
+            const room=rooms.get(code);
             if (room) {
                 room.removePlayer(socket.id);
                 socket.leave(code);
-                socket.to(code).emit('playerLeft', { playerId: socket.id, playerCount: room.players.size });
+                socket.to(code).emit('playerLeft', {playerId: socket.id, playerCount: room.players.size});
             }
             playerRooms.delete(socket.id);
             socket.emit('leftRoom');
@@ -216,16 +220,16 @@ io.on('connection', (socket) => {
 
     // GET ROOM LIST (for debugging/admin)
     socket.on('getRooms', (callback) => {
-        const roomList = Array.from(rooms.values()).map(r => r.getInfo());
+        const roomList=Array.from(rooms.values()).map(r => r.getInfo());
         callback(roomList);
     });
 
     // GAME INPUT
     socket.on('input', (input) => {
-        const code = playerRooms.get(socket.id);
+        const code=playerRooms.get(socket.id);
         if (code) {
-            const room = rooms.get(code);
-            if (room && room.ready) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
                 room.game.handleInput(socket.id, input);
             }
         }
@@ -233,11 +237,11 @@ io.on('connection', (socket) => {
 
     // RESPAWN
     socket.on('respawn', () => {
-        const code = playerRooms.get(socket.id);
+        const code=playerRooms.get(socket.id);
         if (code) {
-            const room = rooms.get(code);
-            if (room && room.ready) {
-                const result = room.game.respawnPlayer(socket.id);
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const result=room.game.respawnPlayer(socket.id);
                 socket.emit('respawnResult', result);
                 if (result.success) {
                     console.log(`Player ${socket.id} respawned in room ${code}`);
@@ -248,12 +252,12 @@ io.on('connection', (socket) => {
 
     // PING
     socket.on('ping', (data) => {
-        const code = playerRooms.get(socket.id);
+        const code=playerRooms.get(socket.id);
         if (code) {
-            const room = rooms.get(code);
-            if (room && room.ready) {
-                const player = room.game.players.get(socket.id);
-                if (player && !player.dead) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const player=room.game.players.get(socket.id);
+                if (player&&!player.dead) {
                     player.setPing(data.type);
                 }
             }
@@ -262,10 +266,10 @@ io.on('connection', (socket) => {
 
     // TETHER
     socket.on('toggleTether', () => {
-        const code = playerRooms.get(socket.id);
+        const code=playerRooms.get(socket.id);
         if (code) {
-            const room = rooms.get(code);
-            if (room && room.ready) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
                 room.game.toggleTether(socket.id);
             }
         }
@@ -273,16 +277,16 @@ io.on('connection', (socket) => {
 
     // JETTISON CARGO
     socket.on('jettisonCargo', () => {
-        const code = playerRooms.get(socket.id);
+        const code=playerRooms.get(socket.id);
         if (code) {
-            const room = rooms.get(code);
-            if (room && room.ready) {
-                const player = room.game.players.get(socket.id);
-                if (player && !player.dead) {
-                    const dropped = player.jettisonCargo(0.25); // Drop 25%
-                    if (dropped > 0) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const player=room.game.players.get(socket.id);
+                if (player&&!player.dead) {
+                    const dropped=player.jettisonCargo(0.25); // Drop 25%
+                    if (dropped>0) {
                         console.log(`Player ${socket.id} jettisoned ${dropped} cargo`);
-                        socket.emit('cargoJettisoned', { amount: dropped });
+                        socket.emit('cargoJettisoned', {amount: dropped});
                     }
                 }
             }
@@ -293,12 +297,12 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('Player disconnected:', socket.id);
 
-        const code = playerRooms.get(socket.id);
+        const code=playerRooms.get(socket.id);
         if (code) {
-            const room = rooms.get(code);
+            const room=rooms.get(code);
             if (room) {
                 room.removePlayer(socket.id);
-                socket.to(code).emit('playerLeft', { playerId: socket.id, playerCount: room.players.size });
+                socket.to(code).emit('playerLeft', {playerId: socket.id, playerCount: room.players.size});
             }
             playerRooms.delete(socket.id);
         }

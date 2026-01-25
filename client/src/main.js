@@ -350,6 +350,12 @@ socket.on('cargoJettisoned', (data) => {
   }
 });
 
+socket.on('orePickup', (data) => {
+  if (renderer) {
+    renderer.spawnOrePickupText(data.oreName, data.amount, data.x, data.y, data.color||'#fff');
+  }
+});
+
 // ============================================
 // GAME INPUT
 // ============================================

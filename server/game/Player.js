@@ -1,16 +1,31 @@
 import Ammo from 'ammo.js';
 
 export class Player {
-    constructor(id, physicsWorld, spawnX=400, spawnY=100) {
+    constructor(id, physicsWorld, spawnX=400, spawnY=100, config) {
         this.id=id;
         this.physicsWorld=physicsWorld;
+        this.config=config||{};
 
         // Create RigidBody
         // Box shape 20x20 (smaller to fit through 8px tile gaps)
         this.body=this.physicsWorld.createBox(spawnX, spawnY, 20, 20, 1);
         this.body.setActivationState(4); // DISABLE_DEACTIVATION
 
-        this.fuel=1000;
+        const diff=this.config.difficulty||{};
+
+        // Fuel system - reduced capacity, requires careful management
+        this.fuel=500;           // Starting fuel (reduced from 1000)
+        this.maxFuel=500;        // Max fuel capacity (reduced from 1000)
+        this.fuelConsumption=30*(diff.fuelConsumptionMultiplier||1); // Fuel per second when thrusting
+
+        // Power system - runs electric equipment
+        this.power=100;          // Current power
+        this.maxPower=100;       // Max power capacity
+        this.powerRegen=2*(diff.powerGenerationMultiplier||1);       // Power regeneration per second (solar)
+        this.lightsOn=true;      // Whether lights are active
+        this.lightPowerDrain=3*(diff.powerConsumptionMultiplier||1);  // Power per second for lights
+        this.miningPowerDrain=15*(diff.powerConsumptionMultiplier||1); // Power per second while mining
+
         this.damage=0; // 0-11 damage levels
         this.inputs={thrust: false, left: false, right: false, mining: false, transferFuel: false, transferCargo: false};
         this.color=`hsl(${Math.random()*360}, 70%, 50%)`;
@@ -28,7 +43,7 @@ export class Player {
         this.mining=false;
         this.miningTarget=null; // {x, y} grid coordinates of ore being mined
         this.miningProgress=0; // 0-1 progress on current ore
-        this.miningRange=80; // World units to mine from
+        this.miningRange=this.config.mining?.range||80; // World units to mine from
 
         // Cargo system
         this.cargo=[]; // Array of {type, amount}
@@ -47,7 +62,7 @@ export class Player {
         // Tether system
         this.tetheredTo=null; // ID of player we're tethered to
         this.tetherLength=0; // Current tether length
-        this.maxTetherLength=150; // Max length before snapping
+        this.maxTetherLength=this.config.difficulty?.cableMaxLength||150; // Max length before snapping
         this.tetherTension=0; // 0-1, how taut the rope is
         this.tetherBroken=false; // If tether snapped
 
@@ -198,7 +213,9 @@ export class Player {
         this.dead=false;
         this.deathTime=null;
         this.damage=0;
-        this.fuel=1000;
+        this.fuel=this.maxFuel;   // Full fuel
+        this.power=this.maxPower; // Full power
+        this.lightsOn=true;       // Lights on
         this.landed=false;
         this.spawnX=spawnX;
         this.spawnY=spawnY;
@@ -213,6 +230,19 @@ export class Player {
 
         const ammo=this.physicsWorld.ammo;
 
+        // Power regeneration (solar panels, faster when on surface/pad)
+        const regenRate=this.onPad? this.powerRegen*3:this.powerRegen;
+        this.power=Math.min(this.maxPower, this.power+regenRate*dt);
+
+        // Power consumption for lights
+        if (this.lightsOn&&this.power>0) {
+            this.power-=this.lightPowerDrain*dt;
+            if (this.power<=0) {
+                this.power=0;
+                this.lightsOn=false; // Lights auto-off when no power
+            }
+        }
+
         // Rotation (positive Z = CCW in physics, but we want visual CW for right)
         if (this.inputs.left) {
             this.body.setAngularVelocity(new ammo.btVector3(0, 0, 3));
@@ -222,7 +252,7 @@ export class Player {
             this.body.setAngularVelocity(new ammo.btVector3(0, 0, 0));
         }
 
-        // Thrust
+        // Thrust - uses fuel
         if (this.inputs.thrust&&this.fuel>0) {
             const angle=-this.getRotation(); // Negate to match visual rotation
             // Sprite points UP at angle=0, so adjust by -PI/2 for thrust direction
@@ -231,7 +261,29 @@ export class Player {
             const forceY=Math.sin(thrustAngle)*THRUST_FORCE;
 
             this.body.applyCentralForce(new ammo.btVector3(forceX, forceY, 0));
-            this.fuel-=20*dt;
+            this.fuel-=this.fuelConsumption*dt;
+        }
+    }
+
+    // Check if mining can proceed (requires power)
+    canMine() {
+        return this.power>=this.miningPowerDrain*0.1; // Need at least some power
+    }
+
+    // Consume power for mining
+    consumeMiningPower(dt) {
+        if (this.power>0) {
+            this.power-=this.miningPowerDrain*dt;
+            if (this.power<0) this.power=0;
+            return true;
+        }
+        return false;
+    }
+
+    // Toggle lights
+    toggleLights() {
+        if (this.power>0||!this.lightsOn) {
+            this.lightsOn=!this.lightsOn;
         }
     }
 
@@ -268,6 +320,7 @@ export class Player {
             vy: vel.vy,
             angle: -this.getRotation(), // Negate to match canvas rotation direction
             fuel: this.fuel,
+            maxFuel: this.maxFuel,
             damage: this.damage,
             thrusting: this.inputs.thrust,
             color: this.color,
@@ -276,6 +329,10 @@ export class Player {
             onPad: this.onPad,
             deathTime: this.deathTime,
             spotlightAngle: this.spotlightAngle,
+            // Power system
+            power: this.power,
+            maxPower: this.maxPower,
+            lightsOn: this.lightsOn,
             // Mining and cargo
             mining: this.mining,
             miningTarget: this.miningTarget,
@@ -385,7 +442,9 @@ export class Player {
         this.dead=false;
         this.deathTime=null;
         this.damage=0;
-        this.fuel=250; // 25% of 1000
+        this.fuel=Math.floor(this.maxFuel*0.25); // 25% of max fuel
+        this.power=Math.floor(this.maxPower*0.5); // 50% power
+        this.lightsOn=true;
         this.landed=false;
 
         // Keep 25% of cargo

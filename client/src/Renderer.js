@@ -212,6 +212,9 @@ export class Renderer {
         this.messageTime=0;
         this.lastTime=performance.now();
 
+        // Floating text for ore pickups
+        this.floatingTexts=[];
+
         // Lighting configuration
         this.surfaceY=0; // Will be set from map data (where full light starts)
         this.fullDarkDepth=300; // Tiles deep where it's completely dark
@@ -253,6 +256,10 @@ export class Renderer {
         }
         if (data.basePadBounds) {
             this.basePadBounds=data.basePadBounds;
+        }
+        if (data.config&&data.config.difficulty) {
+            console.log("Applying game config:", data.config);
+            this.fullDarkDepth=data.config.difficulty.lightLossDepth||300;
         }
     }
 
@@ -786,7 +793,7 @@ export class Renderer {
                         if (tile>0) {
                             solidTilesHit++;
                             // If this is an ore within penetration depth, mark it
-                            if (tile>=TileTypes.IRON_ORE&&solidTilesHit<=penetration) {
+                            if (tile>=TileTypes.IRON_ORE&&tile<=TileTypes.DIAMOND&&solidTilesHit<=penetration) {
                                 revealedOres.add(`${gridX},${gridY},${tile}`);
                             }
                         }
@@ -910,6 +917,9 @@ export class Renderer {
         // Update particles
         this.updateParticles(dt);
 
+        // Update floating texts
+        this.updateFloatingTexts(dt);
+
         // Clear background with moon sky color
         this.ctx.fillStyle='#0a0a14';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -985,6 +995,9 @@ export class Renderer {
         // Draw ore glow effects on top of darkness (ores glow faintly in the dark)
         this.drawOreGlow(state.players, myId);
 
+        // Draw floating texts (ore pickups, etc.)
+        this.drawFloatingTexts();
+
         // Draw HUD (not affected by camera or lighting)
         this.drawHUD(myPlayer, state);
 
@@ -1017,13 +1030,15 @@ export class Renderer {
             REGOLITH: 4,
             ROCK: 5,
             HARD_ROCK: 6,
-            // Metal ores
-            IRON_ORE: 10,
-            TITANIUM_ORE: 11,
-            COPPER_ORE: 12,
-            GOLD_ORE: 13,
-            PLATINUM_ORE: 14,
-            HELIUM3_DEPOSIT: 15
+            // Metal ores - ordered by depth/value
+            IRON_ORE: 10,        // Shallow, common
+            COPPER_ORE: 11,      // 50-200m, common
+            BITITE: 12,          // Fuel-producing material
+            SILVER_ORE: 13,      // 200-400m
+            TITANIUM_ORE: 14,    // 300-600m
+            GOLD_ORE: 15,        // 400-800m
+            PLATINUM_ORE: 16,    // 800-1400m
+            DIAMOND: 17          // 3500-5000m, extremely rare
         };
 
         const tileColors={
@@ -1033,13 +1048,15 @@ export class Renderer {
             [TileTypes.HARD_ROCK]: {main: '#4d4d5d', border: '#333344'},
             [TileTypes.PAD]: {main: '#6a8bba', border: '#4a6b8a'},
             [TileTypes.BASE]: {main: '#c0c0c0', border: '#666666'},
-            // Ore colors - distinct and visible
+            // Ore colors - distinct and visible, ordered by depth
             [TileTypes.IRON_ORE]: {main: '#8b4513', border: '#5c2e0e', glow: '#cd853f'},      // Rusty brown
             [TileTypes.COPPER_ORE]: {main: '#b87333', border: '#8b4513', glow: '#daa520'},    // Copper orange
+            [TileTypes.BITITE]: {main: '#2f2f2f', border: '#1a1a1a', glow: '#4a4a4a'},        // Dark coal-like
+            [TileTypes.SILVER_ORE]: {main: '#c0c0c0', border: '#808080', glow: '#e8e8e8'},    // Silver
             [TileTypes.TITANIUM_ORE]: {main: '#708090', border: '#4a5568', glow: '#b0c4de'},  // Silvery blue
             [TileTypes.GOLD_ORE]: {main: '#ffd700', border: '#b8860b', glow: '#ffec8b'},      // Gold
             [TileTypes.PLATINUM_ORE]: {main: '#e5e4e2', border: '#a9a9a9', glow: '#ffffff'},  // Platinum white
-            [TileTypes.HELIUM3_DEPOSIT]: {main: '#00ced1', border: '#008b8b', glow: '#7fffd4'} // Cyan/teal
+            [TileTypes.DIAMOND]: {main: '#b9f2ff', border: '#87ceeb', glow: '#e0ffff'}        // Crystal blue
         };
 
         for (let y=startY; y<endY; y++) {
@@ -1120,7 +1137,7 @@ export class Renderer {
                     }
 
                     // Add glow effect for ore tiles (only if visible)
-                    if (tile>=TileTypes.IRON_ORE&&colors.glow) {
+                    if (tile>=TileTypes.IRON_ORE&&tile<=TileTypes.DIAMOND&&colors.glow) {
                         this.ctx.fillStyle=colors.glow;
                         this.ctx.globalAlpha=(exposureLevel===2? 0.2:1)*(0.3+Math.sin(performance.now()/500+x+y)*0.15);
                         this.ctx.fillRect(wx+2, wy+2, this.tileSize-4, this.tileSize-4);
@@ -1635,12 +1652,24 @@ export class Renderer {
         const scaleY=mapHeight/(this.mapHeight*this.tileSize);
         const scale=Math.min(scaleX, scaleY);
 
+        // Check antenna range - if player is too deep, scramble minimap
+        const antennaRange=state.antennaRange||2000; // Default if not provided
+        const surfaceY=this.surfaceY||0;
+        const playerDepth=Math.max(0, myPlayer.y-surfaceY);
+        const isOutOfRange=playerDepth>antennaRange;
+
         // Draw background
         this.ctx.fillStyle='rgba(0, 0, 30, 0.8)';
         this.ctx.fillRect(mapX, mapY, mapWidth, mapHeight);
-        this.ctx.strokeStyle='#446';
+        this.ctx.strokeStyle=isOutOfRange? '#f44':'#446';
         this.ctx.lineWidth=2;
         this.ctx.strokeRect(mapX, mapY, mapWidth, mapHeight);
+
+        // If out of antenna range, show scrambled display
+        if (isOutOfRange) {
+            this.drawScrambledMinimap(mapX, mapY, mapWidth, mapHeight);
+            return;
+        }
 
         // Draw terrain (very simplified - just sample points)
         this.ctx.fillStyle='#444';
@@ -1745,13 +1774,17 @@ export class Renderer {
         this.ctx.font='16px monospace';
         this.ctx.textAlign='left';
 
+        // Shift down by 10% of screen height to avoid top bar obstruction
+        const topOffset=this.canvas.height*0.1;
+
         const barX=20;
-        const barY=20;
+        const barY=20+topOffset;
         const barWidth=200;
         const barHeight=20;
 
-        // Fuel bar
-        const fuelPercent=Math.max(0, myPlayer.fuel/1000);
+        // Fuel bar (use maxFuel from player)
+        const maxFuel=myPlayer.maxFuel||500;
+        const fuelPercent=Math.max(0, myPlayer.fuel/maxFuel);
         this.ctx.fillStyle='#333';
         this.ctx.fillRect(barX, barY, barWidth, barHeight);
         this.ctx.fillStyle=fuelPercent>0.3? '#4a4':'#a44';
@@ -1760,52 +1793,65 @@ export class Renderer {
         this.ctx.lineWidth=2;
         this.ctx.strokeRect(barX, barY, barWidth, barHeight);
         this.ctx.fillStyle='#fff';
-        this.ctx.fillText(`FUEL: ${Math.floor(myPlayer.fuel)}`, barX, barY+barHeight+20);
+        this.ctx.fillText(`FUEL: ${Math.floor(myPlayer.fuel)}/${maxFuel}`, barX, barY+barHeight+20);
+
+        // Power bar
+        const maxPower=myPlayer.maxPower||100;
+        const powerPercent=Math.max(0, (myPlayer.power||0)/maxPower);
+        const lightsOn=myPlayer.lightsOn!==false;
+        this.ctx.fillStyle='#333';
+        this.ctx.fillRect(barX, barY+50, barWidth, barHeight);
+        this.ctx.fillStyle=powerPercent>0.3? '#44a':powerPercent>0.1? '#aa4':'#a44';
+        this.ctx.fillRect(barX, barY+50, barWidth*powerPercent, barHeight);
+        this.ctx.strokeStyle='#0af';
+        this.ctx.strokeRect(barX, barY+50, barWidth, barHeight);
+        this.ctx.fillStyle='#0af';
+        this.ctx.fillText(`POWER: ${Math.floor(myPlayer.power||0)}/${maxPower}${lightsOn? '':' [LIGHTS OFF]'}`, barX, barY+barHeight+70);
 
         // Damage bar
         const damage=myPlayer.damage||0;
         const damagePercent=Math.min(1, damage/11);
         this.ctx.fillStyle='#333';
-        this.ctx.fillRect(barX, barY+50, barWidth, barHeight);
+        this.ctx.fillRect(barX, barY+100, barWidth, barHeight);
         this.ctx.fillStyle=damagePercent<0.5? '#4a4':damagePercent<0.8? '#aa4':'#a44';
-        this.ctx.fillRect(barX, barY+50, barWidth*damagePercent, barHeight);
+        this.ctx.fillRect(barX, barY+100, barWidth*damagePercent, barHeight);
         this.ctx.strokeStyle='#fff';
-        this.ctx.strokeRect(barX, barY+50, barWidth, barHeight);
+        this.ctx.strokeRect(barX, barY+100, barWidth, barHeight);
         this.ctx.fillStyle='#fff';
-        this.ctx.fillText(`DAMAGE: ${Math.floor(damage)}/11`, barX, barY+barHeight+70);
+        this.ctx.fillText(`DAMAGE: ${Math.floor(damage)}/11`, barX, barY+barHeight+120);
 
         // Velocity
         const speed=Math.sqrt(myPlayer.vx*myPlayer.vx+myPlayer.vy*myPlayer.vy);
-        this.ctx.fillText(`SPEED: ${speed.toFixed(1)}`, barX, barY+barHeight+95);
+        this.ctx.fillText(`SPEED: ${speed.toFixed(1)}`, barX, barY+barHeight+145);
 
         // Depth indicator
         const surfaceY=this.surfaceY||0;
         const depth=Math.max(0, myPlayer.y-surfaceY);
         const depthMeters=Math.floor(depth/8); // 8 pixels per meter
-        this.ctx.fillText(`DEPTH: ${depthMeters}m`, barX+120, barY+barHeight+95);
+        this.ctx.fillText(`DEPTH: ${depthMeters}m`, barX+120, barY+barHeight+145);
 
         // Cargo bar
         const cargoAmount=myPlayer.cargoAmount||0;
         const cargoCapacity=myPlayer.cargoCapacity||500;
         const cargoPercent=cargoAmount/cargoCapacity;
         this.ctx.fillStyle='#333';
-        this.ctx.fillRect(barX, barY+120, barWidth, barHeight);
+        this.ctx.fillRect(barX, barY+170, barWidth, barHeight);
         this.ctx.fillStyle=cargoPercent<0.8? '#44a':'#a4a';
-        this.ctx.fillRect(barX, barY+120, barWidth*cargoPercent, barHeight);
+        this.ctx.fillRect(barX, barY+170, barWidth*cargoPercent, barHeight);
         this.ctx.strokeStyle='#fff';
-        this.ctx.strokeRect(barX, barY+120, barWidth, barHeight);
+        this.ctx.strokeRect(barX, barY+170, barWidth, barHeight);
         this.ctx.fillStyle='#fff';
-        this.ctx.fillText(`CARGO: ${Math.floor(cargoAmount)}/${cargoCapacity}`, barX, barY+barHeight+140);
+        this.ctx.fillText(`CARGO: ${Math.floor(cargoAmount)}/${cargoCapacity}`, barX, barY+barHeight+190);
 
         // Mass/Weight info
         const totalMass=1.0+(cargoAmount*0.002);
         this.ctx.fillStyle='#aaa';
         this.ctx.font='12px monospace';
-        this.ctx.fillText(`TOTAL MASS: ${totalMass.toFixed(2)}t`, barX, barY+barHeight+155);
+        this.ctx.fillText(`TOTAL MASS: ${totalMass.toFixed(2)}t`, barX, barY+barHeight+205);
 
         // Mining progress indicator
         if (myPlayer.mining&&myPlayer.miningProgress>0) {
-            const miningY=barY+170;
+            const miningY=barY+220;
             this.ctx.fillStyle='#333';
             this.ctx.fillRect(barX, miningY, barWidth, barHeight/2);
             this.ctx.fillStyle='#0af';
@@ -1823,7 +1869,7 @@ export class Renderer {
             this.ctx.font='bold 18px monospace';
             this.ctx.textAlign='center';
             const statusText=myPlayer.landed? 'LANDED - REFUELING/REPAIRING':'ON PAD - SLOW DOWN TO LAND';
-            this.ctx.fillText(statusText, this.canvas.width/2, 30);
+            this.ctx.fillText(statusText, this.canvas.width/2, 30+topOffset);
         }
 
         // Docking indicator
@@ -1833,11 +1879,11 @@ export class Renderer {
                 this.ctx.fillStyle=myPlayer.fuelTransferring? '#0ff':'#0f0';
                 const dockText=myPlayer.fuelTransferring? 'TRANSFERRING FUEL [F]':'DOCKED - PRESS [F] TO TRANSFER FUEL';
                 this.ctx.font='bold 16px monospace';
-                this.ctx.fillText(dockText, this.canvas.width/2, 55);
+                this.ctx.fillText(dockText, this.canvas.width/2, 55+topOffset);
             } else {
                 this.ctx.fillStyle='#ff0';
                 this.ctx.font='14px monospace';
-                this.ctx.fillText('MATCH VELOCITY TO DOCK', this.canvas.width/2, 55);
+                this.ctx.fillText('MATCH VELOCITY TO DOCK', this.canvas.width/2, 55+topOffset);
             }
         }
 
@@ -1847,13 +1893,13 @@ export class Renderer {
         this.ctx.textAlign='right';
         this.ctx.fillStyle='#aaa';
         this.ctx.font='14px monospace';
-        this.ctx.fillText(`BASE FUEL: ${Math.floor(baseFuel)}`, this.canvas.width-20, 30);
-        this.ctx.fillText(`BASE SPARE PARTS: ${Math.floor(spareParts)}`, this.canvas.width-20, 50);
+        this.ctx.fillText(`BASE FUEL: ${Math.floor(baseFuel)}`, this.canvas.width-20, 30+topOffset);
+        this.ctx.fillText(`BASE SPARE PARTS: ${Math.floor(spareParts)}`, this.canvas.width-20, 50+topOffset);
 
         // Player count
         const aliveCount=state?.aliveCount||0;
         const totalCount=state?.players?.length||0;
-        this.ctx.fillText(`PLAYERS: ${aliveCount}/${totalCount} alive`, this.canvas.width-20, 70);
+        this.ctx.fillText(`PLAYERS: ${aliveCount}/${totalCount} alive`, this.canvas.width-20, 70+topOffset);
         // Draw Station UI if landed
         if (myPlayer.onPad) {
             this.drawStationUI(myPlayer, state);
@@ -1866,14 +1912,15 @@ export class Renderer {
         const height=this.canvas.height;
         const baseRes=state.baseResources;
 
-        // Panel dimensions
-        const panelW=400;
-        const panelH=150;
+        // Larger panel for more info
+        const panelW=500;
+        const panelH=280;
         const x=(width-panelW)/2;
-        const y=80; // Below top HUD
+        const topOffset=height*0.1;
+        const y=80+topOffset; // Below top HUD
 
         // Background
-        ctx.fillStyle='rgba(0, 0, 0, 0.8)';
+        ctx.fillStyle='rgba(0, 0, 0, 0.9)';
         ctx.strokeStyle='#00f0ff';
         ctx.lineWidth=2;
         ctx.beginPath();
@@ -1883,71 +1930,228 @@ export class Renderer {
 
         // Title
         ctx.fillStyle='#00f0ff';
-        ctx.font='bold 16px "Orbitron", sans-serif';
+        ctx.font='bold 16px monospace';
         ctx.textAlign='center';
         ctx.fillText('MOON STATION ALPHA', x+panelW/2, y+25);
 
-        // Grid layout for stats
+        // Grid layout
         const col1=x+20;
-        const col2=x+panelW/2+20;
-        const rowStart=y+50;
-        const rowH=20;
+        const col2=x+panelW/2+10;
+        let rowY=y+50;
+        const rowH=18;
 
         ctx.textAlign='left';
-        ctx.font='12px "Orbitron", sans-serif';
+        ctx.font='11px monospace';
 
-        // Column 1: Station Resources
+        // === Column 1: Resources ===
+        ctx.fillStyle='#888';
+        ctx.fillText('RESOURCES', col1, rowY);
+        rowY+=rowH;
+
         ctx.fillStyle='#ffaa00';
-        ctx.fillText(`Fuel Reserves: ${Math.floor(baseRes.fuel)} / ${baseRes.maxFuel}`, col1, rowStart);
+        ctx.fillText(`Fuel: ${Math.floor(baseRes.fuel)} / ${baseRes.maxFuel}`, col1, rowY);
+        rowY+=rowH;
 
-        ctx.fillStyle='#cccccc';
-        ctx.fillText(`Spare Parts: ${Math.floor(baseRes.spareParts)} / ${baseRes.maxSpareParts}`, col1, rowStart+rowH);
+        ctx.fillStyle='#ccc';
+        ctx.fillText(`Parts: ${Math.floor(baseRes.spareParts)} / ${baseRes.maxSpareParts}`, col1, rowY);
+        rowY+=rowH;
 
-        ctx.fillStyle='#00ffaa';
-        ctx.fillText(`Build Materials: ${Math.floor(baseRes.processedMaterials||0)}`, col1, rowStart+rowH*2);
+        ctx.fillStyle='#0af';
+        ctx.fillText(`Power: ${Math.floor(baseRes.power)} / ${baseRes.maxPower}`, col1, rowY);
+        rowY+=rowH+5;
 
-        // Column 2: Status & Actions
-        ctx.fillStyle='#ffffff';
-        const currentOre=(baseRes.iron+baseRes.copper+baseRes.titanium+baseRes.gold+baseRes.platinum+baseRes.helium3);
-        ctx.fillText(`Ore Storage: ${Math.floor(currentOre)} / ${baseRes.oreCapacity}`, col2, rowStart);
+        // Ore storage
+        ctx.fillStyle='#888';
+        ctx.fillText('ORE STORAGE', col1, rowY);
+        rowY+=rowH;
 
-        // Processing animation
+        const ores=[
+            {name: 'Iron', val: baseRes.iron, color: '#8b4513'},
+            {name: 'Copper', val: baseRes.copper, color: '#b87333'},
+            {name: 'Bitite', val: baseRes.bitite, color: '#4a4a4a'},
+            {name: 'Silver', val: baseRes.silver, color: '#c0c0c0'},
+            {name: 'Titanium', val: baseRes.titanium, color: '#708090'},
+            {name: 'Gold', val: baseRes.gold, color: '#ffd700'},
+            {name: 'Platinum', val: baseRes.platinum, color: '#e5e4e2'},
+            {name: 'Diamond', val: baseRes.diamond, color: '#b9f2ff'}
+        ];
+
+        let oreX=col1;
+        let oreCount=0;
+        for (const ore of ores) {
+            if (ore.val>0||oreCount<4) {
+                ctx.fillStyle=ore.color;
+                ctx.fillText(`${ore.name}: ${Math.floor(ore.val)}`, oreX, rowY);
+                oreX+=ore.name.length>6? 90:75;
+                if (oreX>col1+200) {
+                    oreX=col1;
+                    rowY+=rowH;
+                }
+                oreCount++;
+            }
+        }
+        rowY+=rowH;
+
+        // === Column 2: Materials & Status ===
+        let col2Y=y+50;
+
+        ctx.fillStyle='#888';
+        ctx.fillText('MATERIALS', col2, col2Y);
+        col2Y+=rowH;
+
+        ctx.fillStyle='#8b8b6b';
+        ctx.fillText(`Basic: ${Math.floor(baseRes.basicMaterials||0)}`, col2, col2Y);
+        col2Y+=rowH;
+
+        ctx.fillStyle='#7090a0';
+        ctx.fillText(`Industrial: ${Math.floor(baseRes.industrialMaterials||0)}`, col2, col2Y);
+        col2Y+=rowH;
+
+        ctx.fillStyle='#c0a040';
+        ctx.fillText(`Advanced: ${Math.floor(baseRes.advancedMaterials||0)}`, col2, col2Y);
+        col2Y+=rowH;
+
+        ctx.fillStyle='#a0c0ff';
+        ctx.fillText(`Quantum: ${Math.floor(baseRes.quantumMaterials||0)}`, col2, col2Y);
+        col2Y+=rowH+5;
+
+        // Processing status
+        ctx.fillStyle='#888';
+        ctx.fillText('STATUS', col2, col2Y);
+        col2Y+=rowH;
+
         const time=Date.now()/1000;
         const dots=".".repeat(Math.floor(time%4));
-        ctx.fillStyle='#ffff00';
-        ctx.fillText(`Refining${dots}`, col2, rowStart+rowH*1);
+        ctx.fillStyle='#ff0';
+        ctx.fillText(`Refining${dots}`, col2, col2Y);
+        col2Y+=rowH;
+
+        // Antenna range
+        const antennaRange=state.antennaRange||400;
+        ctx.fillStyle='#0f0';
+        ctx.fillText(`Antenna Range: ${antennaRange}m`, col2, col2Y);
+        col2Y+=rowH;
+
+        // === Bottom Section: Actions ===
+        const bottomY=y+panelH-50;
 
         // Transfer Prompt
-        if (player.cargo.length>0) {
+        ctx.textAlign='left';
+        if (player.cargo&&player.cargo.length>0) {
             ctx.fillStyle='#ff0055';
-            ctx.font='bold 14px "Orbitron", sans-serif';
-            ctx.fillText('[HOLD T] Transfer Cargo', col2, rowStart+rowH*3);
-
-            if (player.inputs?.transferCargo) {
-                // Transferring feedback
-                ctx.fillStyle='#00ff00';
-                ctx.fillRect(col2, rowStart+rowH*3.2, 100, 2);
-            }
+            ctx.font='bold 12px monospace';
+            ctx.fillText('[HOLD T] Transfer Cargo', col1, bottomY);
         } else {
-            ctx.fillStyle='#888888';
-            ctx.fillText('Cargo Hold Empty', col2, rowStart+rowH*3);
+            ctx.fillStyle='#555';
+            ctx.fillText('Cargo Hold Empty', col1, bottomY);
         }
 
-        // Repair/Refuel Status Indicators
+        // Repair/Refuel Status
+        ctx.fillStyle='#0f0';
+        const maxFuel=player.maxFuel||500;
         if (player.damage>0&&baseRes.spareParts>0) {
-            ctx.fillStyle='#ff0000';
-            ctx.fillText('REPAIRING...', x+20, y+panelH-15);
+            ctx.fillText('REPAIRING...', col1, bottomY+18);
         }
-        if (player.fuel<1000&&baseRes.fuel>0) {
-            ctx.fillStyle='#ffaa00';
-            ctx.fillText('REFUELING...', x+120, y+panelH-15);
+        if (player.fuel<maxFuel&&baseRes.fuel>0) {
+            ctx.fillText('REFUELING...', col1+100, bottomY+18);
+        }
+        if ((player.power||0)<(player.maxPower||100)) {
+            ctx.fillText('CHARGING...', col1+200, bottomY+18);
         }
 
+        // Total value
+        ctx.textAlign='right';
+        ctx.fillStyle='#ff0';
+        ctx.font='bold 14px monospace';
+        ctx.fillText(`TOTAL VALUE: ${Math.floor(baseRes.totalValue||0)}`, x+panelW-20, bottomY+18);
     }
 
     showMessage(text, duration=3000) {
         this.message=text;
         this.messageTime=performance.now()+duration;
+    }
+
+    // Spawn floating text for ore pickup
+    spawnOrePickupText(oreName, amount, x, y, color='#fff') {
+        this.floatingTexts.push({
+            text: `+${amount} ${oreName}`,
+            x,
+            y,
+            color,
+            life: 2.0, // 2 seconds
+            vy: -30 // Float upward
+        });
+    }
+
+    // Update and draw floating texts
+    updateFloatingTexts(dt) {
+        this.floatingTexts=this.floatingTexts.filter(ft => {
+            ft.life-=dt;
+            ft.y+=ft.vy*dt;
+            return ft.life>0;
+        });
+    }
+
+    drawFloatingTexts() {
+        for (const ft of this.floatingTexts) {
+            const alpha=Math.min(1, ft.life);
+            const screenX=ft.x-this.cameraX;
+            const screenY=ft.y-this.cameraY;
+
+            this.ctx.save();
+            this.ctx.globalAlpha=alpha;
+            this.ctx.fillStyle=ft.color;
+            this.ctx.strokeStyle='#000';
+            this.ctx.lineWidth=3;
+            this.ctx.font='bold 16px monospace';
+            this.ctx.textAlign='center';
+
+            // Draw outline
+            this.ctx.strokeText(ft.text, screenX, screenY);
+            // Draw text
+            this.ctx.fillText(ft.text, screenX, screenY);
+
+            this.ctx.restore();
+        }
+    }
+
+    // Draw scrambled minimap when out of antenna range
+    drawScrambledMinimap(mapX, mapY, mapWidth, mapHeight) {
+        const ctx=this.ctx;
+        const time=performance.now()/50;
+
+        // Draw static noise
+        for (let i=0; i<200; i++) {
+            const x=mapX+Math.random()*mapWidth;
+            const y=mapY+Math.random()*mapHeight;
+            const brightness=Math.floor(Math.random()*100);
+            ctx.fillStyle=`rgb(${brightness}, ${brightness}, ${brightness})`;
+            ctx.fillRect(x, y, 2, 2);
+        }
+
+        // Draw scan lines
+        ctx.fillStyle='rgba(0, 50, 0, 0.3)';
+        for (let y=mapY; y<mapY+mapHeight; y+=4) {
+            ctx.fillRect(mapX, y, mapWidth, 2);
+        }
+
+        // Flickering "NO SIGNAL" text
+        if (Math.sin(time*0.5)>0) {
+            ctx.fillStyle='#f44';
+            ctx.font='bold 14px monospace';
+            ctx.textAlign='center';
+            ctx.fillText('NO SIGNAL', mapX+mapWidth/2, mapY+mapHeight/2-10);
+            ctx.font='10px monospace';
+            ctx.fillStyle='#f88';
+            ctx.fillText('OUT OF RANGE', mapX+mapWidth/2, mapY+mapHeight/2+10);
+            ctx.fillText('UPGRADE ANTENNA', mapX+mapWidth/2, mapY+mapHeight/2+25);
+        }
+
+        // Label
+        ctx.fillStyle='#f44';
+        ctx.font='10px monospace';
+        ctx.textAlign='center';
+        ctx.fillText('SIGNAL LOST', mapX+mapWidth/2, mapY-5);
     }
 
     // Spawn gas eruption particles

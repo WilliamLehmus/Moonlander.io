@@ -6,13 +6,15 @@ export const TileTypes={
     REGOLITH: 4,
     ROCK: 5,
     HARD_ROCK: 6,
-    // Metal ores
-    IRON_ORE: 10,
-    TITANIUM_ORE: 11,
-    COPPER_ORE: 12,
-    GOLD_ORE: 13,
-    PLATINUM_ORE: 14,
-    HELIUM3_DEPOSIT: 15
+    // Metal ores - ordered by depth/value
+    IRON_ORE: 10,        // Shallow, common
+    COPPER_ORE: 11,      // 50-200m, common
+    BITITE: 12,          // Fuel-producing material, found at various depths
+    SILVER_ORE: 13,      // 200-400m
+    TITANIUM_ORE: 14,    // 300-600m
+    GOLD_ORE: 15,        // 400-800m
+    PLATINUM_ORE: 16,    // 800-1400m
+    DIAMOND: 17          // 3500-5000m, extremely rare
 };
 
 export class VoxelMap {
@@ -418,13 +420,31 @@ export class VoxelMap {
 
     generateOres(surfaceHeights) {
         // Define ore types with depth ranges and rarity
+        // Depths in tiles (8px per tile, roughly 1 meter per tile)
+        // New depth distribution based on design doc:
+        // 0-50m: Only regolith and non-valuable materials
+        // 50-200m: Copper most common
+        // 200-400m: Silver
+        // 400-800m: Gold
+        // 800-1400m: Platinum
+        // 3500-5000m: Diamond
         const oreConfigs=[
-            {type: TileTypes.IRON_ORE, minDepth: 10, maxDepth: 300, rarity: 0.015, clusterSize: 8},
-            {type: TileTypes.COPPER_ORE, minDepth: 20, maxDepth: 250, rarity: 0.012, clusterSize: 6},
-            {type: TileTypes.TITANIUM_ORE, minDepth: 80, maxDepth: 400, rarity: 0.008, clusterSize: 5},
-            {type: TileTypes.GOLD_ORE, minDepth: 150, maxDepth: 450, rarity: 0.004, clusterSize: 4},
-            {type: TileTypes.PLATINUM_ORE, minDepth: 250, maxDepth: 500, rarity: 0.002, clusterSize: 3},
-            {type: TileTypes.HELIUM3_DEPOSIT, minDepth: 300, maxDepth: 500, rarity: 0.001, clusterSize: 5}
+            // Iron - shallow, common everywhere after regolith
+            {type: TileTypes.IRON_ORE, minDepth: 10, maxDepth: 400, rarity: 0.015, clusterSize: 8},
+            // Copper - 50-200m primary zone
+            {type: TileTypes.COPPER_ORE, minDepth: 50, maxDepth: 300, rarity: 0.018, clusterSize: 7},
+            // Bitite (fuel material) - found at various depths, becomes more common deeper
+            {type: TileTypes.BITITE, minDepth: 100, maxDepth: 800, rarity: 0.008, clusterSize: 5},
+            // Silver - 200-400m primary zone
+            {type: TileTypes.SILVER_ORE, minDepth: 150, maxDepth: 500, rarity: 0.010, clusterSize: 5},
+            // Titanium - 300-600m
+            {type: TileTypes.TITANIUM_ORE, minDepth: 250, maxDepth: 700, rarity: 0.006, clusterSize: 4},
+            // Gold - 400-800m primary zone
+            {type: TileTypes.GOLD_ORE, minDepth: 350, maxDepth: 900, rarity: 0.004, clusterSize: 4},
+            // Platinum - 800-1400m (scaled for map)
+            {type: TileTypes.PLATINUM_ORE, minDepth: 600, maxDepth: 1000, rarity: 0.002, clusterSize: 3},
+            // Diamond - deep zone only (3500+ equivalent, scaled)
+            {type: TileTypes.DIAMOND, minDepth: 900, maxDepth: 1200, rarity: 0.0008, clusterSize: 2}
         ];
 
         // Generate ore clusters

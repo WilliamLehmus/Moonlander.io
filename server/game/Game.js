@@ -1,46 +1,38 @@
 import {VoxelMap, TileTypes} from './VoxelMap.js';
 import {Player} from './Player.js';
 import {PhysicsWorld} from './PhysicsWorld.js';
+import {readFileSync} from 'fs';
+import {join, dirname} from 'path';
+import {fileURLToPath} from 'url';
+
+const __filename=fileURLToPath(import.meta.url);
+const __dirname=dirname(__filename);
+const configPath=join(__dirname, '../game_config.json');
+
+// Load default config
+const defaultConfig=JSON.parse(readFileSync(configPath, 'utf8'));
 
 // Resource costs
-const RESPAWN_COST=50; // Spare parts to respawn
-const REPAIR_COST_PER_DAMAGE=5; // Spare parts per damage point repaired
-const REFUEL_COST_PER_UNIT=0.1; // Fuel units from base per unit refueled to player
-const REFUEL_RATE=100; // Fuel units per second when on pad
-const REPAIR_RATE=1; // Damage points per second when on pad
-
-// Mining config
-const MINING_RANGE=80; // World units to mine from
-const MINING_SPEED=0.5; // Progress per second (2 seconds to mine)
-
-// Docking config
-const DOCKING_DISTANCE=40; // World units to be considered in docking range
-const DOCKING_VELOCITY_MATCH=15; // Max velocity difference to dock
-const FUEL_TRANSFER_RATE=50; // Fuel per second
-const MIN_FUEL_TRANSFER=100; // Minimum to complete a transfer
-
-// Tether config
-const TETHER_ATTACH_RANGE=80; // Max distance to attach tether
-const TETHER_MAX_LENGTH=150; // Max length before tension
-const TETHER_SNAP_LENGTH=180; // Length at which tether snaps
-const TETHER_STRENGTH=0.8; // Force multiplier when taut
-
-// Survival pod config
-const POD_RESCUE_RANGE=50; // How close to rescue a pod
-
-// Hazard config
-const GAS_POCKET_CHANCE=0.15; // Chance a deep ore has a gas pocket
-const GAS_FORCE=80; // Force applied when gas erupts
-const STALACTITE_FALL_CHANCE=0.2; // Chance nearby tiles fall when tile destroyed
+// Constants that don't need to be in config or are derived
+const DOCKING_DISTANCE=40;
+const DOCKING_VELOCITY_MATCH=15;
+const FUEL_TRANSFER_RATE=50;
+const MIN_FUEL_TRANSFER=100;
+const POD_RESCUE_RANGE=50;
+const GAS_FORCE=80;
+const STALACTITE_FALL_CHANCE=0.2;
 
 // Ore values and mining yields
+// Values increase significantly with depth/rarity
 const ORE_CONFIG={
-    [TileTypes.IRON_ORE]: {name: 'Iron', value: 10, yield: 25},
-    [TileTypes.COPPER_ORE]: {name: 'Copper', value: 15, yield: 20},
-    [TileTypes.TITANIUM_ORE]: {name: 'Titanium', value: 30, yield: 15},
-    [TileTypes.GOLD_ORE]: {name: 'Gold', value: 75, yield: 10},
-    [TileTypes.PLATINUM_ORE]: {name: 'Platinum', value: 150, yield: 8},
-    [TileTypes.HELIUM3_DEPOSIT]: {name: 'Helium-3', value: 300, yield: 5}
+    [TileTypes.IRON_ORE]: {name: 'Iron', value: 5, yield: 25, color: '#8b4513'},
+    [TileTypes.COPPER_ORE]: {name: 'Copper', value: 10, yield: 20, color: '#b87333'},
+    [TileTypes.BITITE]: {name: 'Bitite', value: 15, yield: 18, color: '#2f2f2f', fuelMaterial: true},
+    [TileTypes.SILVER_ORE]: {name: 'Silver', value: 25, yield: 15, color: '#c0c0c0'},
+    [TileTypes.TITANIUM_ORE]: {name: 'Titanium', value: 40, yield: 12, color: '#708090'},
+    [TileTypes.GOLD_ORE]: {name: 'Gold', value: 75, yield: 10, color: '#ffd700'},
+    [TileTypes.PLATINUM_ORE]: {name: 'Platinum', value: 150, yield: 8, color: '#e5e4e2'},
+    [TileTypes.DIAMOND]: {name: 'Diamond', value: 500, yield: 3, color: '#b9f2ff'}
 };
 
 export class Game {
@@ -53,25 +45,76 @@ export class Game {
         this.ready=false;
         this.io=null; // Socket.io instance for broadcasting
 
+        // Load config
+        try {
+            this.config=JSON.parse(readFileSync(configPath, 'utf8'));
+        } catch (e) {
+            console.error("Failed to load game config, using defaults", e);
+            this.config=defaultConfig;
+        }
+
         // Base resources
         this.baseResources={
             spareParts: 200, // Starting spare parts for repairs and respawns
             fuel: 5000, // Starting fuel reserves
-            // Ore storage
+            // Ore storage (8 ore types)
             iron: 0,
             copper: 0,
+            bitite: 0,     // Fuel-producing material
+            silver: 0,
             titanium: 0,
             gold: 0,
             platinum: 0,
-            helium3: 0,
+            diamond: 0,
+            // Building materials (4 tiers)
+            basicMaterials: 0,      // Tier 1: From Iron, Copper
+            industrialMaterials: 0, // Tier 2: From Silver, Titanium
+            advancedMaterials: 0,   // Tier 3: From Gold, Platinum
+            quantumMaterials: 0,    // Tier 4: From Diamond
             // Station Stats
             oreCapacity: 1000,
             maxFuel: 10000,
             maxSpareParts: 1000,
-            processedMaterials: 0, // Used for upgrades/repairs
             processingRate: 5, // Units per second
+            // Power system
+            power: 100,           // Current power
+            maxPower: 100,        // Max power capacity
+            powerGeneration: 10,  // Power generated per second (from solar)
+            powerConsumption: 5,  // Base power consumption
             // Total value delivered
             totalValue: 0
+        };
+
+        // Buildings system
+        // Each building has levels 0-5 (0 = not built, 1-5 = upgrade levels)
+        this.buildings={
+            // Storage buildings
+            oreStorage: {level: 1, name: 'Ore Storage', effect: 'oreCapacity', baseValue: 1000, perLevel: 500},
+            fuelStorage: {level: 1, name: 'Fuel Depot', effect: 'maxFuel', baseValue: 10000, perLevel: 5000},
+            partsStorage: {level: 1, name: 'Parts Warehouse', effect: 'maxSpareParts', baseValue: 1000, perLevel: 500},
+
+            // Production buildings
+            fuelRefinery: {level: 1, name: 'Fuel Refinery', effect: 'fuelProduction', baseValue: 1, perLevel: 0.5},
+            solarArray: {level: 1, name: 'Solar Array', effect: 'powerGeneration', baseValue: 10, perLevel: 10},
+            fuelGenerator: {level: 0, name: 'Fuel Generator', effect: 'fuelPower', baseValue: 0, perLevel: 20},
+
+            // Utility buildings
+            antenna: {level: 1, name: 'Communications Antenna', effect: 'antennaRange', baseValue: 400, perLevel: 400},
+            shipFactory: {level: 0, name: 'Ship Factory', effect: 'shipTypes', baseValue: 1, perLevel: 1},
+            craftingStation: {level: 0, name: 'Crafting Station', effect: 'crafting', baseValue: 0, perLevel: 1}
+        };
+
+        // Building upgrade costs (materials required per level)
+        this.buildingCosts={
+            oreStorage: [{basic: 50}, {basic: 100, industrial: 25}, {industrial: 75, advanced: 10}, {advanced: 50, quantum: 5}, {quantum: 25}],
+            fuelStorage: [{basic: 50}, {basic: 100, industrial: 25}, {industrial: 75, advanced: 10}, {advanced: 50, quantum: 5}, {quantum: 25}],
+            partsStorage: [{basic: 50}, {basic: 100, industrial: 25}, {industrial: 75, advanced: 10}, {advanced: 50, quantum: 5}, {quantum: 25}],
+            fuelRefinery: [{basic: 75}, {industrial: 50}, {industrial: 100, advanced: 25}, {advanced: 75}, {advanced: 100, quantum: 10}],
+            solarArray: [{basic: 50}, {industrial: 40}, {industrial: 80, advanced: 15}, {advanced: 60}, {quantum: 20}],
+            fuelGenerator: [{industrial: 75}, {industrial: 100, advanced: 20}, {advanced: 50}, {advanced: 100, quantum: 15}, {quantum: 40}],
+            antenna: [{basic: 100}, {industrial: 75}, {industrial: 150, advanced: 25}, {advanced: 100}, {advanced: 150, quantum: 25}],
+            shipFactory: [{industrial: 100, advanced: 25}, {advanced: 75}, {advanced: 150, quantum: 20}, {quantum: 50}, {quantum: 100}],
+            craftingStation: [{basic: 75, industrial: 25}, {industrial: 75}, {advanced: 50}, {advanced: 100, quantum: 10}, {quantum: 30}]
         };
 
         // Exploration Fog of War
@@ -80,6 +123,95 @@ export class Game {
         this.chunksX=Math.ceil(this.voxelMap.width/this.chunkSize);
         this.chunksY=Math.ceil(this.voxelMap.height/this.chunkSize);
         this.explorationGrid=new Uint8Array(this.chunksX*this.chunksY); // 0 = unexplored, 1 = explored
+    }
+
+    // Get the effective value for a building stat
+    getBuildingEffect(buildingKey) {
+        const building=this.buildings[buildingKey];
+        if (!building) return 0;
+        return building.baseValue+(building.level-1)*building.perLevel;
+    }
+
+    // Get antenna range for minimap
+    getAntennaRange() {
+        return this.getBuildingEffect('antenna');
+    }
+
+    // Check if player can afford building upgrade
+    canAffordUpgrade(buildingKey) {
+        const building=this.buildings[buildingKey];
+        if (!building||building.level>=5) return false;
+
+        const costs=this.buildingCosts[buildingKey];
+        if (!costs||building.level>=costs.length) return false;
+
+        const levelCost=costs[building.level];
+        const materialMap={
+            basic: 'basicMaterials',
+            industrial: 'industrialMaterials',
+            advanced: 'advancedMaterials',
+            quantum: 'quantumMaterials'
+        };
+
+        for (const [matType, amount] of Object.entries(levelCost)) {
+            const key=materialMap[matType];
+            if (!key||this.baseResources[key]<amount) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Upgrade a building
+    upgradeBuilding(buildingKey) {
+        if (!this.canAffordUpgrade(buildingKey)) return false;
+
+        const building=this.buildings[buildingKey];
+        const costs=this.buildingCosts[buildingKey];
+        const levelCost=costs[building.level];
+
+        const materialMap={
+            basic: 'basicMaterials',
+            industrial: 'industrialMaterials',
+            advanced: 'advancedMaterials',
+            quantum: 'quantumMaterials'
+        };
+
+        // Deduct materials
+        for (const [matType, amount] of Object.entries(levelCost)) {
+            const key=materialMap[matType];
+            this.baseResources[key]-=amount;
+        }
+
+        // Increase level
+        building.level++;
+
+        // Apply effects to base resources
+        this.applyBuildingEffects();
+
+        console.log(`Upgraded ${building.name} to level ${building.level}`);
+
+        // Broadcast the upgrade
+        this.broadcast('buildingUpgraded', {
+            building: buildingKey,
+            newLevel: building.level,
+            name: building.name
+        });
+
+        return true;
+    }
+
+    // Apply all building effects to base resources
+    applyBuildingEffects() {
+        // Storage buildings
+        this.baseResources.oreCapacity=this.getBuildingEffect('oreStorage');
+        this.baseResources.maxFuel=this.getBuildingEffect('fuelStorage');
+        this.baseResources.maxSpareParts=this.getBuildingEffect('partsStorage');
+
+        // Power generation from solar
+        this.baseResources.powerGeneration=this.getBuildingEffect('solarArray');
+
+        // Fuel generator provides extra power from fuel (handled in processStationResources)
     }
 
     setIO(io, roomCode=null) {
@@ -119,7 +251,7 @@ export class Game {
 
     addPlayer(id) {
         const spawnPos=this.voxelMap.getSpawnPosition();
-        const player=new Player(id, this.physics, spawnPos.x, spawnPos.y);
+        const player=new Player(id, this.physics, spawnPos.x, spawnPos.y, this.config);
         this.players.set(id, player);
         return player;
     }
@@ -279,12 +411,12 @@ export class Game {
         }
 
         // Check if enough spare parts
-        if (this.baseResources.spareParts<RESPAWN_COST) {
-            return {success: false, reason: 'no_resources', required: RESPAWN_COST, available: this.baseResources.spareParts};
+        if (this.baseResources.spareParts<this.config.resources.respawnCost) {
+            return {success: false, reason: 'no_resources', required: this.config.resources.respawnCost, available: this.baseResources.spareParts};
         }
 
         // Deduct resources
-        this.baseResources.spareParts-=RESPAWN_COST;
+        this.baseResources.spareParts-=this.config.resources.respawnCost;
 
         // Get spawn position
         const spawnPos=this.voxelMap.getSpawnPosition();
@@ -384,28 +516,30 @@ export class Game {
             player.onPad=isOnPad;
 
             if (isLanded) {
-                // Auto-refuel if base has fuel
-                if (player.fuel<1000&&this.baseResources.fuel>0) {
-                    const fuelNeeded=Math.min(REFUEL_RATE*dt, 1000-player.fuel);
-                    const fuelCost=fuelNeeded*REFUEL_COST_PER_UNIT;
-                    const fuelAvailable=Math.min(fuelNeeded, this.baseResources.fuel/REFUEL_COST_PER_UNIT);
+                // Auto-refuel if base has fuel (use player's maxFuel)
+                if (player.fuel<player.maxFuel&&this.baseResources.fuel>0) {
+                    const fuelNeeded=Math.min(this.config.resources.refuelRate*dt, player.maxFuel-player.fuel);
+                    const fuelCost=fuelNeeded*this.config.resources.refuelCostPerUnit;
+                    const fuelAvailable=Math.min(fuelNeeded, this.baseResources.fuel/this.config.resources.refuelCostPerUnit);
 
                     if (fuelAvailable>0) {
                         player.fuel+=fuelAvailable;
-                        this.baseResources.fuel-=fuelAvailable*REFUEL_COST_PER_UNIT;
+                        this.baseResources.fuel-=fuelAvailable*this.config.resources.refuelCostPerUnit;
                     }
                 }
 
                 // Auto-repair if base has spare parts
                 if (player.damage>0&&this.baseResources.spareParts>0) {
-                    const repairAmount=Math.min(REPAIR_RATE*dt, player.damage);
-                    const repairCost=repairAmount*REPAIR_COST_PER_DAMAGE;
+                    const repairAmount=Math.min(this.config.resources.repairRate*dt, player.damage);
+                    const repairCost=repairAmount*this.config.resources.repairCostPerDamage;
 
                     if (this.baseResources.spareParts>=repairCost) {
                         player.damage=Math.max(0, player.damage-repairAmount);
                         this.baseResources.spareParts-=repairCost;
                     }
                 }
+
+                // Recharge power faster on pad (already handled in Player.update with onPad check)
 
                 // Manual cargo transfer (Hold T)
                 if (player.inputs.transferCargo) {
@@ -490,10 +624,20 @@ export class Game {
 
             if (!oreConfig) continue;
 
-            // Add to base storage
-            const oreName=oreConfig.name.toLowerCase();
-            if (this.baseResources.hasOwnProperty(oreName)) {
-                this.baseResources[oreName]+=amount;
+            // Add to base storage using proper key mapping
+            const oreNameMap={
+                'Iron': 'iron',
+                'Copper': 'copper',
+                'Bitite': 'bitite',
+                'Silver': 'silver',
+                'Titanium': 'titanium',
+                'Gold': 'gold',
+                'Platinum': 'platinum',
+                'Diamond': 'diamond'
+            };
+            const storageKey=oreNameMap[oreConfig.name];
+            if (storageKey&&this.baseResources.hasOwnProperty(storageKey)) {
+                this.baseResources[storageKey]+=amount;
             }
 
             // Calculate value
@@ -501,14 +645,20 @@ export class Game {
             valueDelivered+=value;
             totalUnloaded+=amount;
 
-            // Generate spare parts from ore (conversion ratio)
-            const spareParts=Math.floor(amount*0.2);
-            this.baseResources.spareParts+=spareParts;
+            // Generate some immediate spare parts from ore (small amount)
+            const spareParts=Math.floor(amount*0.1);
+            this.baseResources.spareParts=Math.min(
+                this.baseResources.maxSpareParts,
+                this.baseResources.spareParts+spareParts
+            );
 
-            // Generate fuel from Helium-3
-            if (oreType===TileTypes.HELIUM3_DEPOSIT) {
-                const fuelGenerated=amount*10;
-                this.baseResources.fuel+=fuelGenerated;
+            // Generate fuel immediately from Bitite (in addition to refinery processing)
+            if (oreConfig.fuelMaterial) {
+                const fuelGenerated=amount*2; // Small immediate bonus
+                this.baseResources.fuel=Math.min(
+                    this.baseResources.maxFuel,
+                    this.baseResources.fuel+fuelGenerated
+                );
             }
         }
 
@@ -548,8 +698,8 @@ export class Game {
 
                 const tile=this.voxelMap.get(gx, gy);
 
-                // Check if it's an ore type
-                if (tile>=TileTypes.IRON_ORE&&tile<=TileTypes.HELIUM3_DEPOSIT) {
+                // Check if it's an ore type (IRON_ORE through DIAMOND)
+                if (tile>=TileTypes.IRON_ORE&&tile<=TileTypes.DIAMOND) {
                     const worldPos=this.voxelMap.gridToWorld(gx, gy);
                     const distX=worldPos.x-playerX;
                     const distY=worldPos.y-playerY;
@@ -577,6 +727,14 @@ export class Game {
             return;
         }
 
+        // Check if player has power to mine
+        if (!player.canMine()) {
+            // No power - can't mine
+            player.miningProgress=0;
+            player.miningTarget=null;
+            return;
+        }
+
         // Find nearest ore within range
         const nearest=this.findNearestOre(pos.x, pos.y, player.miningRange);
 
@@ -593,8 +751,14 @@ export class Game {
             player.miningTarget={gx: nearest.gx, gy: nearest.gy, worldX: nearest.worldX, worldY: nearest.worldY};
         }
 
+        // Consume power for mining
+        if (!player.consumeMiningPower(dt)) {
+            // Ran out of power mid-mining
+            return;
+        }
+
         // Progress mining
-        player.miningProgress+=MINING_SPEED*dt;
+        player.miningProgress+=this.config.mining.speedBase*this.config.difficulty.miningSpeedMultiplier*dt;
 
         // Check if mining complete
         if (player.miningProgress>=1) {
@@ -609,6 +773,16 @@ export class Game {
                     // Remove the ore tile (pass player for hazard checks)
                     this.destroyTile(nearest.gx, nearest.gy, player);
                     console.log(`Player ${player.id} mined ${oreConfig.name}: +${extracted} units`);
+
+                    // Broadcast ore pickup for floating text
+                    this.broadcast('orePickup', {
+                        playerId: player.id,
+                        oreName: oreConfig.name,
+                        amount: extracted,
+                        x: nearest.worldX,
+                        y: nearest.worldY,
+                        color: oreConfig.color
+                    });
                 }
             }
 
@@ -720,7 +894,7 @@ export class Game {
             const dy=otherPos.y-pos.y;
             const dist=Math.sqrt(dx*dx+dy*dy);
 
-            if (dist<=TETHER_ATTACH_RANGE&&dist<nearestDist) {
+            if (dist<=this.config.tether.attachRange&&dist<nearestDist) {
                 nearestDist=dist;
                 nearest=other;
             }
@@ -798,26 +972,27 @@ export class Game {
             other.tetherLength=dist;
 
             // Check for snap
-            if (dist>TETHER_SNAP_LENGTH) {
+            if (dist>this.config.tether.snapLength) {
                 console.log(`Tether snapped! Length: ${dist.toFixed(1)}`);
                 this.detachTether(player);
                 continue;
             }
 
             // Calculate tension (0 when slack, 1 at max)
-            const tension=Math.max(0, (dist-TETHER_MAX_LENGTH)/(TETHER_SNAP_LENGTH-TETHER_MAX_LENGTH));
+            const cableLen=this.config.difficulty.cableMaxLength||150;
+            const tension=Math.max(0, (dist-cableLen)/(this.config.tether.snapLength-cableLen));
             player.tetherTension=tension;
             other.tetherTension=tension;
 
             // Apply constraint force when taut
-            if (dist>TETHER_MAX_LENGTH) {
+            if (dist>cableLen) {
                 // Normalize direction
                 const nx=dx/dist;
                 const ny=dy/dist;
 
                 // Force proportional to how much we've exceeded max length
-                const excess=dist-TETHER_MAX_LENGTH;
-                const forceMag=excess*TETHER_STRENGTH*2; // Multiply for stronger pull
+                const excess=dist-cableLen;
+                const forceMag=excess*this.config.tether.strength*2; // Multiply for stronger pull
 
                 const ammo=this.physics.ammo;
 
@@ -879,6 +1054,18 @@ export class Game {
         let totalTransferred=0;
         let valueDelivered=0;
 
+        // Ore name to storage key mapping
+        const oreNameMap={
+            'Iron': 'iron',
+            'Copper': 'copper',
+            'Bitite': 'bitite',
+            'Silver': 'silver',
+            'Titanium': 'titanium',
+            'Gold': 'gold',
+            'Platinum': 'platinum',
+            'Diamond': 'diamond'
+        };
+
         // Process cargo items
         for (let i=player.cargo.length-1; i>=0; i--) {
             if (amountToTransfer<=0) break;
@@ -888,8 +1075,9 @@ export class Game {
 
             // Check station capacity
             const currentOre=this.baseResources.iron+this.baseResources.copper+
+                this.baseResources.bitite+this.baseResources.silver+
                 this.baseResources.titanium+this.baseResources.gold+
-                this.baseResources.platinum+this.baseResources.helium3;
+                this.baseResources.platinum+this.baseResources.diamond;
 
             if (currentOre+transferAmount>this.baseResources.oreCapacity) {
                 // Station full
@@ -898,9 +1086,9 @@ export class Game {
 
             const oreConfig=ORE_CONFIG[cargoItem.type];
             if (oreConfig) {
-                const oreName=oreConfig.name.toLowerCase();
-                if (this.baseResources.hasOwnProperty(oreName)) {
-                    this.baseResources[oreName]+=transferAmount;
+                const storageKey=oreNameMap[oreConfig.name];
+                if (storageKey&&this.baseResources.hasOwnProperty(storageKey)) {
+                    this.baseResources[storageKey]+=transferAmount;
                 }
 
                 // Calculate partial value
@@ -924,54 +1112,118 @@ export class Game {
 
     // Process station resources over time
     processStationResources(dt) {
-        // Simple processing: Convert ores to processed materials / spare parts / fuel
-        // Priority: Helium3 -> Fuel, Others -> Spare Parts / Processed Materials
+        // Process ores into fuel, spare parts, and tiered building materials
+        // 4 Tiers of materials:
+        // Basic (Tier 1): Iron, Copper
+        // Industrial (Tier 2): Silver, Titanium
+        // Advanced (Tier 3): Gold, Platinum
+        // Quantum (Tier 4): Diamond
 
         const PROCESSING_SPEED=this.baseResources.processingRate*dt;
 
-        // Process Helium-3 to Fuel
-        if (this.baseResources.helium3>0&&this.baseResources.fuel<this.baseResources.maxFuel) {
-            const amount=Math.min(PROCESSING_SPEED, this.baseResources.helium3);
-            this.baseResources.helium3-=amount;
-            this.baseResources.fuel=Math.min(this.baseResources.maxFuel, this.baseResources.fuel+amount*10);
+        // Process Bitite to Fuel (primary fuel source)
+        if (this.baseResources.bitite>0&&this.baseResources.fuel<this.baseResources.maxFuel) {
+            const amount=Math.min(PROCESSING_SPEED*2, this.baseResources.bitite);
+            this.baseResources.bitite-=amount;
+            // Bitite is efficient for fuel production
+            this.baseResources.fuel=Math.min(this.baseResources.maxFuel, this.baseResources.fuel+amount*8);
         }
 
-        // Process other ores to Spare Parts & Materials
-        const ores=['iron', 'copper', 'titanium', 'gold', 'platinum'];
+        // Process Tier 1 ores (Iron, Copper) -> Basic Materials + Spare Parts
         let processingPower=PROCESSING_SPEED;
-
-        for (const ore of ores) {
+        const tier1Ores=['iron', 'copper'];
+        for (const ore of tier1Ores) {
             if (processingPower<=0) break;
             if (this.baseResources[ore]>0) {
                 const amount=Math.min(processingPower, this.baseResources[ore]);
                 this.baseResources[ore]-=amount;
-
-                // 50% to spare parts, 50% to processed materials
-                // Higher tier ores give more
-                const multiplier=(ores.indexOf(ore)+1);
-
-                // Spare parts cap
+                // Basic materials production
+                this.baseResources.basicMaterials+=amount*0.6;
+                // Some spare parts
                 if (this.baseResources.spareParts<this.baseResources.maxSpareParts) {
-                    this.baseResources.spareParts+=amount*multiplier*0.5;
+                    this.baseResources.spareParts+=amount*0.4;
                 }
-
-                this.baseResources.processedMaterials+=amount*multiplier*0.5;
-
                 processingPower-=amount;
             }
         }
+
+        // Process Tier 2 ores (Silver, Titanium) -> Industrial Materials + Spare Parts
+        processingPower=PROCESSING_SPEED*0.8; // Slightly slower processing
+        const tier2Ores=['silver', 'titanium'];
+        for (const ore of tier2Ores) {
+            if (processingPower<=0) break;
+            if (this.baseResources[ore]>0) {
+                const amount=Math.min(processingPower, this.baseResources[ore]);
+                this.baseResources[ore]-=amount;
+                this.baseResources.industrialMaterials+=amount*0.7;
+                if (this.baseResources.spareParts<this.baseResources.maxSpareParts) {
+                    this.baseResources.spareParts+=amount*0.5;
+                }
+                processingPower-=amount;
+            }
+        }
+
+        // Process Tier 3 ores (Gold, Platinum) -> Advanced Materials + Spare Parts
+        processingPower=PROCESSING_SPEED*0.5; // Even slower
+        const tier3Ores=['gold', 'platinum'];
+        for (const ore of tier3Ores) {
+            if (processingPower<=0) break;
+            if (this.baseResources[ore]>0) {
+                const amount=Math.min(processingPower, this.baseResources[ore]);
+                this.baseResources[ore]-=amount;
+                this.baseResources.advancedMaterials+=amount*0.8;
+                if (this.baseResources.spareParts<this.baseResources.maxSpareParts) {
+                    this.baseResources.spareParts+=amount*0.8;
+                }
+                processingPower-=amount;
+            }
+        }
+
+        // Process Tier 4 ore (Diamond) -> Quantum Materials
+        processingPower=PROCESSING_SPEED*0.2; // Very slow
+        if (this.baseResources.diamond>0) {
+            const amount=Math.min(processingPower, this.baseResources.diamond);
+            this.baseResources.diamond-=amount;
+            this.baseResources.quantumMaterials+=amount*1.0;
+            // Diamonds also generate spare parts (they're very valuable)
+            if (this.baseResources.spareParts<this.baseResources.maxSpareParts) {
+                this.baseResources.spareParts+=amount*2.0;
+            }
+        }
+
+        // Update power generation (base solar power for now)
+        const powerDelta=(this.baseResources.powerGeneration-this.baseResources.powerConsumption)*dt;
+        this.baseResources.power=Math.max(0, Math.min(this.baseResources.maxPower, this.baseResources.power+powerDelta));
     }
 
     getState() {
-        if (!this.ready) return {players: [], baseResources: this.baseResources, respawnCost: RESPAWN_COST};
+        if (!this.ready) return {players: [], baseResources: this.baseResources, respawnCost: this.config.resources.respawnCost};
         return {
             players: Array.from(this.players.values()).map(p => p.serialize()),
             baseResources: this.baseResources,
-            respawnCost: RESPAWN_COST,
+            buildings: this.serializeBuildings(),
+            respawnCost: this.config.resources.respawnCost,
             aliveCount: this.getAlivePlayerCount(),
             basePosition: this.voxelMap.basePosition,
             basePadBounds: this.voxelMap.basePadBounds,
-            explorationGrid: this.explorationGrid // Send explored chunks
+            explorationGrid: this.explorationGrid, // Send explored chunks
+            antennaRange: this.getAntennaRange()  // For minimap range
         };
+    }
+
+    // Serialize buildings for client
+    serializeBuildings() {
+        const result={};
+        for (const [key, building] of Object.entries(this.buildings)) {
+            result[key]={
+                level: building.level,
+                name: building.name,
+                maxLevel: 5,
+                canUpgrade: this.canAffordUpgrade(key),
+                currentEffect: this.getBuildingEffect(key),
+                nextCost: building.level<5? this.buildingCosts[key][building.level]:null
+            };
+        }
+        return result;
     }
 }
