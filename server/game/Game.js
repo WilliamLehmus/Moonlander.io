@@ -21,7 +21,7 @@ const MIN_FUEL_TRANSFER=100;
 const POD_RESCUE_RANGE=50;
 const GAS_FORCE=80;
 const STALACTITE_FALL_CHANCE=0.2;
-const MAX_HEIGHT_CEILING=-100; // Players cannot fly higher than this (y coordinate, negative is up)
+const MAX_HEIGHT_CEILING=100; // Players cannot fly higher than this (y coordinate, starts at 0 at top edge)
 const GAS_POCKET_CHANCE=0.15; // 15% chance of gas pocket at depth
 
 // Ore values and mining yields
@@ -59,6 +59,8 @@ export class Game {
         this.baseResources={
             spareParts: 200, // Starting spare parts for repairs and respawns
             fuel: 5000, // Starting fuel reserves
+            oxygen: 1000, // Starting oxygen
+            maxOxygen: 1000,
             // Ore storage (8 ore types)
             iron: 0,
             copper: 0,
@@ -527,7 +529,9 @@ export class Game {
             fuel: stats.fuel,
             power: stats.power,
             damage: stats.damage,
+            oxygen: stats.oxygen||100,
             cargo: stats.cargo,
+            ownerId: player.id,
             body: body
         };
 
@@ -557,6 +561,20 @@ export class Game {
         this.vehicles.delete(vehicle.id);
 
         this.broadcast('vehicleRemoved', {id: vehicle.id});
+    }
+
+    // Remove all vehicles owned by a specific player
+    removePlayerVehicles(playerId) {
+        for (const [vehicleId, vehicle] of this.vehicles) {
+            if (vehicle.ownerId===playerId) {
+                if (vehicle.body) {
+                    this.physics.world.removeRigidBody(vehicle.body);
+                }
+                this.vehicles.delete(vehicleId);
+                this.broadcast('vehicleRemoved', {id: vehicleId});
+                console.log(`Removed vehicle ${vehicleId} belonging to player ${playerId}`);
+            }
+        }
     }
 
     update() {
@@ -592,10 +610,14 @@ export class Game {
 
             // If significant speed drop, player collided
             if (speedDrop>10) {
-                // Calculate damage based on impact speed
-                const damageAmount=Math.min(3, Math.max(0.3, speedDrop/30));
-                player.takeDamage(damageAmount);
-                console.log(`Damage: ${damageAmount.toFixed(2)}, total: ${player.damage.toFixed(2)}`);
+                const damage=Math.floor(speedDrop/10);
+                player.takeDamage(damage);
+                console.log(`Damage: ${damage.toFixed(2)}, total: ${player.damage.toFixed(2)}`);
+
+                // If player was EVA and died, remove their parked ship
+                if (player.dead&&player.shipType==='eva') {
+                    this.removePlayerVehicles(player.id);
+                }
 
                 // Destroy tiles on high-speed impacts
                 if (preSpeed>60&&speedDrop>30) {
@@ -652,6 +674,15 @@ export class Game {
                 if (player.inputs.transferCargo) {
                     this.transferCargoToStation(player, dt);
                 }
+
+                // Recharge oxygen at Habitat (on pad)
+                if (player.oxygen<player.maxOxygen&&this.baseResources.oxygen>0) {
+                    const rechargeRate=player.shipType==='eva'? 20:5; // EVA suit recharges faster
+                    const rechargeAmount=Math.min(rechargeRate*dt, player.maxOxygen-player.oxygen);
+                    const available=Math.min(rechargeAmount, this.baseResources.oxygen);
+                    player.oxygen+=available;
+                    this.baseResources.oxygen-=available;
+                }
             }
         }
 
@@ -684,7 +715,13 @@ export class Game {
 
         // Sync Player Logic (Inputs -> Force)
         for (const player of this.players.values()) {
+            const wasDead=player.dead;
             player.update(dt);
+
+            // Check for death from other causes (oxygen, etc)
+            if (player.dead&&!wasDead&&player.shipType==='eva') {
+                this.removePlayerVehicles(player.id);
+            }
         }
 
         // Enforce flight ceiling
@@ -1534,6 +1571,9 @@ export class Game {
         // Update power generation (base solar power for now)
         const powerDelta=(this.baseResources.powerGeneration-this.baseResources.powerConsumption)*dt;
         this.baseResources.power=Math.max(0, Math.min(this.baseResources.maxPower, this.baseResources.power+powerDelta));
+
+        // Update oxygen generation (1.5 per sec, matches 1 player consumption)
+        this.baseResources.oxygen=Math.min(this.baseResources.maxOxygen, this.baseResources.oxygen+1.5*dt);
     }
 
     getState() {
@@ -1563,7 +1603,8 @@ export class Game {
                 y: vehicle.y,
                 angle: vehicle.angle||0,
                 type: vehicle.type,
-                damage: vehicle.damage
+                damage: vehicle.damage,
+                oxygen: vehicle.oxygen||100
             });
         }
         return result;

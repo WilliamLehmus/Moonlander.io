@@ -1827,7 +1827,7 @@ export class Renderer {
 
     drawControlsHelp() {
         const helpX=20;
-        const helpY=this.canvas.height-200;
+        const helpY=this.canvas.height-280; // Moved up from -200
 
         this.ctx.fillStyle='rgba(0, 0, 0, 0.6)';
         this.ctx.fillRect(helpX-5, helpY-20, 200, 215);
@@ -1844,7 +1844,7 @@ export class Renderer {
             ['W / UP', 'Thrust'],
             ['A / D', 'Rotate left/right'],
             ['SPACE', 'Mine ore (hold)'],
-            ['E', 'Interact (Exit/Board)'],
+            ['X', 'Interact (Exit/Board)'],
             ['G', 'Toggle tether'],
             ['B', 'Open Station Menu'],
             ['F', 'Transfer fuel (docked)'],
@@ -2102,9 +2102,25 @@ export class Renderer {
         this.ctx.font='12px monospace';
         this.ctx.fillText(`TOTAL MASS: ${totalMass.toFixed(2)}t`, barX, barY+barHeight+205);
 
+        // Oxygen bar for ships too
+        if (!isEVA) {
+            const oxygen=myPlayer.oxygen||100;
+            const maxOxygen=myPlayer.maxOxygen||100;
+            const oxPercent=Math.max(0, oxygen/maxOxygen);
+            const oxY=barY+220;
+            this.ctx.fillStyle='#333';
+            this.ctx.fillRect(barX, oxY, barWidth, barHeight);
+            this.ctx.fillStyle=oxPercent>0.5? '#0ff':oxPercent>0.2? '#aa4':'#f00';
+            this.ctx.fillRect(barX, oxY, barWidth*oxPercent, barHeight);
+            this.ctx.strokeStyle='#fff';
+            this.ctx.strokeRect(barX, oxY, barWidth, barHeight);
+            this.ctx.fillStyle='#fff';
+            this.ctx.fillText(`OXYGEN: ${Math.floor(oxygen)}%`, barX, oxY+barHeight+20);
+        }
+
         // Mining progress indicator
         if (myPlayer.mining&&myPlayer.miningProgress>0) {
-            const miningY=barY+220;
+            const miningY=barY+260; // Shifted down for oxygen bar
             this.ctx.fillStyle='#333';
             this.ctx.fillRect(barX, miningY, barWidth, barHeight/2);
             this.ctx.fillStyle='#0af';
@@ -2147,7 +2163,8 @@ export class Renderer {
         this.ctx.fillStyle='#aaa';
         this.ctx.font='14px monospace';
         this.ctx.fillText(`BASE FUEL: ${Math.floor(baseFuel)}`, this.canvas.width-20, 30+topOffset);
-        this.ctx.fillText(`BASE SPARE PARTS: ${Math.floor(spareParts)}`, this.canvas.width-20, 50+topOffset);
+        this.ctx.fillText(`BASE OXYGEN: ${Math.floor(state.baseResources?.oxygen||0)}`, this.canvas.width-20, 50+topOffset);
+        this.ctx.fillText(`BASE SPARE PARTS: ${Math.floor(spareParts)}`, this.canvas.width-20, 70+topOffset);
 
         // Player count
         const aliveCount=state?.aliveCount||0;

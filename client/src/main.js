@@ -25,6 +25,12 @@ const leaveBtn=document.getElementById('leaveBtn');
 const nicknameInput=document.getElementById('nickname');
 const canvas=document.getElementById('game');
 
+// Restore nickname from local storage
+const savedNickname=localStorage.getItem('moonlander_nickname');
+if (savedNickname) {
+  nicknameInput.value=savedNickname;
+}
+
 // Escape Menu Elements
 const escapeMenuEl=document.getElementById('escapeMenu');
 const masterVolumeInput=document.getElementById('masterVolume');
@@ -175,6 +181,7 @@ createBtn.addEventListener('click', () => {
   showStatus('Creating game...');
 
   const nickname=nicknameInput.value.trim()||'Explorer';
+  localStorage.setItem('moonlander_nickname', nickname);
   socket.emit('createRoom', {nickname}, (response) => {
     createBtn.disabled=false;
     joinBtn.disabled=false;
@@ -199,6 +206,7 @@ joinBtn.addEventListener('click', () => {
   showStatus('Joining game...');
 
   const nickname=nicknameInput.value.trim()||'Explorer';
+  localStorage.setItem('moonlander_nickname', nickname);
   socket.emit('joinRoom', {code, nickname}, (response) => {
     createBtn.disabled=false;
     joinBtn.disabled=false;

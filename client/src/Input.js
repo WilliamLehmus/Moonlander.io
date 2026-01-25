@@ -90,7 +90,18 @@ export class Input {
                     changed=true;
                 }
                 break;
+            case 'KeyX':
+                if (this.state.interact!==isDown) {
+                    this.state.interact=isDown;
+                    changed=true;
+                }
+                break;
             case 'KeyE':
+                // Interact was E, but user wants X. Let's keep E as a secondary or remove.
+                // User said "Make X the exit moonlander button".
+                // I'll keep E for now for boarding or just remove?
+                // Actually boarding and exiting are the same "interact".
+                // Let's just make X the primary.
                 if (this.state.interact!==isDown) {
                     this.state.interact=isDown;
                     changed=true;

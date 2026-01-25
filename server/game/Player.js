@@ -258,12 +258,18 @@ export class Player {
         this.dead=false;
         this.deathTime=null;
         this.damage=0;
-        this.fuel=this.maxFuel;   // Full fuel
-        this.power=this.maxPower; // Full power
-        this.lightsOn=true;       // Lights on
+        this.fuel=this.maxFuel;
+        this.power=this.maxPower;
+        this.oxygen=this.maxOxygen||100;
+        this.lightsOn=true;
         this.landed=false;
         this.spawnX=spawnX;
         this.spawnY=spawnY;
+
+        // If player was EVA, respawn as scout (user requested basic moonlander)
+        if (this.shipType==='eva') {
+            this.setShipType('scout');
+        }
 
         return true;
     }
@@ -301,8 +307,8 @@ export class Player {
         // Thrust - uses fuel
         // EVA Movement (Walking/Jetpack)
         if (this.shipType==='eva') {
-            // Apply high damping to stop quickly (walking friction)
-            this.body.setDamping(0.9, 0.0); // High linear damping, zero angular
+            // Apply low damping to allow natural falling (user requested same fall rate)
+            this.body.setDamping(0.05, 0.0); // Match ship linear damping, zero angular
             this.body.setAngularFactor(new ammo.btVector3(0, 0, 0)); // No rotation for stick figure
 
             const WALK_FORCE=30;
@@ -549,14 +555,18 @@ export class Player {
                 maxFuel: 500, fuelConsumption: 30,
                 cargoCapacity: 500,
                 thrustForce: 80,
-                maxPower: 100
+                maxPower: 100,
+                maxOxygen: 100,
+                oxygenConsumption: 0 // No consumption while in ship
             },
             cargo: {
                 width: 30, height: 30, mass: 2.5,
                 maxFuel: 1000, fuelConsumption: 45,
                 cargoCapacity: 1500,
                 thrustForce: 150,
-                maxPower: 150
+                maxPower: 150,
+                maxOxygen: 150,
+                oxygenConsumption: 0
             },
             eva: {
                 width: 6, height: 12, mass: 0.1,
@@ -609,6 +619,7 @@ export class Player {
             this.fuel=restoreState.fuel;
             this.power=restoreState.power;
             this.damage=restoreState.damage;
+            this.oxygen=restoreState.oxygen;
             this.cargo=restoreState.cargo||[];
         }
 

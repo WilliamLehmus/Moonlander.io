@@ -1,7 +1,13 @@
 # Moonlander.io - Game Design Document
 ## A Cooperative Lunar Exploration Experience
 
-# NEW FEATURES 2026-01-26 - IMPLEMENTED ✓
+# NEW FEATURES Batch 1
+Mining laser: Decrease the power consumption of the mining laser by 50%. 
+Ship antenna: Implement a mechanic of a ship antenna that can be toggled on or off by the player. A ship antenna that is on transmits its position on the minimap to all other players within range. The antenna when it's on consumes power. If a player has it's antenna turned off, they will not be visible on the minimap to other players.
+Ship spotlight: Implement a mechanic that the moonlander spotlight can be toggled on or off by the player. The spotlight when it's on consumes power. All light sources are synced in multiplayer.
+Moonlander power: The moonlander's power regeneration is enough to power the ship antenna and the ship spotlight. If the moonlander's power is depleted, the ship antenna and the ship spotlight will turn off automatically. Power generation decreases with the moonlander's damage taken. 
+Moonlander fuel: The lowest fuel level is 0. A moonlander with 0 fuel will not be able to move or ignite it's thrusters. Power generation is decoupled from moonlanders fuel. It will still regenerate power if the moonlander is out of fuel according to the logic above. 
+Sounds: Implement toggle light and toggle spotlight sound effects (toggle_light.mp3). Implement a message received notificaton when someone types in the chat (message_notification_short.mp3) and add a UI slider to the settings to toggle notification volume. Default the message received notification volume to 50%.Implement mining laser sound (mining_laser_small.mp3) that is constantly played while mining.Implement a on death music sound track (on_death_music.mp3) that is played when a player dies. Implement a heartbeat sound (heartbeat.mp3) that is played when a player is in EVA mode and is running out of oxygen. Implement a sound effect that is played when a ore is mined (ore_mined.mp3). Implement a menu pop sound (menu_pop.mp3) that is played when a player clicks or changes a menu option. This also applies for all menu actions in a base such as opening the station menu or the construction menu.
 
 ## Summary of Implemented Features
 
