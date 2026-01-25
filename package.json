@@ -4,13 +4,15 @@
   "private": false,
   "license": "MIT",
   "scripts": {
-    "start": "concurrently \"npm run start:server\" \"npm run start:client\"",
-    "start:server": "cd server && npm run start",
-    "start:client": "cd client && npm run preview",
+    "start": "cross-env NODE_ENV=production node server/index.js",
+    "build": "cd client && npm run build",
+    "postinstall": "cd client && npm install && cd ../server && npm install",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "cd server && npm run dev",
-    "dev:client": "cd client && npm run dev",
-    "install:all": "npm install && cd server && npm install && cd client && npm install"
+    "dev:client": "cd client && npm run dev"
+  },
+  "dependencies": {
+    "cross-env": "^7.0.3"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"

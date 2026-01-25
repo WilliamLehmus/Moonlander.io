@@ -2609,7 +2609,7 @@ export class Renderer {
         this.ctx.font='14px monospace';
         this.ctx.fillText(`    Cost: ${respawnCost} spare parts`, textX, textY);
         textY+=20;
-        this.ctx.fillText(`    Available: ${spareParts} spare parts`, textX, textY);
+        this.ctx.fillText(`    Available: ${Math.round(spareParts)} spare parts`, textX, textY);
         textY+=35;
 
         // Option 2: Wait for rescue

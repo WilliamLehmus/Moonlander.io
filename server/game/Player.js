@@ -126,6 +126,9 @@ export class Player {
         this.podVY=0;
         this.beaconPulse=0; // For distress beacon animation
 
+        this.isMiningResource=false;
+        this.transferring=false;
+
         // Tmp vectors/quat for reading state to avoid GC
         // Note: In real production, reuse single global instances if possible, 
         // but here one per player is fine.
@@ -507,7 +510,9 @@ export class Player {
             podLifeSupport: this.podLifeSupport,
             podX: this.podX,
             podY: this.podY,
-            beaconPulse: this.beaconPulse
+            beaconPulse: this.beaconPulse,
+            isMiningResource: this.isMiningResource,
+            transferring: this.transferring
         };
     }
 

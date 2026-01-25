@@ -684,7 +684,10 @@ export class Game {
 
                 // Manual cargo transfer (Hold T)
                 if (player.inputs.transferCargo) {
+                    player.transferring=player.cargo.length>0;
                     this.transferCargoToStation(player, dt);
+                } else {
+                    player.transferring=false;
                 }
 
                 // Recharge oxygen at Habitat (on pad)
@@ -1064,6 +1067,7 @@ export class Game {
 
         // Find nearest ore within range
         const nearest=this.findNearestOre(pos.x, pos.y, player.miningRange);
+        player.isMiningResource=!!nearest;
 
         if (!nearest) {
             // No ore in range
@@ -1501,6 +1505,7 @@ export class Game {
 
     // Process station resources over time
     processStationResources(dt) {
+        let isRefining=false;
         // Process ores into fuel, spare parts, and tiered building materials
         // 4 Tiers of materials:
         // Basic (Tier 1): Iron, Copper
@@ -1516,6 +1521,7 @@ export class Game {
             this.baseResources.bitite-=amount;
             // Bitite is efficient for fuel production
             this.baseResources.fuel=Math.min(this.baseResources.maxFuel, this.baseResources.fuel+amount*8);
+            isRefining=true;
         }
 
         // Process Tier 1 ores (Iron, Copper) -> Basic Materials + Spare Parts
@@ -1533,6 +1539,7 @@ export class Game {
                     this.baseResources.spareParts+=amount*0.4;
                 }
                 processingPower-=amount;
+                isRefining=true;
             }
         }
 
@@ -1549,6 +1556,7 @@ export class Game {
                     this.baseResources.spareParts+=amount*0.5;
                 }
                 processingPower-=amount;
+                isRefining=true;
             }
         }
 
@@ -1565,6 +1573,7 @@ export class Game {
                     this.baseResources.spareParts+=amount*0.8;
                 }
                 processingPower-=amount;
+                isRefining=true;
             }
         }
 
@@ -1578,7 +1587,10 @@ export class Game {
             if (this.baseResources.spareParts<this.baseResources.maxSpareParts) {
                 this.baseResources.spareParts+=amount*2.0;
             }
+            isRefining=true;
         }
+
+        this.isRefining=isRefining;
 
         // Update power generation (base solar power for now)
         const powerDelta=(this.baseResources.powerGeneration-this.baseResources.powerConsumption)*dt;
@@ -1601,7 +1613,8 @@ export class Game {
             explorationGrid: this.explorationGrid, // Send explored chunks
             antennaRange: this.getAntennaRange(),  // For minimap range
             wreckages: this.serializeWreckages(),  // Send active wreckages
-            vehicles: this.serializeVehicles()     // Send parked vehicles
+            vehicles: this.serializeVehicles(),    // Send parked vehicles
+            refining: this.isRefining
         };
     }
 

@@ -1,28 +1,25 @@
 # Moonlander.io - Game Design Document
 ## A Cooperative Lunar Exploration Experience
 
-# NEW FEATURES Batch 1
-Mining laser: Decrease the power consumption of the mining laser by 50%. 
-Ship antenna: Implement a mechanic of a ship antenna that can be toggled on or off by the player. A ship antenna that is on transmits its position on the minimap to all other players within range. The antenna when it's on consumes power. If a player has it's antenna turned off, they will not be visible on the minimap to other players.
-Ship spotlight: Implement a mechanic that the moonlander spotlight can be toggled on or off by the player. The spotlight when it's on consumes power. All light sources are synced in multiplayer.
-Moonlander power: The moonlander's power regeneration is enough to power the ship antenna and the ship spotlight. If the moonlander's power is depleted, the ship antenna and the ship spotlight will turn off automatically. Power generation decreases with the moonlander's damage taken. 
-Moonlander fuel: The lowest fuel level is 0. A moonlander with 0 fuel will not be able to move or ignite it's thrusters. Power generation is decoupled from moonlanders fuel. It will still regenerate power if the moonlander is out of fuel according to the logic above. 
-Sounds: Implement toggle light and toggle spotlight sound effects (toggle_light.mp3). Implement a message received notificaton when someone types in the chat (message_notification_short.mp3) and add a UI slider to the settings to toggle notification volume. Default the message received notification volume to 50%.Implement mining laser sound (mining_laser_small.mp3) that is constantly played while mining.Implement a on death music sound track (on_death_music.mp3) that is played when a player dies. Implement a heartbeat sound (heartbeat.mp3) that is played when a player is in EVA mode and is running out of oxygen. Implement a sound effect that is played when a ore is mined (ore_mined.mp3). Implement a menu pop sound (menu_pop.mp3) that is played when a player clicks or changes a menu option. This also applies for all menu actions in a base such as opening the station menu or the construction menu.
+# NEW FEATURES 2026-01-25 (Batch 2) - IMPLEMENTED ✓
 
-# NEW FEATURES Batch 2
-- Add a splash screen (splash_screen.png) in the main menu
-- Implement transfer cargo sound (transfer_cargo.mp3), speed up sound 50% and repeat as long as player is transferring cargo
-- Implement refueling sound effect (refueling1.mp3 & refueling2.mp3)
-- Implement power down sound effect (power_down.mp3) when ship runs out of power
-- Round of available supply on death screen to nearest integer.
-- Add two new music tracks to the game (Track3.mp3 & Track4.mp3). Implement
-blending between tracks so that there is no silence between tracks.
-- Implementing refinery sound when the refinery is refining resources (refinery.mp3). Make sure that the state management of the refinery is correct and that the sound is played when the refinery is refining resources and stopped when the refinery is not refining resources. The sound should be a loop.
-- Implement low fuel warning sound (low_fuel_warning.mp3) when the moonlander's fuel is below 25% and the moonlander is not docked to a base. The sound should be a loop.
+## Summary of Implemented Features
 
-Bug fixes: 
-- on_death_music.mp3 is not played when a player dies (ie. when the player crashes the moonlander or runs out of oxygen)
-- The mining laser sound should only be played when the mining laser is actually mining resources. 
+### 1. UI & Visuals ✓
+- **Splash Screen**: Added a high-quality cinematic splash screen (`splash_screen.png`) to the main menu.
+- **Rounding**: Available spare parts on the death screen are now rounded to the nearest integer.
+
+### 2. Advanced Audio System ✓
+- **Music Blending**: Implemented a transition system between Track1, Track2, Track3, and Track4. Tracks now crossfade smoothly without silence.
+- **Refueling Sounds**: Added randomized refueling sound effects (`refueling1.mp3`, `refueling2.mp3`) when docked at the landing pad.
+- **Cargo Transfer**: New sound effect (`transfer_cargo.mp3`) with 1.5x playback speed that loops while transferring cargo.
+- **Refinery Sound**: Loop sound (`refinery.mp3`) remains active while the base refinery is processing minerals.
+- **Low Fuel Warning**: A pulsing loop sound (`low_fuel_warning.mp3`) triggers when the ship is below 25% fuel and not docked.
+- **Power Down**: Mechanical shutdown sound (`power_down.mp3`) triggers when power is completely depleted.
+
+### 3. Bug Fixes ✓
+- **Death Music Fix**: `on_death_music.mp3` now correctly plays when a player's ship is destroyed or they run out of oxygen in EVA.
+- **Mining Laser Sound Fix**: The mining sound now only plays when the laser is successfully hitting a resource tile, preventing phantom sound during missed shots.
 
 
 ## Summary of Implemented Features
@@ -190,15 +187,19 @@ The game now supports a `game_config.json` file on the server, allowing admins t
 - **Decoupled Charging**: Power continues to regenerate from solar panels even if fuel is empty.
 
 ### 3. Integrated Audio Feedback ✓
-- **System Sounds**: Mechanical clicks for toggling lights and antenna.
-- **Continuous Mining**: Loop sound for the mining laser.
-- **Low Oxygen Alarm**: Heartbeat sound triggers at <25% oxygen in EVA.
-- **Death & Victory**: Specific music tracks for ship destruction and resource collection.
+- **System Sounds**: Mechanical clicks for toggling lights and antenna (`toggle_light.mp3`).
+- **Continuous Mining**: Loop sound for the mining laser (`mining_laser_small.mp3`).
+- **Low Oxygen Alarm**: Heartbeat sound (`heartbeat.mp3`) triggers at <25% oxygen in EVA.
+- **Ore Collection**: Audio cue (`ore_mined.mp3`) when minerals are successfully extracted.
+- **UI Feedback**: Tactile click sound (`menu_pop.mp3`) for all menu interactions.
+- **Notifications**: Message received chime (`message_notification_short.mp3`) with dedicated volume slider.
 
 ### 4. Communication & Chat ✓
-- **Notification System**: Audio ping for incoming chat messages.
+- **Multiplayer Chat**: Fully synced text chat system with audio pings for incoming messages.
 - **Customizable Audio**: UI sliders for Master, Music, SFX, and Notification volumes.
-- **Minimap Stealth**: Teammates with antennas OFF are hidden from the minimap.
+- **Visual Sync**: Toggled lights and spotlight states are visible to all players.
+- **Minimap Stealth**: Antenna state determines whether your position is broadcast to teammates; antennas OFF hides you from the minimap.
+- **Death & Victory**: Specific music tracks for ship destruction (`on_death_music.mp3`) and resource mining.
 
 ---
 

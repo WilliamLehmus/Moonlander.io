@@ -17,6 +17,18 @@ export class SoundManager {
         this.miningLaserSound=null;
         this.isHeartbeatActive=false;
         this.heartbeatSound=null;
+
+        this.isTransferring=false;
+        this.transferSound=null;
+        this.refinerySound=null;
+        this.isRefining=false;
+        this.lowFuelWarningSound=null;
+        this.isLowFuelWarningActive=false;
+
+        // Music blending
+        this.musicTracks=[];
+        this.currentTrackIndex=-1;
+        this.isChangingTrack=false;
     }
 
     async loadSounds() {
@@ -33,7 +45,13 @@ export class SoundManager {
             death_music: '/Music/on_death_music.mp3',
             heartbeat: '/Sounds/heartbeat.mp3',
             ore_mined: '/Sounds/ore_mined.mp3',
-            menu_pop: '/Sounds/menu_pop.mp3'
+            menu_pop: '/Sounds/menu_pop.mp3',
+            transfer_cargo: '/Sounds/transfer_cargo.mp3',
+            refueling1: '/Sounds/refueling1.mp3',
+            refueling2: '/Sounds/refueling2.mp3',
+            power_down: '/Sounds/power_down.mp3',
+            refinery: '/Sounds/refinery.mp3',
+            low_fuel_warning: '/Sounds/low_fuel_warning.mp3'
         };
 
         const menuMusicSrc='/Music/Track1.mp3';
@@ -95,6 +113,33 @@ export class SoundManager {
         if (this.sounds.thrust) this.sounds.thrust.loop=true;
         if (this.sounds.mining_laser) this.sounds.mining_laser.loop=true;
         if (this.sounds.heartbeat) this.sounds.heartbeat.loop=true;
+        if (this.sounds.transfer_cargo) {
+            this.sounds.transfer_cargo.loop=true;
+            this.sounds.transfer_cargo.playbackRate=1.5;
+        }
+        if (this.sounds.refinery) this.sounds.refinery.loop=true;
+        if (this.sounds.low_fuel_warning) this.sounds.low_fuel_warning.loop=true;
+
+        // Load all music tracks
+        const musicPaths=['/Music/Track1.mp3', '/Music/Track2.mp3', '/Music/Track3.mp3', '/Music/Track4.mp3'];
+        this.musicTracks=musicPaths.map(src => {
+            const audio=new Audio(src);
+            audio.loop=false; // We handle looping by switching tracks
+            audio.addEventListener('ended', () => this.playNextTrack());
+            return audio;
+        });
+
+        const musicLoadPromises=this.musicTracks.map(audio => {
+            return new Promise(resolve => {
+                audio.addEventListener('canplaythrough', () => resolve(audio), {once: true});
+                audio.addEventListener('error', () => resolve(null));
+                audio.load();
+            });
+        });
+
+        await Promise.all(musicLoadPromises);
+        this.soundsLoaded=true;
+        console.log('Sounds and Music loaded');
     }
 
     getEffectiveSfxVolume() {
@@ -131,11 +176,13 @@ export class SoundManager {
             if (sound) sound.volume=sfxVol;
         });
 
-        if (this.menuMusic) {
-            this.menuMusic.volume=this.getEffectiveMusicVolume();
-        }
-        if (this.gameMusic) {
-            this.gameMusic.volume=this.getEffectiveMusicVolume();
+        const musicVol=this.getEffectiveMusicVolume();
+        this.musicTracks.forEach(track => {
+            if (track) track.volume=musicVol;
+        });
+
+        if (this.sounds.death_music) {
+            this.sounds.death_music.volume=musicVol;
         }
 
         if (this.sounds.notification) {
@@ -145,37 +192,99 @@ export class SoundManager {
 
     playMenuMusic() {
         if (!this.soundsLoaded) return;
-        if (this.gameMusic) {
-            this.gameMusic.pause();
-            this.gameMusic.currentTime=0;
-        }
-        if (this.menuMusic) {
-            this.menuMusic.volume=this.getEffectiveMusicVolume();
-            this.menuMusic.play().catch(e => { });
-        }
+        this.playTrack(0); // Track1 is menu music
     }
 
     playGameMusic() {
         if (!this.soundsLoaded) return;
-        if (this.menuMusic) {
-            this.menuMusic.pause();
-            this.menuMusic.currentTime=0;
+        // If already playing a track > 0, don't restart
+        if (this.currentTrackIndex>0) return;
+        this.playTrack(1); // Start with Track2
+    }
+
+    playTrack(index) {
+        if (this.currentTrackIndex===index&&!this.isChangingTrack) return;
+
+        const oldTrack=this.currentTrackIndex>=0? this.musicTracks[this.currentTrackIndex]:null;
+        const newTrack=this.musicTracks[index];
+
+        if (!newTrack) return;
+
+        this.isChangingTrack=true;
+        this.currentTrackIndex=index;
+
+        // Blending/Crossfade
+        if (oldTrack) {
+            this.fadeOut(oldTrack, 2000);
         }
-        if (this.gameMusic) {
-            this.gameMusic.volume=this.getEffectiveMusicVolume();
-            this.gameMusic.play().catch(e => { });
-        }
+
+        newTrack.currentTime=0;
+        newTrack.volume=0;
+        newTrack.play().catch(e => { });
+        this.fadeIn(newTrack, this.getEffectiveMusicVolume(), 2000).then(() => {
+            this.isChangingTrack=false;
+        });
+    }
+
+    playNextTrack() {
+        // Loop tracks 1, 2, 3 (skip Track1 which is menu music, unless it's intended to be in rotation)
+        // Actually the GDD says "Add two new music tracks (Track3 & Track4). Implement blending".
+        // It implies Track1-4 should be used.
+        let nextIndex=(this.currentTrackIndex+1)%this.musicTracks.length;
+        // Maybe skip Track 1 (index 0) if we are in game?
+        if (nextIndex===0) nextIndex=1;
+        this.playTrack(nextIndex);
+    }
+
+    fadeIn(audio, targetVolume, duration) {
+        return new Promise(resolve => {
+            const startVolume=audio.volume;
+            const startTime=performance.now();
+
+            const animate=(now) => {
+                const elapsed=now-startTime;
+                const progress=Math.min(elapsed/duration, 1);
+                audio.volume=startVolume+(targetVolume-startVolume)*progress;
+
+                if (progress<1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    resolve();
+                }
+            };
+            requestAnimationFrame(animate);
+        });
+    }
+
+    fadeOut(audio, duration) {
+        return new Promise(resolve => {
+            const startVolume=audio.volume;
+            const startTime=performance.now();
+
+            const animate=(now) => {
+                const elapsed=now-startTime;
+                const progress=Math.min(elapsed/duration, 1);
+                audio.volume=startVolume*(1-progress);
+
+                if (progress<1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    audio.pause();
+                    resolve();
+                }
+            };
+            requestAnimationFrame(animate);
+        });
     }
 
     stopAllMusic() {
-        if (this.menuMusic) {
-            this.menuMusic.pause();
-            this.menuMusic.currentTime=0;
-        }
-        if (this.gameMusic) {
-            this.gameMusic.pause();
-            this.gameMusic.currentTime=0;
-        }
+        this.musicTracks.forEach(track => {
+            if (track) {
+                track.pause();
+                track.currentTime=0;
+            }
+        });
+        this.currentTrackIndex=-1;
     }
 
     playCollision() {
@@ -228,6 +337,66 @@ export class SoundManager {
         this.stopAllMusic();
         this.sounds.death_music.volume=this.getEffectiveMusicVolume();
         this.sounds.death_music.play().catch(e => { });
+    }
+
+    setTransferring(active) {
+        if (!this.soundsLoaded||!this.sounds.transfer_cargo) return;
+        if (active&&!this.isTransferring) {
+            this.isTransferring=true;
+            this.sounds.transfer_cargo.volume=this.getEffectiveSfxVolume();
+            this.sounds.transfer_cargo.play().catch(e => { });
+        } else if (!active&&this.isTransferring) {
+            this.isTransferring=false;
+            this.sounds.transfer_cargo.pause();
+            this.sounds.transfer_cargo.currentTime=0;
+        }
+    }
+
+    setRefueling(active) {
+        if (!this.soundsLoaded) return;
+        if (active) {
+            // Play one of the two refueling sounds randomly if not already playing
+            if (this.sounds.refueling1.paused&&this.sounds.refueling2.paused) {
+                const sound=Math.random()>0.5? this.sounds.refueling1:this.sounds.refueling2;
+                sound.volume=this.getEffectiveSfxVolume();
+                sound.play().catch(e => { });
+            }
+        } else {
+            this.sounds.refueling1.pause();
+            this.sounds.refueling1.currentTime=0;
+            this.sounds.refueling2.pause();
+            this.sounds.refueling2.currentTime=0;
+        }
+    }
+
+    setRefining(active) {
+        if (!this.soundsLoaded||!this.sounds.refinery) return;
+        if (active&&!this.isRefining) {
+            this.isRefining=true;
+            this.sounds.refinery.volume=this.getEffectiveSfxVolume();
+            this.sounds.refinery.play().catch(e => { });
+        } else if (!active&&this.isRefining) {
+            this.isRefining=false;
+            this.sounds.refinery.pause();
+            this.sounds.refinery.currentTime=0;
+        }
+    }
+
+    setLowFuelWarning(active) {
+        if (!this.soundsLoaded||!this.sounds.low_fuel_warning) return;
+        if (active&&!this.isLowFuelWarningActive) {
+            this.isLowFuelWarningActive=true;
+            this.sounds.low_fuel_warning.volume=this.getEffectiveSfxVolume();
+            this.sounds.low_fuel_warning.play().catch(e => { });
+        } else if (!active&&this.isLowFuelWarningActive) {
+            this.isLowFuelWarningActive=false;
+            this.sounds.low_fuel_warning.pause();
+            this.sounds.low_fuel_warning.currentTime=0;
+        }
+    }
+
+    playPowerDown() {
+        this.playSound('power_down');
     }
 
     setThrust(thrusting) {

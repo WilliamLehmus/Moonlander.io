@@ -64,9 +64,17 @@ let pendingMapData=null; // Store map data if it arrives before renderer is read
 let isMenuOpen=false;
 let isChatOpen=false;
 let chatMessages=[]; // Store recent chat messages
+let lastPower=100;
+let wasDead=false;
 
 // Initialize audio on first user interaction
 document.addEventListener('click', () => {
+  const splash=document.getElementById('splashScreen');
+  if (splash) {
+    splash.style.opacity='0';
+    setTimeout(() => splash.classList.add('hidden'), 1000);
+  }
+
   if (!soundManager.soundsLoaded) {
     soundManager.loadSounds().then(() => {
       if (!currentRoom) {
@@ -610,24 +618,53 @@ function gameLoop() {
         // Update thrust sound
         soundManager.setThrust(input.state.up);
 
-        // Update mining sound
+        // Update mining sound - Fix: only when actually mining resources
         const canMine=(myPlayer.power>=(myPlayer.miningPowerDrain||7.5)*0.1);
-        soundManager.setMining(myPlayer.mining&&canMine);
+        const isActuallyMining=myPlayer.mining&&canMine&&myPlayer.isMiningResource;
+        soundManager.setMining(isActuallyMining);
 
         // Update heartbeat sound (EVA low oxygen)
         const isLowOxygen=myPlayer.shipType==='eva'&&myPlayer.oxygen<25;
         soundManager.setHeartbeat(isLowOxygen);
+
+        // Batch 2 features
+        // Transfer cargo sound
+        soundManager.setTransferring(myPlayer.transferring);
+
+        // Refueling sound
+        const isRefueling=myPlayer.onPad&&myPlayer.fuel<(myPlayer.maxFuel||500);
+        soundManager.setRefueling(isRefueling);
+
+        // Power down sound
+        if (myPlayer.power<=0&&lastPower>0) {
+          soundManager.playPowerDown();
+        }
+        lastPower=myPlayer.power;
+
+        // Low fuel warning
+        const isLowFuel=(myPlayer.fuel/(myPlayer.maxFuel||500))<0.25&&!myPlayer.onPad;
+        soundManager.setLowFuelWarning(isLowFuel);
+
       } else {
-        // Stop thrust sound if dead
+        // Stop sounds if dead
         soundManager.setThrust(false);
         soundManager.setMining(false);
         soundManager.setHeartbeat(false);
+        soundManager.setTransferring(false);
+        soundManager.setRefueling(false);
+        soundManager.setLowFuelWarning(false);
 
-        if (myPlayer&&myPlayer.dead&&!this.wasDead) {
+        // Fix: Death music bug
+        if (myPlayer&&myPlayer.dead&&!wasDead) {
           soundManager.playDeathMusic();
         }
       }
-      this.wasDead=myPlayer? myPlayer.dead:false;
+
+      // Refinery sound
+      const isRefining=gameState.refining; // Assuming this is in gameState
+      soundManager.setRefining(isRefining);
+
+      wasDead=myPlayer? myPlayer.dead:false;
     }
   }
 }

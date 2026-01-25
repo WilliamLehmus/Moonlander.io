@@ -19,7 +19,14 @@ const io=new Server(httpServer, {
 
 // Serve static files from the client dist directory (for production)
 if (process.env.NODE_ENV==='production') {
-    app.use(express.static(join(__dirname, '../client/dist')));
+    const distPath=join(__dirname, '../client/dist');
+    app.use(express.static(distPath));
+    console.log('Serving production build from:', distPath);
+
+    // Catch-all route to serve index.html for SPA
+    app.get('*', (req, res) => {
+        res.sendFile(join(distPath, 'index.html'));
+    });
 }
 
 const PORT=process.env.PORT||3000;
