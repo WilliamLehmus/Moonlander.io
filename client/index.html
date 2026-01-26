@@ -60,7 +60,9 @@
 
       <div class="settings-tabs">
         <button class="settings-tab-btn active" data-settings-tab="audio">Audio</button>
+        <button class="settings-tab-btn" data-settings-tab="graphics">Graphics</button>
         <button class="settings-tab-btn" data-settings-tab="controls">Controls</button>
+        <button class="settings-tab-btn" data-settings-tab="debug" id="settingsDebugTabBtn">Debug</button>
       </div>
 
       <div id="settings-tab-audio" class="settings-tab-content active">
@@ -79,6 +81,31 @@
         <div class="setting-group">
           <label for="notificationVolume">Notification Volume</label>
           <input type="range" id="notificationVolume" min="0" max="100" value="50">
+        </div>
+      </div>
+
+      <div id="settings-tab-graphics" class="settings-tab-content hidden">
+        <p class="dev-note">Visual settings will appear here (Post-processing, Bloom, etc.)</p>
+      </div>
+
+      <div id="settings-tab-debug" class="settings-tab-content hidden">
+        <div class="setting-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="settingsVisualizeColliders">
+            Visualize Colliders
+          </label>
+        </div>
+        <div class="setting-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="settingsInfiniteFuel">
+            Infinite Fuel
+          </label>
+        </div>
+        <div class="debug-actions-grid">
+          <button class="debug-btn-small" onclick="socket.emit('debugCommand', {command: 'repairShip'})">Repair
+            Ship</button>
+          <button class="debug-btn-small"
+            onclick="socket.emit('debugCommand', {command: 'addFuel', amount: 1000})">+1000 Fuel</button>
         </div>
       </div>
 
@@ -207,10 +234,11 @@
         <button id="debugInfiniteFuel">Toggle Infinite Fuel</button>
       </div>
       <div class="debug-section">
-        <h3>Game State</h3>
-        <button id="debugTeleportBase">Teleport to Base</button>
-        <button id="debugMaxBuildings">Max All Buildings</button>
-        <button id="debugKillPlayer">Kill Player (Test)</button>
+        <h3>Visualization</h3>
+        <label class="debug-label">
+          <input type="checkbox" id="debugVisualizeColliders" />
+          Visualize Colliders
+        </label>
       </div>
       <button id="closeDebugBtn">Close</button>
     </div>

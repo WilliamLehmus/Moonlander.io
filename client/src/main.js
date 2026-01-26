@@ -163,6 +163,13 @@ async function enterGame(roomCode, host) {
     gameLoopRunning=true;
     gameLoop();
   }
+
+  // Handle dev-only visibility for settings
+  const isLocal=window.location.hostname==='localhost';
+  const debugTabBtn=document.getElementById('settingsDebugTabBtn');
+  if (debugTabBtn) {
+    debugTabBtn.style.display=isLocal? 'block':'none';
+  }
 }
 
 function exitGame() {
@@ -539,12 +546,14 @@ window.addEventListener('keydown', (e) => {
     }
   }
 
-  // Open Debug Menu (Backtick/tilde key) - Development only
+  // Open Debug Menu (Backtick/tilde key) - Development only (Localhost)
   if (e.key==='`'||e.key==='~') {
-    if (debugMenuOpen) {
-      closeDebugMenu();
-    } else {
-      openDebugMenu();
+    if (window.location.hostname==='localhost') {
+      if (debugMenuOpen) {
+        closeDebugMenu();
+      } else {
+        openDebugMenu();
+      }
     }
   }
 
@@ -808,8 +817,36 @@ document.getElementById('debugSpawnCargo')?.addEventListener('click', () => {
 
 document.getElementById('debugInfiniteFuel')?.addEventListener('click', () => {
   infiniteFuelEnabled=!infiniteFuelEnabled;
-  socket.emit('debugCommand', {command: 'infiniteFuel', enabled: infiniteFuelEnabled});
-  document.getElementById('debugInfiniteFuel').style.background=infiniteFuelEnabled? '#484':'#333';
+  syncInfiniteFuel(infiniteFuelEnabled);
+});
+
+document.getElementById('settingsInfiniteFuel')?.addEventListener('change', (e) => {
+  infiniteFuelEnabled=e.target.checked;
+  syncInfiniteFuel(infiniteFuelEnabled);
+});
+
+function syncInfiniteFuel(enabled) {
+  const debugBtn=document.getElementById('debugInfiniteFuel');
+  const settingsToggle=document.getElementById('settingsInfiniteFuel');
+  if (debugBtn) debugBtn.style.background=enabled? '#484':'#333';
+  if (settingsToggle) settingsToggle.checked=enabled;
+  socket.emit('debugCommand', {command: 'infiniteFuel', enabled: enabled});
+}
+
+document.getElementById('debugVisualizeColliders')?.addEventListener('change', (e) => {
+  const settingsToggle=document.getElementById('settingsVisualizeColliders');
+  if (settingsToggle) settingsToggle.checked=e.target.checked;
+  if (renderer) {
+    renderer.debugVisualizeColliders=e.target.checked;
+  }
+});
+
+document.getElementById('settingsVisualizeColliders')?.addEventListener('change', (e) => {
+  const debugToggle=document.getElementById('debugVisualizeColliders');
+  if (debugToggle) debugToggle.checked=e.target.checked;
+  if (renderer) {
+    renderer.debugVisualizeColliders=e.target.checked;
+  }
 });
 
 document.getElementById('debugTeleportBase')?.addEventListener('click', () => {

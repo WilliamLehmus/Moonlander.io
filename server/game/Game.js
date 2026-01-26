@@ -27,14 +27,17 @@ const GAS_POCKET_CHANCE=0.15; // 15% chance of gas pocket at depth
 // Ore values and mining yields
 // Values increase significantly with depth/rarity
 const ORE_CONFIG={
-    [TileTypes.IRON_ORE]: {name: 'Iron', value: 5, yield: 25, color: '#8b4513'},
-    [TileTypes.COPPER_ORE]: {name: 'Copper', value: 10, yield: 20, color: '#b87333'},
-    [TileTypes.BITITE]: {name: 'Bitite', value: 15, yield: 18, color: '#2f2f2f', fuelMaterial: true},
-    [TileTypes.SILVER_ORE]: {name: 'Silver', value: 25, yield: 15, color: '#c0c0c0'},
-    [TileTypes.TITANIUM_ORE]: {name: 'Titanium', value: 40, yield: 12, color: '#708090'},
-    [TileTypes.GOLD_ORE]: {name: 'Gold', value: 75, yield: 10, color: '#ffd700'},
-    [TileTypes.PLATINUM_ORE]: {name: 'Platinum', value: 150, yield: 8, color: '#e5e4e2'},
-    [TileTypes.DIAMOND]: {name: 'Diamond', value: 500, yield: 3, color: '#b9f2ff'}
+    [TileTypes.REGOLITH]: {name: 'Regolith', value: 0, yield: 5, color: '#c0c0c0', isResource: false},
+    [TileTypes.ROCK]: {name: 'Rock', value: 0, yield: 5, color: '#808080', isResource: false},
+    [TileTypes.HARD_ROCK]: {name: 'Hard Rock', value: 0, yield: 5, color: '#404040', isResource: false},
+    [TileTypes.IRON_ORE]: {name: 'Iron', value: 5, yield: 25, color: '#8b4513', isResource: true},
+    [TileTypes.COPPER_ORE]: {name: 'Copper', value: 10, yield: 20, color: '#b87333', isResource: true},
+    [TileTypes.BITITE]: {name: 'Bitite', value: 15, yield: 18, color: '#2f2f2f', fuelMaterial: true, isResource: true},
+    [TileTypes.SILVER_ORE]: {name: 'Silver', value: 25, yield: 15, color: '#c0c0c0', isResource: true},
+    [TileTypes.TITANIUM_ORE]: {name: 'Titanium', value: 40, yield: 12, color: '#708090', isResource: true},
+    [TileTypes.GOLD_ORE]: {name: 'Gold', value: 75, yield: 10, color: '#ffd700', isResource: true},
+    [TileTypes.PLATINUM_ORE]: {name: 'Platinum', value: 150, yield: 8, color: '#e5e4e2', isResource: true},
+    [TileTypes.DIAMOND]: {name: 'Diamond', value: 500, yield: 3, color: '#b9f2ff', isResource: true}
 };
 
 export class Game {
@@ -111,16 +114,45 @@ export class Game {
         // Building upgrade costs (materials required per level)
         // Building upgrade costs (materials required per level)
         // Level 0 -> 1 is construction cost
+        // Building upgrade costs (materials required per level)
+        // Level 0 -> 1 is construction cost
         this.buildingCosts={
-            ore_storage: [{basic: 50}, {basic: 100}, {industrial: 25}, {industrial: 75}, {advanced: 50}],
-            fuel_depot: [{basic: 50}, {basic: 100}, {industrial: 25}, {industrial: 75}, {advanced: 50}],
-            parts_warehouse: [{basic: 50}, {basic: 100}, {industrial: 25}, {industrial: 75}, {advanced: 50}],
-            fuel_refinery: [{basic: 75}, {industrial: 50}, {industrial: 100}, {advanced: 75}, {quantum: 10}],
-            solar_array: [{basic: 50}, {industrial: 40}, {industrial: 80}, {advanced: 60}, {quantum: 20}],
-            fuel_generator: [{industrial: 75}, {industrial: 100}, {advanced: 50}, {advanced: 100}, {quantum: 40}],
-            communications_antenna: [{basic: 100}, {industrial: 75}, {industrial: 150}, {advanced: 100}, {quantum: 25}],
-            ship_factory: [{industrial: 100}, {advanced: 75}, {advanced: 150}, {quantum: 50}, {quantum: 100}],
-            crafting_station: [{basic: 75}, {industrial: 75}, {advanced: 50}, {advanced: 100}, {quantum: 30}]
+            ore_storage: [
+                {basic: 50}, {basic: 100}, {industrial: 25}, {industrial: 75}, {advanced: 50},
+                {advanced: 100}, {advanced: 200}, {quantum: 20}, {quantum: 40}, {quantum: 80}, {quantum: 150}, {quantum: 300}
+            ],
+            fuel_depot: [
+                {basic: 50}, {basic: 100}, {industrial: 25}, {industrial: 75}, {advanced: 50},
+                {advanced: 100}, {advanced: 200}, {quantum: 20}, {quantum: 40}, {quantum: 80}, {quantum: 150}, {quantum: 300}
+            ],
+            parts_warehouse: [
+                {basic: 50}, {basic: 100}, {industrial: 25}, {industrial: 75}, {advanced: 50},
+                {advanced: 100}, {advanced: 200}, {quantum: 20}, {quantum: 40}, {quantum: 80}, {quantum: 150}, {quantum: 300}
+            ],
+            fuel_refinery: [
+                {basic: 75}, {industrial: 50}, {industrial: 100}, {advanced: 75}, {quantum: 10},
+                {quantum: 25}, {quantum: 50}, {quantum: 100}, {quantum: 200}, {quantum: 400}, {quantum: 600}, {quantum: 1000}
+            ],
+            solar_array: [
+                {basic: 50}, {industrial: 40}, {industrial: 80}, {advanced: 60}, {quantum: 20},
+                {quantum: 40}, {quantum: 80}, {quantum: 150}, {quantum: 300}, {quantum: 500}, {quantum: 800}, {quantum: 1200}
+            ],
+            fuel_generator: [
+                {industrial: 75}, {industrial: 100}, {advanced: 50}, {advanced: 100}, {quantum: 40},
+                {quantum: 80}, {quantum: 160}, {quantum: 320}, {quantum: 640}, {quantum: 1000}, {quantum: 1500}, {quantum: 2500}
+            ],
+            communications_antenna: [
+                {basic: 100}, {industrial: 75}, {industrial: 150}, {advanced: 100}, {quantum: 25},
+                {quantum: 50}, {quantum: 100}, {quantum: 200}, {quantum: 400}, {quantum: 600}, {quantum: 800}, {quantum: 1200}
+            ],
+            ship_factory: [
+                {industrial: 100}, {advanced: 75}, {advanced: 150}, {quantum: 50}, {quantum: 100},
+                {quantum: 200}, {quantum: 400}, {quantum: 800}, {quantum: 1200}, {quantum: 1600}, {quantum: 2000}, {quantum: 3000}
+            ],
+            crafting_station: [
+                {basic: 75}, {industrial: 75}, {advanced: 50}, {advanced: 100}, {quantum: 30},
+                {quantum: 60}, {quantum: 120}, {quantum: 240}, {quantum: 480}, {quantum: 800}, {quantum: 1200}, {quantum: 2000}
+            ]
         };
 
         // Exploration Fog of War
@@ -156,10 +188,9 @@ export class Game {
         return 200+this.getBuildingEffect('communications_antenna');
     }
 
-    // Check if player can afford building upgrade
     canAffordUpgrade(buildingKey) {
         const building=this.buildings[buildingKey];
-        if (!building||building.level>=5) return false;
+        if (!building||building.level>=12) return false;
 
         const costs=this.buildingCosts[buildingKey];
         if (!costs||building.level>=costs.length) return false;
@@ -1235,12 +1266,12 @@ export class Game {
         }
     }
 
-    // Find nearest ore within range
-    findNearestOre(playerX, playerY, range) {
+    // Find target tile based on distance and pointing angle
+    findTargetTile(playerX, playerY, range, spotlightAngle) {
         const grid=this.voxelMap.worldToGrid(playerX, playerY);
         const searchRadius=Math.ceil(range/this.voxelMap.tileSize);
-        let nearest=null;
-        let nearestDist=Infinity;
+        let bestTarget=null;
+        let bestScore=-Infinity; // Higher is better
 
         for (let dy=-searchRadius; dy<=searchRadius; dy++) {
             for (let dx=-searchRadius; dx<=searchRadius; dx++) {
@@ -1250,23 +1281,43 @@ export class Game {
                 if (gx<0||gx>=this.voxelMap.width||gy<0||gy>=this.voxelMap.height) continue;
 
                 const tile=this.voxelMap.get(gx, gy);
+                if (tile===TileTypes.EMPTY||tile===TileTypes.BASE||tile===TileTypes.PAD) continue;
 
-                // Check if it's an ore type (IRON_ORE through DIAMOND)
-                if (tile>=TileTypes.IRON_ORE&&tile<=TileTypes.DIAMOND) {
-                    const worldPos=this.voxelMap.gridToWorld(gx, gy);
-                    const distX=worldPos.x-playerX;
-                    const distY=worldPos.y-playerY;
-                    const dist=Math.sqrt(distX*distX+distY*distY);
+                const worldPos=this.voxelMap.gridToWorld(gx, gy);
+                const distX=worldPos.x-playerX;
+                const distY=worldPos.y-playerY;
+                const dist=Math.sqrt(distX*distX+distY*distY);
 
-                    if (dist<=range&&dist<nearestDist) {
-                        nearestDist=dist;
-                        nearest={gx, gy, tile, worldX: worldPos.x, worldY: worldPos.y, dist};
+                if (dist<=range) {
+                    // Calculate alignment with spotlight angle
+                    const tileAngle=Math.atan2(distY, distX);
+                    let angleDiff=Math.abs(spotlightAngle-tileAngle);
+                    while (angleDiff>Math.PI) angleDiff=Math.abs(angleDiff-2*Math.PI);
+
+                    // Score: emphasize proximity to the line of sight (angle) first, then distance
+                    // Alignment score: 1.0 at 0 diff, 0.0 at PI diff
+                    const alignment=1.0-(angleDiff/Math.PI);
+                    // Proximity score: 1.0 at dist=0, 0.0 at dist=range
+                    const proximity=1.0-(dist/range);
+
+                    // We heavily weight the directional alignment to give the player control
+                    const score=alignment*10.0+proximity;
+
+                    if (score>bestScore) {
+                        bestScore=score;
+                        let targetTile=tile;
+                        bestTarget={gx, gy, tile: targetTile, worldX: worldPos.x, worldY: worldPos.y, dist, score};
                     }
                 }
             }
         }
 
-        return nearest;
+        return bestTarget;
+    }
+
+    // Keep findNearestOre for backward compatibility if needed, but link to new logic
+    findNearestOre(playerX, playerY, range) {
+        return this.findTargetTile(playerX, playerY, range, 0);
     }
 
     // Update mining for a player
@@ -1274,70 +1325,60 @@ export class Game {
         const pos=player.getPosition();
 
         if (!player.mining) {
-            // Not mining - reset progress
             player.miningProgress=0;
             player.miningTarget=null;
             return;
         }
 
-        // Check if player has power to mine
         if (!player.canMine()) {
-            // No power - can't mine
             player.miningProgress=0;
             player.miningTarget=null;
             return;
         }
 
-        // Find nearest ore within range
-        const nearest=this.findNearestOre(pos.x, pos.y, player.miningRange);
-        player.isMiningResource=!!nearest;
+        // Find target tile based on directional pointing
+        const target=this.findTargetTile(pos.x, pos.y, player.miningRange, player.spotlightAngle);
 
-        if (!nearest) {
-            // No ore in range
+        // Only consider it "Mining Resource" for UI if it's actually an ore
+        const isOre=target&&ORE_CONFIG[target.tile]&&ORE_CONFIG[target.tile].isResource;
+        player.isMiningResource=!!isOre;
+
+        if (!target) {
             player.miningProgress=0;
             player.miningTarget=null;
             return;
         }
 
-        // Check if target changed
-        if (!player.miningTarget||player.miningTarget.gx!==nearest.gx||player.miningTarget.gy!==nearest.gy) {
+        if (!player.miningTarget||player.miningTarget.gx!==target.gx||player.miningTarget.gy!==target.gy) {
             player.miningProgress=0;
-            player.miningTarget={gx: nearest.gx, gy: nearest.gy, worldX: nearest.worldX, worldY: nearest.worldY};
+            player.miningTarget={gx: target.gx, gy: target.gy, worldX: target.worldX, worldY: target.worldY};
         }
 
-        // Consume power for mining
-        if (!player.consumeMiningPower(dt)) {
-            // Ran out of power mid-mining
-            return;
-        }
+        if (!player.consumeMiningPower(dt)) return;
 
         // Progress mining
         player.miningProgress+=this.config.mining.speedBase*this.config.difficulty.miningSpeedMultiplier*dt;
 
-        // Check if mining complete
         if (player.miningProgress>=1) {
-            const tile=this.voxelMap.get(nearest.gx, nearest.gy);
+            const tile=this.voxelMap.get(target.gx, target.gy);
             const oreConfig=ORE_CONFIG[tile];
 
-            if (oreConfig) {
-                // Extract ore
+            if (oreConfig&&oreConfig.isResource) {
                 const extracted=player.addCargo(tile, oreConfig.yield);
-
                 if (extracted>0) {
-                    // Remove the ore tile (pass player for hazard checks)
-                    this.destroyTile(nearest.gx, nearest.gy, player);
-                    console.log(`Player ${player.id} mined ${oreConfig.name}: +${extracted} units`);
-
-                    // Broadcast ore pickup for floating text
+                    this.destroyTile(target.gx, target.gy, player);
                     this.broadcast('orePickup', {
                         playerId: player.id,
                         oreName: oreConfig.name,
                         amount: extracted,
-                        x: nearest.worldX,
-                        y: nearest.worldY,
+                        x: target.worldX,
+                        y: target.worldY,
                         color: oreConfig.color
                     });
                 }
+            } else {
+                // Not a resource, just destroy it
+                this.destroyTile(target.gx, target.gy, player);
             }
 
             player.miningProgress=0;

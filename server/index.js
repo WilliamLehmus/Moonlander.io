@@ -368,32 +368,42 @@ io.on('connection', (socket) => {
             // Transfer cargo from ship to station
             const cargo=player.cargo[data.slotIndex];
             if (cargo) {
-                const oreKey=cargo.type.toLowerCase().replace('_ore', '');
-                if (game.baseResources.ores[oreKey]!==undefined) {
-                    game.baseResources.ores[oreKey]+=cargo.amount;
+                // Map tile type ID to Storage Key
+                const idToKey={
+                    10: 'iron', 11: 'copper', 12: 'bitite', 13: 'silver',
+                    14: 'titanium', 15: 'gold', 16: 'platinum', 17: 'diamond'
+                };
+                const storageKey=idToKey[cargo.type];
+                if (storageKey&&game.baseResources[storageKey]!==undefined) {
+                    game.baseResources[storageKey]+=cargo.amount;
                     player.cargo.splice(data.slotIndex, 1);
-                    console.log(`Transferred ${cargo.amount} ${cargo.type} to station`);
+                    console.log(`Transferred ${cargo.amount} of ${storageKey} to station`);
                 }
             }
         } else if (data.from==='station'&&data.to==='ship') {
             // Transfer ore from station to ship
-            const oreKey=data.oreType.toLowerCase().replace('_ore', '');
-            if (game.baseResources.ores[oreKey]>0) {
-                // Check if player has cargo space
+            const idToKey={
+                10: 'iron', 11: 'copper', 12: 'bitite', 13: 'silver',
+                14: 'titanium', 15: 'gold', 16: 'platinum', 17: 'diamond'
+            };
+            const keyToId=Object.fromEntries(Object.entries(idToKey).map(([k, v]) => [v, parseInt(k)]));
+            const storageKey=data.oreType.toLowerCase();
+            const tileId=keyToId[storageKey];
+
+            if (game.baseResources[storageKey]>0&&tileId) {
                 const currentWeight=player.cargo.reduce((sum, c) => sum+c.amount, 0);
-                const maxCargo=player.maxCargoCapacity||500;
-                const transferAmount=Math.min(game.baseResources.ores[oreKey], maxCargo-currentWeight, 100);
+                const maxCargo=player.cargoCapacity||500;
+                const transferAmount=Math.min(game.baseResources[storageKey], maxCargo-currentWeight, 100);
 
                 if (transferAmount>0) {
-                    // Add to player cargo
-                    const existingCargo=player.cargo.find(c => c.type===data.oreType);
+                    const existingCargo=player.cargo.find(c => c.type===tileId);
                     if (existingCargo) {
                         existingCargo.amount+=transferAmount;
                     } else {
-                        player.cargo.push({type: data.oreType, amount: transferAmount});
+                        player.cargo.push({type: tileId, amount: transferAmount});
                     }
-                    game.baseResources.ores[oreKey]-=transferAmount;
-                    console.log(`Transferred ${transferAmount} ${data.oreType} to ship`);
+                    game.baseResources[storageKey]-=transferAmount;
+                    console.log(`Transferred ${transferAmount} ${storageKey} to ship`);
                 }
             }
         }

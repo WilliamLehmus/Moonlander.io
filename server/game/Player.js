@@ -647,42 +647,8 @@ export class Player {
         return true;
     }
 
-    // Change ship type (must be parked at base)
+    // Change ship type (must be parked at base or boarding/exiting)
     setShipType(type, restoreState=null) {
-        // Need to access SHIP_TYPES constant defined outside class
-        const SHIP_TYPES={
-            scout: {
-                width: 20, height: 20, mass: 1,
-                maxFuel: 500, fuelConsumption: 30,
-                cargoCapacity: 500,
-                thrustForce: 80,
-                maxPower: 100,
-                maxOxygen: 100,
-                oxygenConsumption: 0,
-                basePowerRegen: 2.0
-            },
-            cargo: {
-                width: 30, height: 30, mass: 2.5,
-                maxFuel: 1000, fuelConsumption: 45,
-                cargoCapacity: 1500,
-                thrustForce: 150,
-                maxPower: 150,
-                maxOxygen: 150,
-                oxygenConsumption: 0,
-                basePowerRegen: 2.0
-            },
-            eva: {
-                width: 6, height: 12, mass: 0.1,
-                maxFuel: 0, fuelConsumption: 0,
-                cargoCapacity: 50,
-                thrustForce: 15,
-                maxPower: 20,
-                maxOxygen: 100,
-                oxygenConsumption: 1.5,
-                basePowerRegen: 1.0
-            }
-        };
-
         const oldStats=SHIP_TYPES[this.shipType]||SHIP_TYPES.scout;
 
         // Return existing ship stats before switching (for spawning the empty ship)
@@ -697,7 +663,7 @@ export class Player {
         };
 
         if (!SHIP_TYPES[type]) return false;
-        if (this.shipType===type) return true;
+        if (this.shipType===type) return previousShipState;
 
         const newStats=SHIP_TYPES[type];
         this.shipType=type;
@@ -759,6 +725,6 @@ export class Player {
         // Recalculate mass with cargo
         this.updateMass();
 
-        return true;
+        return previousShipState;
     }
 }

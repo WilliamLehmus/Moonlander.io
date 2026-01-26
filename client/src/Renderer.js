@@ -83,7 +83,7 @@ class Particle {
 
         // Decay life
         this.life-=this.decay*dt;
-        return null;
+        return false;
     }
 
     draw(ctx) {
@@ -277,6 +277,9 @@ export class Renderer {
                 this.biomeBackgrounds[id]=img;
             };
         });
+
+        // Debug flags
+        this.debugVisualizeColliders=false;
     }
 
     resize() {
@@ -1003,6 +1006,85 @@ export class Renderer {
         }
     }
 
+    // Draw debug collision boxes for buildings, pad, and players
+    drawDebugColliders(state) {
+        this.ctx.lineWidth=2;
+
+        // 1. Draw Landing Pad Bounds
+        if (state.basePadBounds) {
+            this.ctx.strokeStyle='#0f0'; // Pad is green
+            this.ctx.strokeRect(
+                state.basePadBounds.x1,
+                state.basePadBounds.y1,
+                state.basePadBounds.x2-state.basePadBounds.x1,
+                state.basePadBounds.y2-state.basePadBounds.y1
+            );
+            this.ctx.fillStyle='rgba(0, 255, 0, 0.2)';
+            this.ctx.fillRect(
+                state.basePadBounds.x1,
+                state.basePadBounds.y1,
+                state.basePadBounds.x2-state.basePadBounds.x1,
+                state.basePadBounds.y2-state.basePadBounds.y1
+            );
+        }
+
+        // 2. Draw Moon Base Bounds
+        if (this.basePosition&&this.moonBaseSpriteLoaded) {
+            const baseScale=0.18;
+            const w=this.moonBaseSprite.width*baseScale;
+            const h=this.moonBaseSprite.height*baseScale;
+            const x=this.basePosition.x-w/2;
+            const y=this.basePosition.y-h+60;
+
+            this.ctx.strokeStyle='#0af'; // Base is blue
+            this.ctx.strokeRect(x, y, w, h);
+            this.ctx.fillStyle='rgba(0, 170, 255, 0.2)';
+            this.ctx.fillRect(x, y, w, h);
+        }
+
+        // 3. Draw Building Bounds
+        if (state.activeBuildings&&this.buildingsLoadedCount>0) {
+            const baseScale=0.18;
+            const buildingScale=baseScale*0.5;
+
+            state.activeBuildings.forEach(b => {
+                const sprite=this.buildingSprites[b.id];
+                if (sprite) {
+                    const w=sprite.width*buildingScale;
+                    const h=sprite.height*buildingScale;
+                    const x=b.x-w/2;
+                    const y=b.y-h+30;
+
+                    this.ctx.strokeStyle='#f0f'; // Buildings are purple
+                    this.ctx.strokeRect(x, y, w, h);
+                    this.ctx.fillStyle='rgba(255, 0, 255, 0.2)';
+                    this.ctx.fillRect(x, y, w, h);
+                }
+            });
+        }
+
+        // 4. Draw Player/Ship Colliders
+        state.players.forEach(p => {
+            if (p.dead&&!p.inPod) return;
+
+            // Simple approximation of collision box based on ship type
+            let w=20, h=28; // Scout
+            if (p.shipType==='cargo') {w=30; h=30;}
+            else if (p.shipType==='eva') {w=6; h=12;}
+
+            this.ctx.save();
+            this.ctx.translate(p.x, p.y);
+            this.ctx.rotate(p.angle);
+
+            this.ctx.strokeStyle='#f00'; // Entities are red
+            this.ctx.strokeRect(-w/2, -h/2, w, h);
+            this.ctx.fillStyle='rgba(255, 0, 0, 0.1)';
+            this.ctx.fillRect(-w/2, -h/2, w, h);
+
+            this.ctx.restore();
+        });
+    }
+
     draw(state, myId) {
         const now=performance.now();
         const dt=(now-this.lastTime)/1000;
@@ -1157,6 +1239,14 @@ export class Renderer {
 
         // Draw floating texts (ore pickups, etc.)
         this.drawFloatingTexts();
+
+        // Draw debug colliders if enabled
+        if (this.debugVisualizeColliders) {
+            this.ctx.save();
+            this.ctx.translate(-this.cameraX, -this.cameraY);
+            this.drawDebugColliders(state);
+            this.ctx.restore();
+        }
 
         // Draw HUD (not affected by camera or lighting)
         this.drawHUD(myPlayer, state);
