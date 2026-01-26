@@ -11,7 +11,7 @@
  */
 
 // TileTypes defined locally to avoid circular import
-const TileTypes = {
+const TileTypes={
     EMPTY: 0,
     GROUND: 1,
     PAD: 2,
@@ -31,7 +31,7 @@ const TileTypes = {
 // LEVEL GENERATION PROFILES
 // ============================================
 
-export const LevelProfiles = {
+export const LevelProfiles={
     // Beginner-friendly with wide tunnels and gradual difficulty
     EASY: {
         name: 'Easy',
@@ -85,11 +85,11 @@ export const LevelProfiles = {
 // BIOME DEFINITIONS
 // ============================================
 
-export const Biomes = {
+export const Biomes={
     SURFACE: {
         name: 'Lunar Surface',
         depthStart: 0,
-        depthEnd: 0.1, // Top 10% of map
+        depthEnd: 0.102,
         primaryTile: TileTypes.REGOLITH,
         ambientLight: 1.0,
         hazards: [],
@@ -99,57 +99,57 @@ export const Biomes = {
 
     SHALLOW_CAVES: {
         name: 'Shallow Caves',
-        depthStart: 0.1,
-        depthEnd: 0.25,
+        depthStart: 0.102,
+        depthEnd: 0.277,
         primaryTile: TileTypes.ROCK,
         ambientLight: 0.6,
         hazards: ['loose_rocks'],
         ores: [TileTypes.IRON_ORE, TileTypes.COPPER_ORE],
-        description: 'Upper cave system with common ores'
+        description: 'Upper cave system with iron and copper'
     },
 
     DEEP_TUNNELS: {
         name: 'Deep Tunnels',
-        depthStart: 0.25,
-        depthEnd: 0.5,
+        depthStart: 0.277,
+        depthEnd: 0.451,
         primaryTile: TileTypes.ROCK,
         ambientLight: 0.3,
-        hazards: ['loose_rocks', 'gas_pockets'],
-        ores: [TileTypes.IRON_ORE, TileTypes.COPPER_ORE, TileTypes.TITANIUM_ORE],
-        description: 'Twisting tunnels with valuable titanium deposits'
+        hazards: ['gas_pockets'],
+        ores: [TileTypes.SILVER_ORE, TileTypes.TITANIUM_ORE],
+        description: 'Twisting tunnels with silver and titanium'
     },
 
     CRYSTAL_CAVERNS: {
         name: 'Crystal Caverns',
-        depthStart: 0.5,
-        depthEnd: 0.7,
+        depthStart: 0.451,
+        depthEnd: 0.626,
         primaryTile: TileTypes.HARD_ROCK,
         ambientLight: 0.15,
-        hazards: ['gas_pockets', 'unstable_formations'],
-        ores: [TileTypes.TITANIUM_ORE, TileTypes.GOLD_ORE],
+        hazards: ['unstable_formations'],
+        ores: [TileTypes.GOLD_ORE, TileTypes.BITITE],
         description: 'Crystalline formations and gold veins'
     },
 
     ABYSSAL_DEPTHS: {
         name: 'Abyssal Depths',
-        depthStart: 0.7,
-        depthEnd: 0.9,
+        depthStart: 0.626,
+        depthEnd: 0.8,
         primaryTile: TileTypes.HARD_ROCK,
         ambientLight: 0.05,
-        hazards: ['gas_pockets', 'unstable_formations', 'lava_proximity'],
-        ores: [TileTypes.GOLD_ORE, TileTypes.PLATINUM_ORE],
+        hazards: ['lava_proximity'],
+        ores: [TileTypes.PLATINUM_ORE],
         description: 'Near-total darkness with precious platinum'
     },
 
     THE_CORE: {
         name: 'The Core',
-        depthStart: 0.9,
+        depthStart: 0.8,
         depthEnd: 1.0,
         primaryTile: TileTypes.HARD_ROCK,
         ambientLight: 0.0,
-        hazards: ['lava_proximity', 'magnetic_anomalies', 'radiation'],
-        ores: [TileTypes.PLATINUM_ORE, TileTypes.HELIUM3_DEPOSIT],
-        description: 'The mysterious lunar core with Helium-3'
+        hazards: ['radiation', 'magnetic_anomalies'],
+        ores: [TileTypes.DIAMOND],
+        description: 'The mysterious lunar core with Diamond'
     }
 };
 
@@ -157,7 +157,7 @@ export const Biomes = {
 // CHAMBER TEMPLATES
 // ============================================
 
-export const ChamberTemplates = {
+export const ChamberTemplates={
     // Large open area for rest and refueling
     REST_STOP: {
         name: 'Rest Stop',
@@ -236,17 +236,17 @@ export const ChamberTemplates = {
 // ============================================
 
 export class LevelDesigner {
-    constructor(width, height, tileSize, profile = LevelProfiles.NORMAL) {
-        this.width = width;
-        this.height = height;
-        this.tileSize = tileSize;
-        this.profile = profile;
+    constructor(width, height, tileSize, profile=LevelProfiles.NORMAL) {
+        this.width=width;
+        this.height=height;
+        this.tileSize=tileSize;
+        this.profile=profile;
 
         // Analysis data
-        this.chambers = [];
-        this.tunnels = [];
-        this.oreDeposits = [];
-        this.pointsOfInterest = [];
+        this.chambers=[];
+        this.tunnels=[];
+        this.oreDeposits=[];
+        this.pointsOfInterest=[];
     }
 
     /**
@@ -254,7 +254,7 @@ export class LevelDesigner {
      */
     getBiomeAtDepth(normalizedDepth) {
         for (const [key, biome] of Object.entries(Biomes)) {
-            if (normalizedDepth >= biome.depthStart && normalizedDepth < biome.depthEnd) {
+            if (normalizedDepth>=biome.depthStart&&normalizedDepth<biome.depthEnd) {
                 return biome;
             }
         }
@@ -265,8 +265,8 @@ export class LevelDesigner {
      * Get appropriate tile type for a depth
      */
     getTileTypeForDepth(y) {
-        const normalizedDepth = y / this.height;
-        const biome = this.getBiomeAtDepth(normalizedDepth);
+        const normalizedDepth=y/this.height;
+        const biome=this.getBiomeAtDepth(normalizedDepth);
         return biome.primaryTile;
     }
 
@@ -274,8 +274,8 @@ export class LevelDesigner {
      * Calculate ore spawn chance based on depth and ore type
      */
     getOreSpawnChance(y, oreType) {
-        const normalizedDepth = y / this.height;
-        const biome = this.getBiomeAtDepth(normalizedDepth);
+        const normalizedDepth=y/this.height;
+        const biome=this.getBiomeAtDepth(normalizedDepth);
 
         // Check if this ore can spawn in this biome
         if (!biome.ores.includes(oreType)) {
@@ -283,10 +283,10 @@ export class LevelDesigner {
         }
 
         // Base chance modified by profile
-        const baseChance = 0.02 * this.profile.oreDensity;
+        const baseChance=0.02*this.profile.oreDensity;
 
         // Rarer ores have lower base chance
-        const rarityMultiplier = {
+        const rarityMultiplier={
             [TileTypes.IRON_ORE]: 1.0,
             [TileTypes.COPPER_ORE]: 0.9,
             [TileTypes.TITANIUM_ORE]: 0.6,
@@ -295,41 +295,41 @@ export class LevelDesigner {
             [TileTypes.HELIUM3_DEPOSIT]: 0.08
         };
 
-        return baseChance * (rarityMultiplier[oreType] || 0.5);
+        return baseChance*(rarityMultiplier[oreType]||0.5);
     }
 
     /**
      * Generate a worm path for cave carving
      * Uses "drunkard's walk" with directional bias
      */
-    generateWormPath(startX, startY, length, preferredDirection = null) {
-        const path = [];
-        let x = startX;
-        let y = startY;
-        let direction = preferredDirection || (Math.PI / 2); // Default: down
+    generateWormPath(startX, startY, length, preferredDirection=null) {
+        const path=[];
+        let x=startX;
+        let y=startY;
+        let direction=preferredDirection||(Math.PI/2); // Default: down
 
-        for (let i = 0; i < length; i++) {
-            path.push({ x, y, radius: this.getWormRadius(y) });
+        for (let i=0; i<length; i++) {
+            path.push({x, y, radius: this.getWormRadius(y)});
 
             // Adjust direction with some randomness
-            const verticalBias = this.profile.verticalBias;
-            const targetDirection = Math.PI / 2; // Down
+            const verticalBias=this.profile.verticalBias;
+            const targetDirection=Math.PI/2; // Down
 
             // Blend current direction toward target with randomness
-            direction += (Math.random() - 0.5) * 1.5; // Random wobble
-            direction = direction * (1 - verticalBias * 0.1) + targetDirection * verticalBias * 0.1;
+            direction+=(Math.random()-0.5)*1.5; // Random wobble
+            direction=direction*(1-verticalBias*0.1)+targetDirection*verticalBias*0.1;
 
             // Clamp to prevent going back up too much
-            direction = Math.max(0, Math.min(Math.PI, direction));
+            direction=Math.max(0, Math.min(Math.PI, direction));
 
             // Move
-            const speed = 3 + Math.random() * 2;
-            x += Math.cos(direction) * speed;
-            y += Math.sin(direction) * speed;
+            const speed=3+Math.random()*2;
+            x+=Math.cos(direction)*speed;
+            y+=Math.sin(direction)*speed;
 
             // Bounds check
-            x = Math.max(5, Math.min(this.width - 5, x));
-            y = Math.max(5, Math.min(this.height - 5, y));
+            x=Math.max(5, Math.min(this.width-5, x));
+            y=Math.max(5, Math.min(this.height-5, y));
         }
 
         return path;
@@ -339,58 +339,58 @@ export class LevelDesigner {
      * Get worm radius based on depth (tunnels get narrower deeper)
      */
     getWormRadius(y) {
-        const normalizedDepth = y / this.height;
-        const minRadius = this.profile.caveWidthMin;
-        const maxRadius = this.profile.caveWidthMax;
+        const normalizedDepth=y/this.height;
+        const minRadius=this.profile.caveWidthMin;
+        const maxRadius=this.profile.caveWidthMax;
 
         // Radius decreases with depth
-        const depthFactor = 1 - normalizedDepth * 0.5;
-        const radius = minRadius + (maxRadius - minRadius) * depthFactor;
+        const depthFactor=1-normalizedDepth*0.5;
+        const radius=minRadius+(maxRadius-minRadius)*depthFactor;
 
         // Add some variation
-        return radius + (Math.random() - 0.5) * 2;
+        return radius+(Math.random()-0.5)*2;
     }
 
     /**
      * Decide if a branch should spawn at this point
      */
     shouldBranch(y, existingBranches) {
-        const normalizedDepth = y / this.height;
-        const baseChance = this.profile.branchChance;
+        const normalizedDepth=y/this.height;
+        const baseChance=this.profile.branchChance;
 
         // More branches in mid-depths
-        const depthMultiplier = 1 - Math.abs(normalizedDepth - 0.5) * 0.5;
+        const depthMultiplier=1-Math.abs(normalizedDepth-0.5)*0.5;
 
         // Reduce chance if many branches already
-        const branchPenalty = Math.max(0, 1 - existingBranches * 0.1);
+        const branchPenalty=Math.max(0, 1-existingBranches*0.1);
 
-        return Math.random() < baseChance * depthMultiplier * branchPenalty;
+        return Math.random()<baseChance*depthMultiplier*branchPenalty;
     }
 
     /**
      * Select a chamber template appropriate for the depth
      */
     selectChamberTemplate(y) {
-        const normalizedDepth = y / this.height;
+        const normalizedDepth=y/this.height;
 
         // Weight templates by depth appropriateness
-        const validTemplates = Object.entries(ChamberTemplates).filter(([key, template]) => {
+        const validTemplates=Object.entries(ChamberTemplates).filter(([key, template]) => {
             // Rest stops more common near surface
-            if (key === 'REST_STOP' && normalizedDepth > 0.7) return false;
+            if (key==='REST_STOP'&&normalizedDepth>0.7) return false;
             // Artifact chambers only deep
-            if (key === 'ARTIFACT_CHAMBER' && normalizedDepth < 0.5) return false;
+            if (key==='ARTIFACT_CHAMBER'&&normalizedDepth<0.5) return false;
             // Treasure pockets more common deep
-            if (key === 'TREASURE_POCKET' && normalizedDepth < 0.3) return false;
+            if (key==='TREASURE_POCKET'&&normalizedDepth<0.3) return false;
             return true;
         });
 
         // Weighted random selection
-        const totalWeight = validTemplates.reduce((sum, [, t]) => sum + t.spawnWeight, 0);
-        let random = Math.random() * totalWeight;
+        const totalWeight=validTemplates.reduce((sum, [, t]) => sum+t.spawnWeight, 0);
+        let random=Math.random()*totalWeight;
 
         for (const [key, template] of validTemplates) {
-            random -= template.spawnWeight;
-            if (random <= 0) {
+            random-=template.spawnWeight;
+            if (random<=0) {
                 return template;
             }
         }
@@ -401,27 +401,27 @@ export class LevelDesigner {
     /**
      * Generate ore cluster at position
      */
-    generateOreCluster(centerX, centerY, oreType, size = 'medium') {
-        const sizes = {
-            small: { count: 3, radius: 2 },
-            medium: { count: 6, radius: 3 },
-            large: { count: 12, radius: 5 },
-            massive: { count: 20, radius: 7 }
+    generateOreCluster(centerX, centerY, oreType, size='medium') {
+        const sizes={
+            small: {count: 3, radius: 2},
+            medium: {count: 6, radius: 3},
+            large: {count: 12, radius: 5},
+            massive: {count: 20, radius: 7}
         };
 
-        const config = sizes[size] || sizes.medium;
-        const positions = [];
+        const config=sizes[size]||sizes.medium;
+        const positions=[];
 
-        for (let i = 0; i < config.count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = Math.random() * config.radius;
-            const x = Math.floor(centerX + Math.cos(angle) * dist);
-            const y = Math.floor(centerY + Math.sin(angle) * dist);
-            positions.push({ x, y, type: oreType });
+        for (let i=0; i<config.count; i++) {
+            const angle=Math.random()*Math.PI*2;
+            const dist=Math.random()*config.radius;
+            const x=Math.floor(centerX+Math.cos(angle)*dist);
+            const y=Math.floor(centerY+Math.sin(angle)*dist);
+            positions.push({x, y, type: oreType});
         }
 
         this.oreDeposits.push({
-            center: { x: centerX, y: centerY },
+            center: {x: centerX, y: centerY},
             type: oreType,
             positions
         });
@@ -433,7 +433,7 @@ export class LevelDesigner {
      * Analyze a generated map for balance metrics
      */
     analyzeMap(tiles) {
-        const analysis = {
+        const analysis={
             totalEmpty: 0,
             totalSolid: 0,
             oresByType: {},
@@ -445,33 +445,33 @@ export class LevelDesigner {
         };
 
         // Count tiles
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                const tile = tiles[y][x];
-                if (tile === TileTypes.EMPTY) {
+        for (let y=0; y<this.height; y++) {
+            for (let x=0; x<this.width; x++) {
+                const tile=tiles[y][x];
+                if (tile===TileTypes.EMPTY) {
                     analysis.totalEmpty++;
                 } else {
                     analysis.totalSolid++;
-                    if (tile >= TileTypes.IRON_ORE) {
-                        analysis.oresByType[tile] = (analysis.oresByType[tile] || 0) + 1;
+                    if (tile>=TileTypes.IRON_ORE) {
+                        analysis.oresByType[tile]=(analysis.oresByType[tile]||0)+1;
                     }
                 }
             }
         }
 
         // Calculate cave percentage
-        analysis.cavePercentage = analysis.totalEmpty / (this.width * this.height);
+        analysis.cavePercentage=analysis.totalEmpty/(this.width*this.height);
 
         // Analyze ore distribution by depth
-        const depthBuckets = 10;
-        for (let i = 0; i < depthBuckets; i++) {
-            analysis.oresByDepth[i] = { depth: i / depthBuckets, ores: 0 };
+        const depthBuckets=10;
+        for (let i=0; i<depthBuckets; i++) {
+            analysis.oresByDepth[i]={depth: i/depthBuckets, ores: 0};
         }
 
-        for (let y = 0; y < this.height; y++) {
-            const bucket = Math.floor((y / this.height) * depthBuckets);
-            for (let x = 0; x < this.width; x++) {
-                if (tiles[y][x] >= TileTypes.IRON_ORE) {
+        for (let y=0; y<this.height; y++) {
+            const bucket=Math.floor((y/this.height)*depthBuckets);
+            for (let x=0; x<this.width; x++) {
+                if (tiles[y][x]>=TileTypes.IRON_ORE) {
                     analysis.oresByDepth[bucket].ores++;
                 }
             }
@@ -484,10 +484,10 @@ export class LevelDesigner {
      * Generate design recommendations based on analysis
      */
     getDesignRecommendations(analysis) {
-        const recommendations = [];
+        const recommendations=[];
 
         // Check cave percentage
-        if (analysis.cavePercentage < 0.15) {
+        if (analysis.cavePercentage<0.15) {
             recommendations.push({
                 type: 'warning',
                 message: 'Map may be too dense. Consider adding more caves.',
@@ -495,7 +495,7 @@ export class LevelDesigner {
                 value: analysis.cavePercentage,
                 target: 0.2
             });
-        } else if (analysis.cavePercentage > 0.4) {
+        } else if (analysis.cavePercentage>0.4) {
             recommendations.push({
                 type: 'warning',
                 message: 'Map may be too open. Consider reducing cave size.',
@@ -506,15 +506,15 @@ export class LevelDesigner {
         }
 
         // Check ore distribution
-        const deepOres = analysis.oresByDepth.slice(-3).reduce((sum, b) => sum + b.ores, 0);
-        const shallowOres = analysis.oresByDepth.slice(0, 3).reduce((sum, b) => sum + b.ores, 0);
+        const deepOres=analysis.oresByDepth.slice(-3).reduce((sum, b) => sum+b.ores, 0);
+        const shallowOres=analysis.oresByDepth.slice(0, 3).reduce((sum, b) => sum+b.ores, 0);
 
-        if (deepOres < shallowOres * 0.5) {
+        if (deepOres<shallowOres*0.5) {
             recommendations.push({
                 type: 'balance',
                 message: 'Deep areas may not have enough ore rewards.',
                 metric: 'deepOreRatio',
-                value: deepOres / (shallowOres || 1)
+                value: deepOres/(shallowOres||1)
             });
         }
 
@@ -534,24 +534,24 @@ export class LevelDesigner {
      * Log design metrics for debugging
      */
     logDesignMetrics(tiles) {
-        const analysis = this.analyzeMap(tiles);
-        const recommendations = this.getDesignRecommendations(analysis);
+        const analysis=this.analyzeMap(tiles);
+        const recommendations=this.getDesignRecommendations(analysis);
 
         console.log('\n=== Level Design Analysis ===');
         console.log(`Profile: ${this.profile.name}`);
         console.log(`Dimensions: ${this.width}x${this.height}`);
-        console.log(`Cave percentage: ${(analysis.cavePercentage * 100).toFixed(1)}%`);
+        console.log(`Cave percentage: ${(analysis.cavePercentage*100).toFixed(1)}%`);
         console.log('\nOre distribution:');
         for (const [type, count] of Object.entries(analysis.oresByType)) {
             console.log(`  Type ${type}: ${count} tiles`);
         }
         console.log('\nOre by depth:');
         for (const bucket of analysis.oresByDepth) {
-            const bar = '█'.repeat(Math.floor(bucket.ores / 10));
-            console.log(`  ${(bucket.depth * 100).toFixed(0)}%: ${bar} (${bucket.ores})`);
+            const bar='█'.repeat(Math.floor(bucket.ores/10));
+            console.log(`  ${(bucket.depth*100).toFixed(0)}%: ${bar} (${bucket.ores})`);
         }
 
-        if (recommendations.length > 0) {
+        if (recommendations.length>0) {
             console.log('\nRecommendations:');
             for (const rec of recommendations) {
                 console.log(`  [${rec.type.toUpperCase()}] ${rec.message}`);
@@ -570,40 +570,40 @@ export class LevelDesigner {
 /**
  * Smooth a cave using cellular automata
  */
-export function smoothCaves(tiles, iterations = 2) {
-    const width = tiles[0].length;
-    const height = tiles.length;
+export function smoothCaves(tiles, iterations=2) {
+    const width=tiles[0].length;
+    const height=tiles.length;
 
-    for (let iter = 0; iter < iterations; iter++) {
-        const newTiles = tiles.map(row => [...row]);
+    for (let iter=0; iter<iterations; iter++) {
+        const newTiles=tiles.map(row => [...row]);
 
-        for (let y = 1; y < height - 1; y++) {
-            for (let x = 1; x < width - 1; x++) {
+        for (let y=1; y<height-1; y++) {
+            for (let x=1; x<width-1; x++) {
                 // Skip special tiles
-                if (tiles[y][x] === TileTypes.PAD || tiles[y][x] === TileTypes.BASE) {
+                if (tiles[y][x]===TileTypes.PAD||tiles[y][x]===TileTypes.BASE) {
                     continue;
                 }
 
                 // Count solid neighbors
-                let solidCount = 0;
-                for (let dy = -1; dy <= 1; dy++) {
-                    for (let dx = -1; dx <= 1; dx++) {
-                        if (tiles[y + dy][x + dx] !== TileTypes.EMPTY) {
+                let solidCount=0;
+                for (let dy=-1; dy<=1; dy++) {
+                    for (let dx=-1; dx<=1; dx++) {
+                        if (tiles[y+dy][x+dx]!==TileTypes.EMPTY) {
                             solidCount++;
                         }
                     }
                 }
 
                 // Apply cellular automata rule
-                if (solidCount >= 5) {
-                    newTiles[y][x] = tiles[y][x] || TileTypes.ROCK;
-                } else if (solidCount <= 3) {
-                    newTiles[y][x] = TileTypes.EMPTY;
+                if (solidCount>=5) {
+                    newTiles[y][x]=tiles[y][x]||TileTypes.ROCK;
+                } else if (solidCount<=3) {
+                    newTiles[y][x]=TileTypes.EMPTY;
                 }
             }
         }
 
-        tiles = newTiles;
+        tiles=newTiles;
     }
 
     return tiles;
@@ -613,30 +613,30 @@ export function smoothCaves(tiles, iterations = 2) {
  * Ensure all caves are connected
  */
 export function ensureConnectivity(tiles, startX, startY) {
-    const width = tiles[0].length;
-    const height = tiles.length;
+    const width=tiles[0].length;
+    const height=tiles.length;
 
     // Flood fill from start to find connected caves
-    const visited = new Set();
-    const toVisit = [{ x: startX, y: startY }];
-    const connected = new Set();
+    const visited=new Set();
+    const toVisit=[{x: startX, y: startY}];
+    const connected=new Set();
 
-    while (toVisit.length > 0) {
-        const { x, y } = toVisit.pop();
-        const key = `${x},${y}`;
+    while (toVisit.length>0) {
+        const {x, y}=toVisit.pop();
+        const key=`${x},${y}`;
 
         if (visited.has(key)) continue;
         visited.add(key);
 
-        if (x < 0 || x >= width || y < 0 || y >= height) continue;
-        if (tiles[y][x] !== TileTypes.EMPTY) continue;
+        if (x<0||x>=width||y<0||y>=height) continue;
+        if (tiles[y][x]!==TileTypes.EMPTY) continue;
 
         connected.add(key);
 
-        toVisit.push({ x: x + 1, y });
-        toVisit.push({ x: x - 1, y });
-        toVisit.push({ x, y: y + 1 });
-        toVisit.push({ x, y: y - 1 });
+        toVisit.push({x: x+1, y});
+        toVisit.push({x: x-1, y});
+        toVisit.push({x, y: y+1});
+        toVisit.push({x, y: y-1});
     }
 
     // Find disconnected regions and connect them
@@ -649,26 +649,26 @@ export function ensureConnectivity(tiles, startX, startY) {
  * Add interesting features to caves
  */
 export function addCaveFeatures(tiles, designer) {
-    const width = tiles[0].length;
-    const height = tiles.length;
+    const width=tiles[0].length;
+    const height=tiles.length;
 
     // Add stalactites/stalagmites at cave ceilings/floors
-    for (let y = 1; y < height - 1; y++) {
-        for (let x = 1; x < width - 1; x++) {
-            if (tiles[y][x] !== TileTypes.EMPTY) continue;
+    for (let y=1; y<height-1; y++) {
+        for (let x=1; x<width-1; x++) {
+            if (tiles[y][x]!==TileTypes.EMPTY) continue;
 
             // Stalactite: solid above, empty below
-            if (tiles[y - 1][x] !== TileTypes.EMPTY && tiles[y + 1][x] === TileTypes.EMPTY) {
-                if (Math.random() < 0.03) {
+            if (tiles[y-1][x]!==TileTypes.EMPTY&&tiles[y+1][x]===TileTypes.EMPTY) {
+                if (Math.random()<0.03) {
                     // Small stalactite
-                    tiles[y][x] = designer.getTileTypeForDepth(y);
+                    tiles[y][x]=designer.getTileTypeForDepth(y);
                 }
             }
 
             // Stalagmite: solid below, empty above
-            if (tiles[y + 1][x] !== TileTypes.EMPTY && tiles[y - 1][x] === TileTypes.EMPTY) {
-                if (Math.random() < 0.03) {
-                    tiles[y][x] = designer.getTileTypeForDepth(y);
+            if (tiles[y+1][x]!==TileTypes.EMPTY&&tiles[y-1][x]===TileTypes.EMPTY) {
+                if (Math.random()<0.03) {
+                    tiles[y][x]=designer.getTileTypeForDepth(y);
                 }
             }
         }

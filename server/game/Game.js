@@ -261,7 +261,7 @@ export class Game {
 
         // Generate voxel terrain
         console.log('Game init: generating terrain...');
-        this.voxelMap.generate();
+        this.voxelMap.generate(Math.random());
         console.log('Game init: terrain generated');
 
         this.voxelMap.setPhysicsWorld(this.physics);
@@ -528,10 +528,10 @@ export class Game {
             return;
         }
 
+        const pos=player.getPosition(); // START FIX: Capture position BEFORE switching to EVA
         const stats=player.setShipType('eva'); // Returns previous ship state
         if (!stats) return;
 
-        const pos=player.getPosition();
         const vehicleId=`veh_${this.nextVehicleId++}`;
 
         // Create physics body for parked vehicle

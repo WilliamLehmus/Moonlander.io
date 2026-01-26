@@ -18,7 +18,7 @@ export const TileTypes={
 };
 
 export class VoxelMap {
-    constructor(width=400, height=500, tileSize=8, profile='NORMAL') {
+    constructor(width=400, height=5000, tileSize=8, profile='NORMAL') {
         this.width=width;
         this.height=height;
         this.tileSize=tileSize;
@@ -43,12 +43,12 @@ export class VoxelMap {
         this.physicsWorld=physicsWorld;
     }
 
-    generate() {
-        console.log("Generating new terrain...");
+    generate(seed=Math.random()) {
+        console.log(`Generating new terrain with seed: ${seed}...`);
 
         // 1. Generate Surface Heights (Advanced Noise)
         const surfaceHeights=new Array(this.width);
-        this.generateSurfaceHeights(surfaceHeights);
+        this.generateSurfaceHeights(surfaceHeights, seed);
 
         // 2. Fill Layers with depth-based rock types
         for (let x=0; x<this.width; x++) {
@@ -64,16 +64,16 @@ export class VoxelMap {
                     const depth=y-surfaceY;
                     const normalizedDepth=y/this.height;
 
-                    // Biome-based rock types
-                    if (depth<8) {
-                        this.tiles[y][x]=TileTypes.REGOLITH;
-                    } else if (normalizedDepth<0.25) {
+                    // Biome-based rock types (Updated for 4000m Core depth)
+                    if (depth<10) {
+                        this.tiles[y][x]=TileTypes.REGOLITH; // Lunar Surface (0-10m)
+                    } else if (normalizedDepth<0.277) {
                         this.tiles[y][x]=TileTypes.ROCK; // Shallow Caves
-                    } else if (normalizedDepth<0.5) {
+                    } else if (normalizedDepth<0.451) {
                         this.tiles[y][x]=TileTypes.ROCK; // Deep Tunnels
-                    } else if (normalizedDepth<0.7) {
+                    } else if (normalizedDepth<0.626) {
                         this.tiles[y][x]=TileTypes.HARD_ROCK; // Crystal Caverns
-                    } else if (normalizedDepth<0.9) {
+                    } else if (normalizedDepth<0.8) {
                         this.tiles[y][x]=TileTypes.HARD_ROCK; // Abyssal Depths
                     } else {
                         // The Core - Mixed extremely hard rock
@@ -104,30 +104,30 @@ export class VoxelMap {
         console.log(`VoxelMap generated: ${this.width}x${this.height} tiles`);
     }
 
-    generateSurfaceHeights(surfaceHeights) {
+    generateSurfaceHeights(surfaceHeights, seed) {
         // Simple 1D value noise implementation specifically for this method
-        const noise=(x, seed) => {
-            const n=Math.sin(x*12.9898+seed*78.233)*43758.5453123;
+        const noise=(x, s) => {
+            const n=Math.sin(x*12.9898+s*78.233)*43758.5453123;
             return n-Math.floor(n);
         };
 
-        const smoothNoise=(x, seed) => {
+        const smoothNoise=(x, s) => {
             const i=Math.floor(x);
             const f=x-i;
-            const y0=noise(i, seed);
-            const y1=noise(i+1, seed);
+            const y0=noise(i, s);
+            const y1=noise(i+1, s);
             // Cubic interpolation
             const t=f*f*(3-2*f);
             return y0+(y1-y0)*t;
         };
 
-        const fractalNoise=(x, octaves, persistence, scale, seed) => {
+        const fractalNoise=(x, octaves, persistence, scale, s) => {
             let total=0;
             let frequency=scale;
             let amplitude=1;
             let maxValue=0;
             for (let i=0; i<octaves; i++) {
-                total+=smoothNoise(x*frequency, seed+i)*amplitude;
+                total+=smoothNoise(x*frequency, s+i)*amplitude;
                 maxValue+=amplitude;
                 amplitude*=persistence;
                 frequency*=2;
@@ -141,16 +141,16 @@ export class VoxelMap {
             const nx=x/this.width;
 
             // 1. Base Terrain (Large rolling hills)
-            let h=fractalNoise(nx, 4, 0.5, 5, 123.45);
+            let h=fractalNoise(nx, 4, 0.5, 5, seed);
 
             // 2. Mountain Peaks (Ridged noise for sharp peaks)
             // |noise - 0.5| * 2 creates "valleys", inverting creates peaks
-            let peaks=Math.abs(fractalNoise(nx, 5, 0.5, 12, 678.90)-0.5)*2;
+            let peaks=Math.abs(fractalNoise(nx, 5, 0.5, 12, seed+100)-0.5)*2;
             peaks=Math.pow(peaks, 3); // Sharpen the peaks
 
             // 3. Flatness Mask (Where should it be flat?)
             // High value = flat, Low value = mountainous
-            let flatness=fractalNoise(nx, 2, 0.5, 3, 999.99);
+            let flatness=fractalNoise(nx, 2, 0.5, 3, seed+200);
             flatness=Math.pow(flatness, 2); // Contrast
 
             // Combine
@@ -431,20 +431,20 @@ export class VoxelMap {
         const oreConfigs=[
             // Iron - shallow, common everywhere after regolith
             {type: TileTypes.IRON_ORE, minDepth: 10, maxDepth: 400, rarity: 0.015, clusterSize: 8},
-            // Copper - 50-200m primary zone
-            {type: TileTypes.COPPER_ORE, minDepth: 50, maxDepth: 300, rarity: 0.018, clusterSize: 7},
-            // Bitite (fuel material) - found at various depths, becomes more common deeper
-            {type: TileTypes.BITITE, minDepth: 100, maxDepth: 800, rarity: 0.008, clusterSize: 5},
-            // Silver - 200-400m primary zone
-            {type: TileTypes.SILVER_ORE, minDepth: 150, maxDepth: 500, rarity: 0.010, clusterSize: 5},
-            // Titanium - 300-600m
-            {type: TileTypes.TITANIUM_ORE, minDepth: 250, maxDepth: 700, rarity: 0.006, clusterSize: 4},
-            // Gold - 400-800m primary zone
-            {type: TileTypes.GOLD_ORE, minDepth: 350, maxDepth: 900, rarity: 0.004, clusterSize: 4},
-            // Platinum - 800-1400m (scaled for map)
-            {type: TileTypes.PLATINUM_ORE, minDepth: 600, maxDepth: 1000, rarity: 0.002, clusterSize: 3},
-            // Diamond - deep zone only (3500+ equivalent, scaled)
-            {type: TileTypes.DIAMOND, minDepth: 900, maxDepth: 1200, rarity: 0.0008, clusterSize: 2}
+            // Copper - 50-250m primary zone
+            {type: TileTypes.COPPER_ORE, minDepth: 50, maxDepth: 250, rarity: 0.018, clusterSize: 7},
+            // Bitite (fuel material) - found throughout, but concentrated in mid-deep layers
+            {type: TileTypes.BITITE, minDepth: 100, maxDepth: 850, rarity: 0.009, clusterSize: 6},
+            // Silver - 200-500m primary zone
+            {type: TileTypes.SILVER_ORE, minDepth: 200, maxDepth: 500, rarity: 0.010, clusterSize: 5},
+            // Titanium - 400-700m
+            {type: TileTypes.TITANIUM_ORE, minDepth: 400, maxDepth: 700, rarity: 0.006, clusterSize: 5},
+            // Gold - 600-850m primary zone (Crystal/Abyssal)
+            {type: TileTypes.GOLD_ORE, minDepth: 600, maxDepth: 850, rarity: 0.004, clusterSize: 4},
+            // Platinum - 800-950m
+            {type: TileTypes.PLATINUM_ORE, minDepth: 800, maxDepth: 950, rarity: 0.002, clusterSize: 3},
+            // Diamond - Core zone only (900+)
+            {type: TileTypes.DIAMOND, minDepth: 900, maxDepth: 1000, rarity: 0.001, clusterSize: 2}
         ];
 
         // Generate ore clusters
@@ -582,10 +582,10 @@ export class VoxelMap {
         const padRightWorld=this.gridToWorld(padEndX-1, groundLevel);
 
         this.basePadBounds={
-            x1: padLeftWorld.x-this.tileSize/2,
-            y1: padLeftWorld.y-this.tileSize*6, // Height above pad for landing detection
-            x2: padRightWorld.x+this.tileSize/2,
-            y2: padLeftWorld.y+this.tileSize/2
+            x1: padLeftWorld.x-this.tileSize*10, // Even more generous horizontal range
+            y1: padLeftWorld.y-this.tileSize*60, // Much higher range (480 pixels)
+            x2: padRightWorld.x+this.tileSize*10, // Even more generous horizontal range
+            y2: padLeftWorld.y+this.tileSize*10 // Much deeper downward range
         };
 
 
@@ -807,20 +807,29 @@ export class VoxelMap {
 
         // Create landing platform collision body if bounds exist
         if (this.basePadBounds&&this.physicsWorld&&this.physicsWorld.isReady) {
-            // Raised the collision box height to prevent sinking (was +10, now +3)
-            const platformY=this.basePadBounds.y1+3;
+            // Fix: Position platform slightly above the actual grid tiles to ensure docking interaction.
+            // landingPadPosition.y is middle of the tile (groundLevel * 8 + 4).
+            // We set centered platform at y - 2, with height 8.
+            // Top surface will be at (y - 2) - 4 = y - 6.
+            // Which is (groundLevel * 8 + 4) - 6 = groundLevel * 8 - 2.
+            // This is 2 pixels ABOVE the terrain tiles (groundLevel * 8).
+            const platformY=this.landingPadPosition.y-2;
             const platformWidth=(this.basePadBounds.x2-this.basePadBounds.x1);
-            const platformHeight=4;
+            const platformHeight=8;
             const platformX=(this.basePadBounds.x1+this.basePadBounds.x2)/2;
 
-            this.physicsWorld.createBox(
+            const padBody=this.physicsWorld.createBox(
                 platformX,
                 platformY,
                 platformWidth,
                 platformHeight,
                 0
             );
-            console.log(`Created landing platform at y=${platformY}`);
+            if (padBody) {
+                padBody.setFriction(10.0); // Extreme friction for landing stability
+                padBody.setRestitution(0.1); // Low bounce
+            }
+            console.log(`Created landing platform at y=${platformY} (visual surface at ${platformY-4})`);
         }
     }
 

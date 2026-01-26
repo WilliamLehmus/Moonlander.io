@@ -4,7 +4,7 @@ import Ammo from 'ammo.js';
 const SHIP_TYPES={
     scout: {
         name: 'Scout',
-        width: 20, height: 20, mass: 1,
+        width: 20, height: 28, mass: 1,
         maxFuel: 500, fuelConsumption: 30,
         cargoCapacity: 500,
         thrustForce: 80,
@@ -136,6 +136,7 @@ export class Player {
         // Note: In real production, reuse single global instances if possible, 
         // but here one per player is fine.
         this.tmpTrans=new this.physicsWorld.ammo.btTransform();
+        this.wasThrusting=false;
     }
 
     destroy() {
@@ -367,12 +368,16 @@ export class Player {
                 this.body.applyCentralForce(new ammo.btVector3(WALK_FORCE, 0, 0));
             }
 
-            // Up/thrust makes character jump with a force
-            if (this.inputs.thrust&&this.power>0) {
-                this.body.applyCentralForce(new ammo.btVector3(0, -JUMP_FORCE, 0)); // Up is negative Y
-                this.power-=5*dt; // Ion jetpack is inefficient
-                if (this.power<0) this.power=0;
+            // Up/thrust makes character jump with a force (Jump instead of jetpack)
+            const vel=this.getVelocity();
+            const isGrounded=Math.abs(vel.vy)<0.5;
+
+            // Only jump if grounded and pressing thrust (not holding)
+            if (this.inputs.thrust&&!this.wasThrusting&&isGrounded) {
+                const JUMP_IMPULSE=15; // Impulse for immediate jump
+                this.body.applyCentralImpulse(new ammo.btVector3(0, -JUMP_IMPULSE, 0));
             }
+            this.wasThrusting=this.inputs.thrust;
 
             // Oxygen consumption
             this.oxygen=Math.max(0, this.oxygen-this.oxygenConsumption*dt);

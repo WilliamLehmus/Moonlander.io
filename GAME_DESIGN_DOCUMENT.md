@@ -1,6 +1,18 @@
 # Moonlander.io - Game Design Document
 ## A Cooperative Lunar Exploration Experience
 
+
+# NEW FEATURES Batch 5
+
+Bugs:
+- can't open station building menu when landed on landing pad.
+- Moonlander collision box, needs to extend more to the bottom of the moonlander. It's landing legs are in the ground.
+- Map generation - Each new game should generate a new map. Each map has a seed value. so that it can be shared with others. 
+- Increase the friction on the landing pad when landing a moonlander on in it to decrease risk of skidding.
+- The moonlander is not refueled, charged and repaired when landing on the landing pad.
+- Going EVA spawns the moonlander in the top left corner of the map. The moonlander should persist where it was left. 
+- EVA. Disable jetpack. The player jumps with a low force instead. 
+
 # NEW FEATURES Batch 4 - IMPLEMENTED ✓
 
 ## Summary of Implemented Features
@@ -801,38 +813,54 @@ The cave system should feel like a continuous, natural underground world - not a
 - Worms can split (up to 25 total) creating branching caves
 - Radius varies 3-10 tiles creating varied tunnel widths
 
-### 6.2 World Structure
+### 6.2 Lunar Biomes
 
-```
-SURFACE (Y = 0)
-    |
-    [MOON BASE] ─── [Cave Entrance]
-                         |
-                    [SHALLOW ZONE: 0 to -500m]
-                    - Wide passages
-                    - Common resources
-                    - Beginner friendly
-                         |
-                    [MID ZONE: -500m to -1500m]
-                    - Medium passages
-                    - Uncommon resources
-                    - Moderate hazards
-                         |
-                    [DEEP ZONE: -1500m to -3000m]
-                    - Narrow passages
-                    - Rare resources
-                    - Significant hazards
-                         |
-                    [ABYSS ZONE: -3000m to -5000m]
-                    - Extremely tight passages
-                    - Legendary resources
-                    - Extreme hazards
-                         |
-                    [THE CORE: Below -5000m]
-                    - Unknown...
-                    - Artifacts of unknown origin
-                    - Boss encounters?
-```
+The moon's interior is divided into six distinct biomes, each defined by its depth, primary rock types, ore availability, and environmental hazards.
+
+| Biome | Depth (m) | Normalized | Primary Rock | Major Ores | Hazards |
+|-------|-----------|------------|--------------|------------|---------|
+| **Lunar Surface** | 0 - 510m | 0 - 0.102 | Regolith | None | Vacuum, Meteor Showers |
+| **Shallow Caves** | 510 - 1382m | 0.102 - 0.277 | Standard Rock | Iron, Copper | Loose Rocks |
+| **Deep Tunnels** | 1382 - 2255m | 0.277 - 0.451 | Standard Rock | Silver, Titanium | Gas Pockets |
+| **Crystal Caverns** | 2255 - 3127m | 0.451 - 0.626 | Hard Rock | Gold, Bitite | Unstable Formations |
+| **Abyssal Depths** | 3127 - 4000m | 0.626 - 0.800 | Hard Rock | Platinum | Lava Proximity, Darkness |
+| **The Core** | 4000 - 5000m | 0.800 - 1.000 | Infused Rock | Diamond, Helium-3 | Radiation, Magnetic Anomalies |
+
+#### 1. Lunar Surface (The Crust)
+- **Range**: Top 500m is sky; biome extends 10m into the ground.
+- **Atmosphere**: Bright, stark lighting.
+- **Hazards**: High-speed landing risks, lack of cover.
+- **Resources**: None (Safe zone for Moon Base).
+
+#### 2. Shallow Caves
+- **Range**: 510m to 1382m.
+- **Atmosphere**: Dim light, wide natural arches.
+- **Hazards**: Loose regolith causing minor hull damage if it falls.
+- **Resources**: Abundant Iron and Copper.
+
+#### 3. Deep Tunnels (The Labyrinth)
+- **Range**: 1382m to 2255m.
+- **Atmosphere**: Dark, twisting passages requiring spotlights.
+- **Hazards**: Pressurized gas pockets.
+- **Resources**: Silver and Titanium.
+
+#### 4. Crystal Caverns
+- **Range**: 2255m to 3127m.
+- **Atmosphere**: Bio-luminescent glows, sharp crystalline structures.
+- **Hazards**: Sharp crystals that cause high contact damage.
+- **Resources**: Gold and Bitite.
+
+#### 5. Abyssal Depths
+- **Range**: 3127m to 4000m.
+- **Atmosphere**: Total darkness, intense heat haze.
+- **Hazards**: Increasing temperature drains power; nearby lava flows.
+- **Resources**: Platinum and high-yield Bitite.
+
+#### 6. The Core
+- **Range**: 4000m and deeper.
+- **Atmosphere**: Shimmering magnetic fields, erratic sensor data.
+- **Hazards**: Radiation damage in EVA, sensor interference (minimap static).
+- **Resources**: Diamonds and Helium-3.
 
 ### 6.3 Cave Generation Algorithm
 

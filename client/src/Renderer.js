@@ -263,6 +263,20 @@ export class Renderer {
         window.addEventListener('quickbarSelect', (e) => {
             this.selectedQuickbarSlot=e.detail.slot;
         });
+
+        // NEW: Load Biome Backgrounds
+        this.biomeBackgrounds={};
+        const biomes=[
+            'surface', 'shallow_caves', 'deep_tunnels',
+            'crystal_caverns', 'abyssal_depths', 'the_core'
+        ];
+        biomes.forEach(id => {
+            const img=new Image();
+            img.src=`/backgrounds/biome_${id}.png`;
+            img.onload=() => {
+                this.biomeBackgrounds[id]=img;
+            };
+        });
     }
 
     resize() {
@@ -917,6 +931,78 @@ export class Renderer {
         }
     }
 
+    // Draw Parallax backgrounds based on depth and biome
+    drawBackgrounds(myPlayer) {
+        if (!myPlayer) return;
+
+        const normalizedDepth=myPlayer.y/(this.mapHeight*this.tileSize);
+        let currentBiome='surface';
+        let mixBiome='surface';
+        let mixAlpha=0;
+
+        // Biome triggers (Updated for 4000m Core depth)
+        if (normalizedDepth<0.102) {
+            currentBiome='surface';
+            mixBiome='shallow_caves';
+            mixAlpha=Math.max(0, (normalizedDepth-0.08)/0.022); // Fade in next biome
+        } else if (normalizedDepth<0.277) {
+            currentBiome='shallow_caves';
+            mixBiome='deep_tunnels';
+            mixAlpha=Math.max(0, (normalizedDepth-0.25)/0.027);
+        } else if (normalizedDepth<0.451) {
+            currentBiome='deep_tunnels';
+            mixBiome='crystal_caverns';
+            mixAlpha=Math.max(0, (normalizedDepth-0.40)/0.051);
+        } else if (normalizedDepth<0.626) {
+            currentBiome='crystal_caverns';
+            mixBiome='abyssal_depths';
+            mixAlpha=Math.max(0, (normalizedDepth-0.58)/0.046);
+        } else if (normalizedDepth<0.8) {
+            currentBiome='abyssal_depths';
+            mixBiome='the_core';
+            mixAlpha=Math.max(0, (normalizedDepth-0.75)/0.05);
+        } else {
+            currentBiome='the_core';
+            mixBiome='the_core';
+            mixAlpha=0;
+        }
+
+        // Draw primary biome
+        this.renderParallaxLayer(currentBiome);
+
+        // Draw mixing biome (transition)
+        if (mixAlpha>0) {
+            this.ctx.globalAlpha=mixAlpha;
+            this.renderParallaxLayer(mixBiome);
+            this.ctx.globalAlpha=1.0;
+        }
+    }
+
+    renderParallaxLayer(biomeId) {
+        const bg=this.biomeBackgrounds[biomeId];
+        if (!bg||bg.width===0) return;
+
+        // Parallax factors
+        const factorX=0.2;
+        const factorY=0.1;
+
+        // Scale it to cover vertically and tile horizontally
+        const scale=(this.canvas.height*1.5)/bg.height; // Oversize slightly for safety
+        const width=bg.width*scale;
+        const height=bg.height*scale;
+
+        // Calculate offset based on camera
+        let offsetX=-(this.cameraX*factorX)%width;
+        let offsetY=-(this.cameraY*factorY)%height;
+
+        // Fill screen with repeats
+        for (let x=offsetX-width; x<this.canvas.width+width; x+=width) {
+            for (let y=offsetY-height; y<this.canvas.height+height; y+=height) {
+                this.ctx.drawImage(bg, x, y, width, height);
+            }
+        }
+    }
+
     draw(state, myId) {
         const now=performance.now();
         const dt=(now-this.lastTime)/1000;
@@ -974,6 +1060,9 @@ export class Renderer {
         // Clear background with moon sky color
         this.ctx.fillStyle='#0a0a14';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Draw Parallax Backgrounds
+        this.drawBackgrounds(myPlayer);
 
         this.ctx.save();
 
@@ -1115,11 +1204,28 @@ export class Renderer {
             DIAMOND: 17          // 3500-5000m, extremely rare
         };
 
+        const getRockColors=(y) => {
+            const normalizedDepth=y/this.mapHeight;
+            if (normalizedDepth<0.102) {
+                return {main: '#d1c4b9', border: '#a89a8e'}; // Regolith/Surface
+            } else if (normalizedDepth<0.277) {
+                return {main: '#7d6b5d', border: '#4d3d32'}; // Shallow (Warm Brown)
+            } else if (normalizedDepth<0.451) {
+                return {main: '#5d5d5d', border: '#3a3a3a'}; // Deep (Gray)
+            } else if (normalizedDepth<0.626) {
+                return {main: '#4d4d7d', border: '#333355'}; // Crystal (Blueish/Dark Purple)
+            } else if (normalizedDepth<0.8) {
+                return {main: '#2d3d2d', border: '#1a241a'}; // Abyssal (Dark Green/Black)
+            } else {
+                return {main: '#5d2d2d', border: '#3a1a1a'}; // Core (Reddish)
+            }
+        };
+
         const tileColors={
             [TileTypes.GROUND]: {main: '#8b7a6b', border: '#5d4e42'},
             [TileTypes.REGOLITH]: {main: '#d1c4b9', border: '#a89a8e'},
-            [TileTypes.ROCK]: {main: '#7d6b5d', border: '#4d3d32'},
-            [TileTypes.HARD_ROCK]: {main: '#4d4d5d', border: '#333344'},
+            [TileTypes.ROCK]: null, // Handled dynamically
+            [TileTypes.HARD_ROCK]: null, // Handled dynamically
             [TileTypes.PAD]: {main: '#6a8bba', border: '#4a6b8a'},
             [TileTypes.BASE]: {main: '#c0c0c0', border: '#666666'},
             // Ore colors - distinct and visible, ordered by depth
@@ -1141,7 +1247,10 @@ export class Renderer {
                 // Skip BASE tiles - they'll be covered by sprite
                 if (tile===TileTypes.BASE) continue;
 
-                const colors=tileColors[tile]||tileColors[TileTypes.GROUND];
+                let colors=tileColors[tile]||tileColors[TileTypes.GROUND];
+                if (tile===TileTypes.ROCK||tile===TileTypes.HARD_ROCK||tile===TileTypes.GROUND) {
+                    colors=getRockColors(y);
+                }
                 const wx=x*this.tileSize;
                 const wy=y*this.tileSize;
 
