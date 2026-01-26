@@ -3132,10 +3132,28 @@ export class Renderer {
             this.ctx.lineTo(cable.x2-cameraX, cable.y2-cameraY);
             this.ctx.stroke();
 
-            // Draw endpoints (anchors)
-            this.ctx.fillStyle='#555';
-            this.ctx.fillRect(cable.x1-cameraX-2, cable.y1-cameraY-2, 4, 4);
-            this.ctx.fillRect(cable.x2-cameraX-2, cable.y2-cameraY-2, 4, 4);
+            // Draw endpoints (anchors) or Spool
+            if (cable.isSpool) {
+                // Draw Spool Icon
+                const sx=cable.x2-cameraX;
+                const sy=cable.y2-cameraY;
+                this.ctx.fillStyle=color;
+                this.ctx.beginPath();
+                this.ctx.arc(sx, sy, 5, 0, Math.PI*2);
+                this.ctx.fill();
+                this.ctx.strokeStyle='#fff';
+                this.ctx.lineWidth=1;
+                this.ctx.stroke();
+
+                // Label
+                this.ctx.fillStyle='#fff';
+                this.ctx.font='8px monospace';
+                this.ctx.fillText("SPOOL", sx-10, sy-8);
+            } else {
+                this.ctx.fillStyle='#555';
+                this.ctx.fillRect(cable.x1-cameraX-2, cable.y1-cameraY-2, 4, 4);
+                this.ctx.fillRect(cable.x2-cameraX-2, cable.y2-cameraY-2, 4, 4);
+            }
         }
 
         this.ctx.restore();

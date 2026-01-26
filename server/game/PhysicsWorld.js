@@ -9,7 +9,7 @@ export class PhysicsWorld {
     }
 
     async init() {
-        this.ammo = AmmoLib;
+        this.ammo=AmmoLib;
 
         const collisionConfiguration=new this.ammo.btDefaultCollisionConfiguration();
         const dispatcher=new this.ammo.btCollisionDispatcher(collisionConfiguration);
@@ -62,6 +62,14 @@ export class PhysicsWorld {
         this.bodies.push(body);
 
         return body;
+    }
+    removeBody(body) {
+        if (!this.isReady||!body) return;
+        this.world.removeRigidBody(body);
+        const index=this.bodies.indexOf(body);
+        if (index>-1) {
+            this.bodies.splice(index, 1);
+        }
     }
 }
 

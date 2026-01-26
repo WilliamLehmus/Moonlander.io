@@ -999,6 +999,12 @@ export class Game {
         // Update dropped items (jettisoned ore)
         this.updateDroppedItems(dt);
 
+        // Update cable spools
+        this.cableSystem.update(dt);
+
+        // Survival pods update
+        this.updateSurvivalPods(dt);
+
         // Update wreckages
         this.updateWreckages(dt);
 

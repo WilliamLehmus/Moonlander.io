@@ -1006,7 +1006,52 @@ window.handleUpgradeBuilding=function(key) {
 // ============================================
 // CABLE SYSTEM LOGIC
 // ============================================
-let cableStartPoint=null;
+let cableStartPoint=null; // Local reference for preview
+// We need to sync this with server state ideally, but we'll manage strictly by user actions for now.
+// Actually, if we drop the line, we clear this.
+
+function getNearestInteractable(x, y) {
+  const interactRadius=20;
+
+  // Check Spools (from gameState using cables list where isSpool=true?)
+  // Game state sends cables: [{..., isSpool: true, x2, y2}]
+  // x2,y2 is the spool position.
+  if (gameState.cables) {
+    for (const c of gameState.cables) {
+      if (c.isSpool) {
+        const dx=x-c.x2;
+        const dy=y-c.y2;
+        if (dx*dx+dy*dy<interactRadius*interactRadius) {
+          return {type: 'spool', id: c.id, x: c.x2, y: c.y2}; // We need ID! serialization needs to send spool ID (c.id?)
+          // In CableSystem.serialize: id=c.id (which is Spool ID for spools)
+        }
+      }
+    }
+  }
+
+  // Check Buildings
+  if (gameState.activeBuildings) {
+    for (const b of gameState.activeBuildings) {
+      const dx=x-b.x;
+      const dy=y-b.y;
+      // Simple radius check - buildings are large though.
+      if (dx*dx+dy*dy<50*50) { // 50px radius for building anchor
+        return {type: 'building', id: b.id, x: b.x, y: b.y};
+      }
+    }
+  }
+
+  // Check Base/Pad (if not in activeBuildings)
+  if (gameState.basePosition) {
+    const dx=x-gameState.basePosition.x;
+    const dy=y-gameState.basePosition.y;
+    if (dx*dx+dy*dy<60*60) {
+      return {type: 'building', id: 'landing_pad', x: gameState.basePosition.x, y: gameState.basePosition.y};
+    }
+  }
+
+  return null;
+}
 
 window.addEventListener('cableClick', (e) => {
   if (!renderer||!myId) return;
@@ -1014,27 +1059,71 @@ window.addEventListener('cableClick', (e) => {
   const worldX=renderer.cameraX+e.detail.x;
   const worldY=renderer.cameraY+e.detail.y;
   const cableType=input.state.cableType||'power';
+  const target=getNearestInteractable(worldX, worldY);
 
-  // Check if starting a new line
   if (!cableStartPoint) {
-    cableStartPoint={x: worldX, y: worldY};
-    soundManager.playSound('ui_click');
+    // START / PICKUP
+    if (target) {
+      if (target.type==='spool') {
+        socket.emit('placeCable', {action: 'pickup', spoolId: target.id});
+        // Set local start point to follow player?
+        // Actually, pickup attaches to player. We should set cableStartPoint to target.x/y
+        // But we need to track PLAYER position for the other end.
+        // Visual preview might glitch until next state update.
+        // Let's just set it to spool pos for now.
+        cableStartPoint={x: target.x, y: target.y};
+      } else {
+        // Start from building
+        socket.emit('placeCable', {action: 'start', x: target.x, y: target.y, type: cableType, targetId: target.id});
+        cableStartPoint={x: target.x, y: target.y};
+        soundManager.playSound('ui_click');
+      }
+    } else {
+      // Start from empty space? (User: "require... start at landing pad")
+      // Check if near player? 
+      renderer.showMessage("Must start at Base/Connector or Pick up Spool");
+    }
   } else {
-    // Complete segment
-    socket.emit('placeCable', {
-      x1: cableStartPoint.x,
-      y1: cableStartPoint.y,
-      x2: worldX,
-      y2: worldY,
-      type: cableType
-    });
-    soundManager.playSound('ui_click');
-    // Advance start point to end point for continuous drawing
-    cableStartPoint={x: worldX, y: worldY};
+    // ATTACH / DROP
+    if (target) {
+      // Attach to building/connect to spool?
+      // Connecting to spool is "Attach".
+      socket.emit('placeCable', {action: 'attach', x: target.x, y: target.y, targetId: target.id});
+      soundManager.playSound('ui_click');
+      // Cable finished.
+      cableStartPoint=null;
+    } else {
+      // Check for wall? Canvas input doesn't check walls easily.
+      // Assuming click on wall = Attach. Click on air = Drop.
+      // We can send "Attach" and let server decide if it's a wall.
+      // If server says "No Wall", then we Drop? 
+      // Let's explicitly trigger DROP if Shift is held? Or just logic:
+      // Try attach. If valid wall, attach. Else Drop?
+      // Safer: 
+      // Drop: Explicit Click on empty air.
+      // Attach: Click on Wall.
+
+      // Let's send "attach" attempt. If it fails (not a wall), server could auto-drop?
+      // Or we send "drop" if clicked far from walls.
+      // Simple: Just send "drop" if no target found. 
+      // Wait, "Attach to wall" is a requirement. 
+      // We can raycast `renderer` to see if wall.
+
+      const isWall=renderer.voxelMap&&renderer.voxelMap[Math.floor(worldY/8)]&&renderer.voxelMap[Math.floor(worldY/8)][Math.floor(worldX/8)]>0;
+
+      if (isWall) {
+        socket.emit('placeCable', {action: 'attach', x: worldX, y: worldY});
+        cableStartPoint={x: worldX, y: worldY}; // Continue line!
+      } else {
+        // Drop spool
+        socket.emit('placeCable', {action: 'drop', x: worldX, y: worldY});
+        cableStartPoint=null;
+      }
+    }
   }
 });
 
-// Cancel cable placement on mode toggle
+// Cancel cable placement (Clear local state)
 window.addEventListener('keydown', (e) => {
   if (e.code==='KeyC') {
     cableStartPoint=null;
