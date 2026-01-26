@@ -47,6 +47,24 @@ const hangarStatusEl=document.getElementById('hangarStatus');
 const tabBtns=document.querySelectorAll('.tab-btn');
 const stationTabs=document.querySelectorAll('.station-tab');
 
+// Debug Menu Elements
+const debugMenuEl=document.getElementById('debugMenu');
+const closeDebugBtn=document.getElementById('closeDebugBtn');
+let debugMenuOpen=false;
+let infiniteFuelEnabled=false;
+
+// Inventory Menu Elements
+const inventoryMenuEl=document.getElementById('inventoryMenu');
+const shipInventoryEl=document.getElementById('shipInventory');
+const stationInventoryEl=document.getElementById('stationInventory');
+const stationInventorySection=document.getElementById('stationInventorySection');
+const closeInventoryBtn=document.getElementById('closeInventoryBtn');
+const transferToStationBtn=document.getElementById('transferToStation');
+const transferToShipBtn=document.getElementById('transferToShip');
+let inventoryMenuOpen=false;
+let selectedShipSlot=null;
+let selectedStationSlot=null;
+
 // Add Music Volume slider logic
 // Wait, I didn't add the music volume slider to HTML yet. I should update HTML first or just assume it's there.
 // I will update HTML in next step. For now let's stick to what we have in HTML: master and sfx.
@@ -66,6 +84,8 @@ let isChatOpen=false;
 let chatMessages=[]; // Store recent chat messages
 let lastPower=100;
 let wasDead=false;
+let lastFuel=500; // Track fuel for out of fuel sound
+let wasOnPad=false; // Track landing pad state for auto-open station menu
 
 // Initialize audio on first user interaction
 document.addEventListener('click', () => {
@@ -181,6 +201,21 @@ function toggleMenu() {
     soundManager.playSound('menu_pop');
   }
 }
+
+// Settings tabs switching
+document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    // Deactivate all
+    document.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.settings-tab-content').forEach(t => t.classList.add('hidden'));
+
+    // Activate selected
+    btn.classList.add('active');
+    const tabId=`settings-tab-${btn.dataset.settingsTab}`;
+    document.getElementById(tabId).classList.remove('hidden');
+    soundManager.playSound('menu_pop');
+  });
+});
 
 // ============================================
 // EVENT LISTENERS - LOBBY
@@ -503,14 +538,35 @@ window.addEventListener('keydown', (e) => {
       openStationMenu();
     }
   }
+
+  // Open Debug Menu (Backtick/tilde key) - Development only
+  if (e.key==='`'||e.key==='~') {
+    if (debugMenuOpen) {
+      closeDebugMenu();
+    } else {
+      openDebugMenu();
+    }
+  }
+
+  // Open Inventory (Q)
+  if (e.key==='q'||e.key==='Q') {
+    if (inventoryMenuOpen) {
+      closeInventoryMenu();
+    } else {
+      openInventoryMenu();
+    }
+  }
 });
 
 // ============================================
 // STATION MENU FUNCTIONS
 // ============================================
 
+let stationMenuOpen=false;
+
 function openStationMenu() {
   stationMenuEl.classList.remove('hidden');
+  stationMenuOpen=true;
   soundManager.playSound('menu_pop');
   renderShipList();
   renderBuildingList();
@@ -518,10 +574,255 @@ function openStationMenu() {
 
 function closeStationMenu() {
   stationMenuEl.classList.add('hidden');
+  stationMenuOpen=false;
   soundManager.playSound('menu_pop');
 }
 
 closeStationBtn.addEventListener('click', closeStationMenu);
+
+// Debug Menu Functions (Development Only)
+function openDebugMenu() {
+  debugMenuEl.classList.remove('hidden');
+  debugMenuOpen=true;
+  soundManager.playSound('menu_pop');
+}
+
+function closeDebugMenu() {
+  debugMenuEl.classList.add('hidden');
+  debugMenuOpen=false;
+  soundManager.playSound('menu_pop');
+}
+
+if (closeDebugBtn) {
+  closeDebugBtn.addEventListener('click', closeDebugMenu);
+}
+
+// ============================================
+// INVENTORY MENU FUNCTIONS
+// ============================================
+
+function getShipInventorySlots(shipType) {
+  switch (shipType) {
+    case 'eva': return 2;
+    case 'cargo': return 6;
+    case 'scout':
+    default: return 3;
+  }
+}
+
+function openInventoryMenu() {
+  const myPlayer=gameState.players.find(p => p.id===myId);
+  if (!myPlayer) return;
+
+  inventoryMenuEl.classList.remove('hidden');
+  inventoryMenuOpen=true;
+  soundManager.playSound('menu_pop');
+
+  // Only show station inventory if on pad
+  if (myPlayer.onPad) {
+    stationInventorySection.classList.remove('hidden');
+  } else {
+    stationInventorySection.classList.add('hidden');
+  }
+
+  renderInventory();
+}
+
+function closeInventoryMenu() {
+  inventoryMenuEl.classList.add('hidden');
+  inventoryMenuOpen=false;
+  selectedShipSlot=null;
+  selectedStationSlot=null;
+  soundManager.playSound('menu_pop');
+}
+
+function renderInventory() {
+  const myPlayer=gameState.players.find(p => p.id===myId);
+  if (!myPlayer) return;
+
+  const shipSlots=getShipInventorySlots(myPlayer.shipType);
+  const cargo=myPlayer.cargo||[];
+
+  // Update title
+  document.getElementById('shipInventoryTitle').textContent=
+    `${myPlayer.shipType==='eva'? 'EVA':'Ship'} Cargo (${cargo.length}/${shipSlots} slots)`;
+
+  // Render ship inventory
+  shipInventoryEl.innerHTML='';
+  for (let i=0; i<shipSlots; i++) {
+    const item=cargo[i]||null;
+    const slot=createInventorySlot(item, i, 'ship');
+    shipInventoryEl.appendChild(slot);
+  }
+
+  // Render station inventory if on pad
+  if (myPlayer.onPad) {
+    const stationOres=gameState.baseResources?.ores||{};
+    const stationItems=Object.entries(stationOres)
+      .filter(([_, amount]) => amount>0)
+      .map(([type, amount]) => ({type: type.toUpperCase()+'_ORE', amount}));
+
+    stationInventoryEl.innerHTML='';
+    const stationSlots=12;
+    for (let i=0; i<stationSlots; i++) {
+      const item=stationItems[i]||null;
+      const slot=createInventorySlot(item, i, 'station');
+      stationInventoryEl.appendChild(slot);
+    }
+  }
+
+  updateTransferButtons();
+}
+
+function createInventorySlot(item, index, location) {
+  const slot=document.createElement('div');
+  slot.className='inventory-slot'+(item? '':' empty');
+  slot.dataset.index=index;
+  slot.dataset.location=location;
+
+  if (item) {
+    // Create colored div for ore type
+    const icon=document.createElement('div');
+    icon.className='item-icon';
+    icon.style.background=getOreColor(item.type);
+    icon.style.borderRadius='4px';
+    slot.appendChild(icon);
+
+    const name=document.createElement('div');
+    name.className='item-name';
+    name.textContent=formatOreName(item.type);
+    slot.appendChild(name);
+
+    const amount=document.createElement('div');
+    amount.className='item-amount';
+    amount.textContent=item.amount;
+    slot.appendChild(amount);
+  }
+
+  // Selection logic
+  slot.addEventListener('click', () => {
+    if (location==='ship') {
+      document.querySelectorAll('#shipInventory .inventory-slot').forEach(s => s.classList.remove('selected'));
+      if (item) {
+        slot.classList.add('selected');
+        selectedShipSlot=index;
+      } else {
+        selectedShipSlot=null;
+      }
+    } else {
+      document.querySelectorAll('#stationInventory .inventory-slot').forEach(s => s.classList.remove('selected'));
+      if (item) {
+        slot.classList.add('selected');
+        selectedStationSlot=index;
+      } else {
+        selectedStationSlot=null;
+      }
+    }
+    updateTransferButtons();
+  });
+
+  return slot;
+}
+
+function getOreColor(type) {
+  const colors={
+    'IRON_ORE': '#cd853f',
+    'COPPER_ORE': '#daa520',
+    'BITITE': '#4a4a4a',
+    'SILVER_ORE': '#c0c0c0',
+    'TITANIUM_ORE': '#b0c4de',
+    'GOLD_ORE': '#ffd700',
+    'PLATINUM_ORE': '#e5e4e2',
+    'DIAMOND': '#b9f2ff'
+  };
+  return colors[type]||'#888';
+}
+
+function formatOreName(type) {
+  return type.replace('_ORE', '').replace('_', ' ').toLowerCase();
+}
+
+function updateTransferButtons() {
+  const myPlayer=gameState.players.find(p => p.id===myId);
+  if (!myPlayer) return;
+
+  // Enable transfer to station if ship slot selected and on pad
+  transferToStationBtn.disabled=!(selectedShipSlot!==null&&myPlayer.onPad);
+
+  // Enable transfer to ship if station slot selected
+  transferToShipBtn.disabled=!(selectedStationSlot!==null);
+}
+
+// Transfer handlers
+transferToStationBtn?.addEventListener('click', () => {
+  if (selectedShipSlot===null) return;
+  socket.emit('transferInventory', {from: 'ship', to: 'station', slotIndex: selectedShipSlot});
+  selectedShipSlot=null;
+  renderInventory();
+});
+
+transferToShipBtn?.addEventListener('click', () => {
+  if (selectedStationSlot===null) return;
+  const stationOres=gameState.baseResources?.ores||{};
+  const stationItems=Object.entries(stationOres)
+    .filter(([_, amount]) => amount>0)
+    .map(([type, amount]) => ({type: type.toUpperCase()+'_ORE', amount}));
+  const item=stationItems[selectedStationSlot];
+  if (item) {
+    socket.emit('transferInventory', {from: 'station', to: 'ship', oreType: item.type});
+  }
+  selectedStationSlot=null;
+  renderInventory();
+});
+
+closeInventoryBtn?.addEventListener('click', closeInventoryMenu);
+
+// Debug button handlers
+document.getElementById('debugAddFuel')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'addFuel', amount: 1000});
+});
+
+document.getElementById('debugAddParts')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'addParts', amount: 100});
+});
+
+document.getElementById('debugAddOre')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'addAllOres', amount: 500});
+});
+
+document.getElementById('debugAddMaterials')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'addAllMaterials', amount: 100});
+});
+
+document.getElementById('debugRepairShip')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'repairShip'});
+});
+
+document.getElementById('debugSpawnScout')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'spawnShip', type: 'scout'});
+});
+
+document.getElementById('debugSpawnCargo')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'spawnShip', type: 'cargo'});
+});
+
+document.getElementById('debugInfiniteFuel')?.addEventListener('click', () => {
+  infiniteFuelEnabled=!infiniteFuelEnabled;
+  socket.emit('debugCommand', {command: 'infiniteFuel', enabled: infiniteFuelEnabled});
+  document.getElementById('debugInfiniteFuel').style.background=infiniteFuelEnabled? '#484':'#333';
+});
+
+document.getElementById('debugTeleportBase')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'teleportBase'});
+});
+
+document.getElementById('debugMaxBuildings')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'maxBuildings'});
+});
+
+document.getElementById('debugKillPlayer')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'killPlayer'});
+});
 
 // Tab switching
 tabBtns.forEach(btn => {
@@ -671,8 +972,19 @@ function gameLoop() {
         renderer.setMousePos(input.mouseX, input.mouseY);
         input.updateSpotlight(myPlayer.x, myPlayer.y, renderer.cameraX, renderer.cameraY);
 
-        // Update thrust sound
-        soundManager.setThrust(input.state.up);
+        // Update thrust sound - don't play if no fuel
+        const hasFuel=myPlayer.fuel>0;
+        soundManager.setThrust(input.state.up&&hasFuel, hasFuel);
+
+        // Out of fuel sound - play once when fuel reaches 0
+        if (myPlayer.fuel<=0&&lastFuel>0) {
+          soundManager.playOutOfFuel();
+        }
+        // Reset out of fuel flag when refueled
+        if (myPlayer.fuel>0&&lastFuel<=0) {
+          soundManager.resetOutOfFuel();
+        }
+        lastFuel=myPlayer.fuel;
 
         // Update mining sound - Fix: only when actually mining resources
         const canMine=(myPlayer.power>=(myPlayer.miningPowerDrain||7.5)*0.1);
@@ -697,9 +1009,15 @@ function gameLoop() {
         }
         lastPower=myPlayer.power;
 
-        // Low fuel warning
-        const isLowFuel=(myPlayer.fuel/(myPlayer.maxFuel||500))<0.25&&!myPlayer.onPad;
+        // Low fuel warning - should cease when fuel reaches 0
+        const isLowFuel=(myPlayer.fuel/(myPlayer.maxFuel||500))<0.25&&myPlayer.fuel>0&&!myPlayer.onPad;
         soundManager.setLowFuelWarning(isLowFuel);
+
+        // Auto-open station menu when landing on pad
+        if (myPlayer.onPad&&!wasOnPad&&!stationMenuOpen&&!isMenuOpen) {
+          openStationMenu();
+        }
+        wasOnPad=myPlayer.onPad;
 
       } else {
         // Stop sounds if dead

@@ -1,22 +1,95 @@
 # Moonlander.io - Game Design Document
 ## A Cooperative Lunar Exploration Experience
 
-# NEW FEATURES  Batch 3
-- Moonlander fuel: When out of fuel. The propulsion is already being disabled. Also disable the thruster particle effects. 
-- When pointing the mouse cursor at another player, show a dotted line to it and the interaction options you have such as open cargo to transfer items between you and the other player, or tether for towing, or repair from your cargo supply using your supplies. 
-- Tethering: When tethered to another player, you can tow them (or they can tow you, physics based on mass and thrust) Tethering also shares power between the two players. . 
-- Jettison sound: Implement sound effect for jettisoning cargo. (jettison.mp3)
-- EVA: Add controls for EVA mode (exit vehicle 'x' Exit Vehicle, 'e' Enter Vehicle) in the controls Ui. 
-- Generate sprites for the following buildings and implement them in the game (and construction menu). The buildings are placed next to the moon base and don't have any collision with the player or the moonlander. The sprites are scaled at 50% of the original size. Check the rest of this document for more details the effects the buildings have, and if undocumented refine, expand and implement them. 
-| Ore Storage | Ore capacity | 1000 | +500 |
-| Fuel Depot | Max fuel | 10000 | +5000 |
-| Parts Warehouse | Max spare parts | 1000 | +500 |
-| Fuel Refinery | Fuel production rate | 1x | +0.5x |
-| Solar Array | Power generation | 10/sec | +10/sec |
-| Fuel Generator | Fuel→Power conversion | 0 | +20/sec |
-| Communications Antenna | Minimap range | 400m | +400m |
-| Ship Factory | Ship types available | 1 | +1 |
-| Crafting Station | Crafting tier unlocked | 0 | +1 |
+# NEW FEATURES Batch 4 - IMPLEMENTED ✓
+
+## Summary of Implemented Features
+
+### 1. Craftable Item Sprites ✓
+- **Cable Sprites**: Added `cable_red.png` (Power), `cable_blue.png` (Signal), `cable_green.png` (Fuel)
+- **Light Sprite**: Added `placeable_light.png` (Portable omni-directional light)
+
+### 2. Inventory System ✓
+- **Keybinding**: Q opens the inventory menu
+- **Ship Inventory Slots**: Scout has 3 slots, Cargo Hauler has 6 slots, EVA has 2 slots
+- **Station Inventory**: 12 slots default capacity
+- **Transfer System**: Items can be transferred between ship and station inventories
+
+### 3. Quickbar System ✓
+- **Keys 1-9**: Select quickbar slots for quick item access
+- **Visual Feedback**: Bottom-center quickbar displays cargo items
+- **Ping Keys Changed**: Pings moved from 1-4 to F1-F4
+
+### 4. Jettisoned Ore Physics ✓
+- **Physics-Based Drops**: Jettisoned ore now falls realistically with physics
+- **Pickup System**: Players can pick up dropped items nearby
+- **Auto-Collect**: Items on landing pad are automatically collected to base storage
+- **Visual Rendering**: Dropped items are rendered with ore-colored icons
+
+### 5. Debug Menu (Development) ✓
+- **Keybinding**: Backtick/tilde (`) opens debug menu
+- **Resource Commands**: Add fuel, spare parts, all ores, all materials
+- **Ship Commands**: Repair ship, spawn Scout/Cargo, toggle infinite fuel
+- **Game State**: Teleport to base, max all buildings, kill player (test)
+
+### 6. EVA Mode Fixes ✓
+- **Movement**: Left/Right now move the character horizontally (not rotate)
+- **Jump**: Up/W makes character jump
+- **Exit Vehicle**: X must be held for 2 seconds to exit
+- **Enter Vehicle**: E enters nearby vehicle (doesn't exit)
+- **Ship Persistence**: Exiting doesn't despawn the moonlander
+
+### 7. Ship Damage Orientation ✓
+- **Correct Landing**: Bottom-facing landings have 20-unit speed threshold before damage
+- **Safe Landing Zone**: 45-degree tolerance angle for "correct" orientation
+- **Side/Top Collisions**: Normal damage thresholds apply
+
+### 8. Sound Improvements ✓
+- **Out of Fuel Sound**: `out_of_fuel.mp3` plays once when fuel reaches 0
+- **Thrust Sound**: Disabled when out of fuel
+- **Low Fuel Warning**: Ceases when fuel reaches 0
+
+### 9. Contextual Keybindings UI ✓
+- **Dynamic Controls**: Only shows relevant actions based on context
+- **Settings Menu**: Full controls reference in Settings > Controls tab
+- **Cleaner HUD**: Reduced on-screen keybinding clutter
+
+### 10. Quality of Life ✓
+- **Auto Station Menu**: Landing on a landing pad automatically opens station menu
+
+
+# NEW FEATURES Batch 3 - IMPLEMENTED ✓
+
+## Summary of Implemented Features
+
+### 1. Fuel System Enhancements ✓
+- **Thruster Particles**: Disabled when out of fuel (no particles without propulsion)
+- **Jettison Sound**: Sound effect (`jettison.mp3`) plays when cargo is jettisoned
+
+### 2. Player Interaction System ✓
+- **Mouse Hover**: Pointing at another player shows interaction options
+- **Tethering Improvements**:
+  - Tow other players (physics-based on mass and thrust)
+  - Power sharing between tethered players
+
+### 3. EVA Controls UI ✓
+- Added EVA-specific controls to the controls help display
+- Exit Vehicle (X - hold 2 seconds)
+- Enter Vehicle (E)
+
+### 4. Building Sprites ✓
+All 9 building types now have custom sprites rendered in-game:
+- ore_storage.png
+- fuel_depot.png
+- parts_warehouse.png
+- fuel_refinery.png
+- solar_array.png
+- fuel_generator.png
+- communications_antenna.png
+- ship_factory.png
+- crafting_station.png
+
+Buildings are rendered at 50% scale near the moon base with no collision.
 
 # NEW FEATURES 2026-01-25 (Batch 2) - IMPLEMENTED ✓
 
@@ -69,16 +142,18 @@
 - **Status Monitoring**: Real-time display of base resources, refining status, and antenna range.
 
 ### 6. EVA Mode (Astronaut) ✓
-- **Exiting/Boarding**: Players can exit their ship anywhere (if moving slowly) using 'X'. The ship stays behind as a persistent parked vehicle.
+- **Exiting Ships**: Hold 'X' for 2 seconds to exit (prevents accidental exits). Ship remains as persistent parked vehicle.
+- **Entering Ships**: Press 'E' when near a parked vehicle to enter it.
 - **Astronaut Unit**: A stick-figure representation with procedural ragdoll-style animation.
-- **Walking & Physics**: Custom ground-based movement with physics damping.
+- **Movement Controls** (Updated in Batch 4):
+    - **Left/Right (A/D)**: Moves character horizontally (no rotation)
+    - **Jump (W/Up)**: Character jumps with force
 - **Ion Jetpack**: Uses **Power** instead of Fuel. Highly inefficient but allows for recharging over time.
+- **Inventory**: 2 slots for carrying items when in EVA mode.
 - **Survival**:
     - **Oxygen**: Consumed while outside. Depletion leads to hull damage (suffocation).
     - **Power Regen**: Slowly regenerates (1.0/sec) while in EVA.
-- **UI & Controls**:
-    - **Interact (X / E)**: Context-sensitive key for exiting ships, boarding parked vehicles, or toggling tethers.
-    - **HUD**: Dynamic display switching between Fuel and Oxygen bars.
+- **HUD**: Dynamic display switching between Fuel and Oxygen bars.
 - **Precision Scale**: Access to tight caves and crevices unreachable by ship.
 
 ---
@@ -343,34 +418,23 @@ Teams can link multiple landers for coordinated movement.
 - Middle landers can assist or conserve fuel
 - Anchor provides stability and braking
 
-**Diamond Formation**
-```
-        [Scout]
-           |
-    [Left]   [Right]
-           |
-       [Cargo]
-```
-- Scout navigates and maps ahead
-- Flankers provide lighting and threat detection
-- Cargo carrier stays protected in center
+
 
 ### 3.3 Resource Sharing
 
 **Fuel Transfer**
 - Players can dock (approach within 10 units, matching velocity within 5 units/sec)
 - Transfer rate: 50 fuel/second while docked
-- Minimum transfer: 100 fuel (prevents griefing micro-transfers)
+- Minimum transfer: 10 fuel (prevents griefing micro-transfers)
 
 **Cargo Exchange**
 - Requires full dock and stationary status
 - 3-second transfer time per cargo unit
 - Both players vulnerable during transfer
 
-**Emergency Supply Drop**
-- Jettison supply canisters that float in low gravity
-- Canisters contain: 200 fuel, 1 repair kit, 3 flares
-- Canisters persist for 5 minutes before despawning
+**Jettison**
+- Jettison ore, the jettisoned ores are ejected at reverse pickup order. Last in first out. 
+
 
 ### 3.4 Rescue Missions
 
@@ -1484,26 +1548,39 @@ DETERMINISM_NOTES:
 
 ## Appendix A: Control Scheme
 
-**Keyboard Controls**
+**Keyboard Controls - Ship Mode**
 | Key | Action |
 |-----|--------|
 | W / Up Arrow | Main Thrust |
 | A / Left Arrow | Rotate Counter-clockwise |
 | D / Right Arrow | Rotate Clockwise |
 | Space | Mine ore (hold) |
-| X / E | Interaction (Exit moonlander / Board boat / Toggle stations) |
+| X (hold 2s) | Exit vehicle (becomes EVA) |
 | G | Toggle Tether |
 | B | Open Station Menu (when landed) |
+| Q | Open Inventory |
 | F | Fuel Transfer (docked) |
 | T | Cargo Transfer (landed, hold) |
 | K | Toggle Position Lights |
 | L | Toggle Spotlight |
 | H | Toggle Antenna |
 | J | Jettison 25% Cargo |
-| 1-4 | Pings |
+| 1-9 | Select Quickbar Slot |
+| F1-F4 | Pings (Yellow/Red/Green/Blue) |
 | R | Respawn (when dead) |
 | Enter | Open Chat |
 | Escape | Settings / Pause |
+| ` (Backtick) | Debug Menu (Dev) |
+
+**Keyboard Controls - EVA Mode**
+| Key | Action |
+|-----|--------|
+| W / Up Arrow | Jump |
+| A / Left Arrow | Move Left |
+| D / Right Arrow | Move Right |
+| E | Enter nearby vehicle |
+| Q | Open Inventory |
+| 1-9 | Select Quickbar Slot |
 
 **Gamepad Controls**
 | Input | Action |

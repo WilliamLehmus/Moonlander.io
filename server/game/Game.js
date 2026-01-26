@@ -137,6 +137,10 @@ export class Game {
         // Parked vehicles (ships without players)
         this.vehicles=new Map(); // vehicleId -> {id, x, y, angle, type, fuel, power, damage, cargo, body}
         this.nextVehicleId=1;
+
+        // Dropped items (jettisoned ore that falls to ground)
+        this.droppedItems=new Map(); // itemId -> {id, x, y, type, amount, body}
+        this.nextDroppedItemId=1;
     }
 
     // Get the effective value for a building stat
@@ -468,9 +472,14 @@ export class Game {
     handleInput(id, input) {
         const player=this.players.get(id);
         if (player) {
-            // Check for EVA toggle (interact key 'e') - Edge Trigger
-            if (input.interact&&!player.lastInteract&&!player.dead) {
-                this.toggleEVA(id);
+            // Handle exit vehicle (X held for 2 seconds) - only when NOT in EVA mode
+            if (input.exitVehicle&&!player.lastExitVehicle&&!player.dead&&player.shipType!=='eva') {
+                this.exitVehicle(player);
+            }
+
+            // Handle enter vehicle (E pressed) - only when in EVA mode near a vehicle
+            if (input.enterVehicle&&!player.lastEnterVehicle&&!player.dead&&player.shipType==='eva') {
+                this.tryBoardVehicle(player);
             }
 
             // Check for system toggles for sounds
@@ -484,38 +493,28 @@ export class Game {
                 this.broadcast('playSound', {type: 'toggle_light', playerId: id});
             }
 
-            player.lastInteract=!!input.interact;
             player.setInput(input);
         }
     }
 
-    // Toggle between EVA and Ship
-    toggleEVA(playerId) {
-        const player=this.players.get(playerId);
-        if (!player||player.dead) return;
+    // Try to board nearby vehicle when in EVA mode
+    tryBoardVehicle(player) {
+        const pos=player.getPosition();
+        let nearestVehicle=null;
+        let minDist=40;
 
-        if (player.shipType==='eva') {
-            // Try to board nearby vehicle
-            const pos=player.getPosition();
-            let nearestVehicle=null;
-            let minDist=40;
-
-            for (const vehicle of this.vehicles.values()) {
-                const dx=vehicle.x-pos.x;
-                const dy=vehicle.y-pos.y;
-                const dist=Math.sqrt(dx*dx+dy*dy);
-                if (dist<minDist) {
-                    minDist=dist;
-                    nearestVehicle=vehicle;
-                }
+        for (const vehicle of this.vehicles.values()) {
+            const dx=vehicle.x-pos.x;
+            const dy=vehicle.y-pos.y;
+            const dist=Math.sqrt(dx*dx+dy*dy);
+            if (dist<minDist) {
+                minDist=dist;
+                nearestVehicle=vehicle;
             }
+        }
 
-            if (nearestVehicle) {
-                this.boardVehicle(player, nearestVehicle);
-            }
-        } else {
-            // Exit ship
-            this.exitVehicle(player);
+        if (nearestVehicle) {
+            this.boardVehicle(player, nearestVehicle);
         }
     }
 
@@ -597,6 +596,41 @@ export class Game {
         }
     }
 
+    // Debug helper: Spawn a vehicle at position
+    spawnVehicle(x, y, type='scout') {
+        const SHIP_TYPES={
+            scout: {width: 20, height: 20, mass: 1.0, fuel: 500, power: 100, damage: 0},
+            cargo: {width: 30, height: 30, mass: 2.5, fuel: 1000, power: 150, damage: 0}
+        };
+
+        const stats=SHIP_TYPES[type]||SHIP_TYPES.scout;
+        const vehicleId=`veh_${this.nextVehicleId++}`;
+        const body=this.physics.createBox(x, y, stats.width, stats.height, stats.mass);
+
+        const vehicle={
+            id: vehicleId,
+            type: type,
+            x: x,
+            y: y,
+            angle: 0,
+            fuel: stats.fuel,
+            power: stats.power,
+            damage: 0,
+            cargo: [],
+            body: body,
+            ownerId: null // Spawned vehicle, no owner
+        };
+
+        this.vehicles.set(vehicleId, vehicle);
+        console.log(`Debug: Spawned ${type} vehicle at (${x}, ${y})`);
+    }
+
+    // Recalculate all building effects (called after debug changes)
+    recalculateBuildingEffects() {
+        // Nothing special to recalculate for now, effects are calculated on-demand
+        console.log('Building effects recalculated');
+    }
+
     update() {
         if (!this.ready) return;
 
@@ -630,9 +664,49 @@ export class Game {
 
             // If significant speed drop, player collided
             if (speedDrop>10) {
-                const damage=Math.floor(speedDrop/10);
-                player.takeDamage(damage);
-                console.log(`Damage: ${damage.toFixed(2)}, total: ${player.damage.toFixed(2)}`);
+                // Calculate damage based on orientation
+                // Ships landing with bottom facing down take less damage
+                const rotation=player.getRotation();
+                const TOLERANCE_ANGLE=Math.PI/4; // 45 degrees tolerance for "correct" landing
+
+                // Calculate impact direction (velocity angle)
+                const impactAngle=Math.atan2(preVel.vy, preVel.vx);
+
+                // Ship's "down" direction (bottom of ship) at angle=0, bottom points at +PI/2
+                const shipBottomAngle=rotation+Math.PI/2;
+
+                // Check if velocity is approximately opposite to ship bottom direction
+                // For a good landing, the ship should be falling (velocity pointing down)
+                // and ship bottom should be pointing down (toward the surface)
+                const normalizedShipBottom=((shipBottomAngle%(2*Math.PI))+(2*Math.PI))%(2*Math.PI);
+                const isBottomFacingDown=Math.abs(normalizedShipBottom-Math.PI/2)<TOLERANCE_ANGLE||
+                    Math.abs(normalizedShipBottom-(Math.PI*5/2))<TOLERANCE_ANGLE;
+
+                // Check if movement is primarily downward (landing)
+                const isMovingDown=preVel.vy>Math.abs(preVel.vx)*0.5; // Moving more down than sideways
+
+                // Correct landing orientation: bottom facing down while moving down
+                const isCorrectLanding=isBottomFacingDown&&isMovingDown;
+
+                let damage;
+                if (isCorrectLanding) {
+                    // Correct landing orientation - much higher threshold, reduced damage
+                    const LANDING_THRESHOLD=20; // Higher threshold for good landings
+                    if (speedDrop<=LANDING_THRESHOLD) {
+                        damage=0; // Safe landing!
+                    } else {
+                        // Still some damage but reduced
+                        damage=Math.floor((speedDrop-LANDING_THRESHOLD)/15);
+                    }
+                } else {
+                    // Bad orientation - side/top collision, normal damage
+                    damage=Math.floor(speedDrop/10);
+                }
+
+                if (damage>0) {
+                    player.takeDamage(damage);
+                    console.log(`Damage: ${damage.toFixed(2)}, total: ${player.damage.toFixed(2)}, correctLanding: ${isCorrectLanding}`);
+                }
 
                 // If player was EVA and died, remove their parked ship
                 if (player.dead&&player.shipType==='eva') {
@@ -729,6 +803,12 @@ export class Game {
 
         // Update vehicles
         this.updateVehicles(dt);
+
+        // Update dropped items (jettisoned ore)
+        this.updateDroppedItems(dt);
+
+        // Update wreckages
+        this.updateWreckages(dt);
 
         // Survival pods
         this.updatePods(dt);
@@ -866,6 +946,141 @@ export class Game {
             id: wreckageId,
             spareParts: wreckage.spareParts
         });
+    }
+
+    // Jettison cargo with physics - creates dropped items that fall
+    jettisonCargoWithPhysics(playerId, percentage=0.25) {
+        const player=this.players.get(playerId);
+        if (!player||player.dead) return [];
+
+        const pos=player.getPosition();
+        const vel=player.getVelocity();
+        const droppedItems=[];
+
+        // Get items to drop from player's cargo
+        for (const cargoItem of player.cargo) {
+            if (cargoItem.amount<=0) continue;
+
+            const dropAmount=Math.ceil(cargoItem.amount*percentage);
+            if (dropAmount<=0) continue;
+
+            cargoItem.amount-=dropAmount;
+
+            // Create physics body for dropped item
+            const itemId=`drop_${this.nextDroppedItemId++}`;
+            const offsetX=(Math.random()-0.5)*30; // Spread items out
+            const offsetY=(Math.random()-0.5)*20;
+            const itemX=pos.x+offsetX;
+            const itemY=pos.y+offsetY;
+
+            // Create small box for the dropped item
+            const body=this.physics.createBox(itemX, itemY, 6, 6, 0.5);
+
+            // Apply initial velocity (inherit some from ship, plus random scatter)
+            const ammo=this.physics.ammo;
+            const scatterVx=(Math.random()-0.5)*50;
+            const scatterVy=(Math.random()-0.5)*30+10; // Slight downward bias
+            body.setLinearVelocity(new ammo.btVector3(vel.vx*0.5+scatterVx, vel.vy*0.5+scatterVy, 0));
+
+            const droppedItem={
+                id: itemId,
+                x: itemX,
+                y: itemY,
+                type: cargoItem.type,
+                amount: dropAmount,
+                body: body,
+                lifetime: 60 // Despawn after 60 seconds
+            };
+
+            this.droppedItems.set(itemId, droppedItem);
+            droppedItems.push({type: cargoItem.type, amount: dropAmount});
+        }
+
+        // Remove empty cargo entries
+        player.cargo=player.cargo.filter(c => c.amount>0);
+
+        // Broadcast dropped items
+        this.broadcast('itemsDropped', {
+            playerId: playerId,
+            items: droppedItems.map(item => ({type: item.type, amount: item.amount})),
+            x: pos.x,
+            y: pos.y
+        });
+
+        return droppedItems;
+    }
+
+    // Update dropped items physics
+    updateDroppedItems(dt) {
+        const toRemove=[];
+
+        for (const [id, item] of this.droppedItems) {
+            // Update position from physics
+            const transform=new this.physics.ammo.btTransform();
+            item.body.getMotionState().getWorldTransform(transform);
+            const origin=transform.getOrigin();
+
+            item.x=origin.x();
+            item.y=origin.y();
+
+            // Decrease lifetime
+            item.lifetime-=dt;
+            if (item.lifetime<=0) {
+                toRemove.push(id);
+                continue;
+            }
+
+            // Check if on landing pad - auto-collect
+            if (this.voxelMap.isOnLandingPad(item.x, item.y)) {
+                const vel=item.body.getLinearVelocity();
+                const speed=Math.sqrt(vel.x()*vel.x()+vel.y()*vel.y());
+                if (speed<15) { // Moving slowly enough to collect
+                    // Add to base storage
+                    const oreKey=item.type.toLowerCase().replace('_ore', '');
+                    if (this.baseResources.ores[oreKey]!==undefined) {
+                        this.baseResources.ores[oreKey]+=item.amount;
+                    }
+                    toRemove.push(id);
+                    console.log(`Collected dropped ${item.type} x${item.amount} at landing pad`);
+                }
+            }
+
+            // Check if player can pick up (nearby and has cargo space)
+            for (const [playerId, player] of this.players) {
+                if (player.dead||player.shipType==='eva') continue;
+
+                const dx=item.x-player.x;
+                const dy=item.y-player.y;
+                const dist=Math.sqrt(dx*dx+dy*dy);
+
+                if (dist<30) { // Pickup range
+                    // Check if player has cargo space
+                    const currentWeight=player.cargo.reduce((sum, c) => sum+c.amount, 0);
+                    const maxCargo=player.maxCargoCapacity||500;
+                    if (currentWeight+item.amount<=maxCargo) {
+                        // Add to player cargo
+                        const existingCargo=player.cargo.find(c => c.type===item.type);
+                        if (existingCargo) {
+                            existingCargo.amount+=item.amount;
+                        } else {
+                            player.cargo.push({type: item.type, amount: item.amount});
+                        }
+                        toRemove.push(id);
+                        console.log(`Player ${playerId} picked up ${item.type} x${item.amount}`);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Remove collected/expired items
+        for (const id of toRemove) {
+            const item=this.droppedItems.get(id);
+            if (item&&item.body) {
+                this.physics.world.removeRigidBody(item.body);
+            }
+            this.droppedItems.delete(id);
+        }
     }
 
     // Update wreckage physics and check for salvage
@@ -1636,6 +1851,7 @@ export class Game {
             antennaRange: this.getAntennaRange(),  // For minimap range
             wreckages: this.serializeWreckages(),  // Send active wreckages
             vehicles: this.serializeVehicles(),    // Send parked vehicles
+            droppedItems: this.serializeDroppedItems(), // Send jettisoned ore items
             refining: this.isRefining,
             activeBuildings: this.getActiveBuildings() // NEW: Send only built buildings
         };
@@ -1704,6 +1920,21 @@ export class Game {
                 cargo: wreckage.cargo,
                 spareParts: wreckage.spareParts,
                 tetheredTo: wreckage.tetheredTo
+            });
+        }
+        return result;
+    }
+
+    // Serialize dropped items for client
+    serializeDroppedItems() {
+        const result=[];
+        for (const [id, item] of this.droppedItems) {
+            result.push({
+                id: item.id,
+                x: item.x,
+                y: item.y,
+                type: item.type,
+                amount: item.amount
             });
         }
         return result;

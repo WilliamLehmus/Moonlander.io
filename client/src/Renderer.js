@@ -255,6 +255,14 @@ export class Renderer {
         this.spotlightAngle=Math.PI/6; // 30 degree cone
         this.positionLightRadius=40; // Small lights on the lander
         this.spotlightDepthPenetration=2; // Reduced from 3 to 2 to match new visual style (Outer + 1 inner)
+
+        // Quickbar selection
+        this.selectedQuickbarSlot=0;
+
+        // Listen for quickbar selection events
+        window.addEventListener('quickbarSelect', (e) => {
+            this.selectedQuickbarSlot=e.detail.slot;
+        });
     }
 
     resize() {
@@ -1048,6 +1056,11 @@ export class Renderer {
             this.drawWreckages(state.wreckages);
         }
 
+        // Draw dropped items (jettisoned ore)
+        if (state.droppedItems&&state.droppedItems.length>0) {
+            this.drawDroppedItems(state.droppedItems);
+        }
+
 
 
         // Draw targeted player interaction UI
@@ -1065,8 +1078,8 @@ export class Renderer {
         // Draw chat messages
         this.drawChat();
 
-        // Draw controls help (bottom left)
-        this.drawControlsHelp();
+        // Draw contextual controls help (bottom left)
+        this.drawControlsHelp(myPlayer);
 
         // Draw death screen if player is dead
         this.drawDeathScreen(myPlayer, state);
@@ -1878,56 +1891,139 @@ export class Renderer {
         }
     }
 
-    drawControlsHelp() {
+    drawDroppedItems(droppedItems) {
+        // Ore colors by type
+        const oreColors={
+            'IRON_ORE': '#cd853f',
+            'COPPER_ORE': '#daa520',
+            'BITITE': '#4a4a4a',
+            'SILVER_ORE': '#c0c0c0',
+            'TITANIUM_ORE': '#b0c4de',
+            'GOLD_ORE': '#ffd700',
+            'PLATINUM_ORE': '#e5e4e2',
+            'DIAMOND': '#b9f2ff'
+        };
+
+        for (const item of droppedItems) {
+            const screenX=item.x-this.cameraX;
+            const screenY=item.y-this.cameraY;
+
+            // Skip if off-screen
+            if (screenX<-50||screenX>this.canvas.width+50||
+                screenY<-50||screenY>this.canvas.height+50) continue;
+
+            this.ctx.save();
+            this.ctx.translate(item.x, item.y);
+
+            const color=oreColors[item.type]||'#888888';
+
+            // Draw ore chunk
+            this.ctx.fillStyle=color;
+            this.ctx.strokeStyle='#222';
+            this.ctx.lineWidth=1;
+
+            // Draw irregular ore shape
+            this.ctx.beginPath();
+            this.ctx.moveTo(-4, -3);
+            this.ctx.lineTo(2, -5);
+            this.ctx.lineTo(5, -1);
+            this.ctx.lineTo(3, 4);
+            this.ctx.lineTo(-2, 5);
+            this.ctx.lineTo(-5, 1);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+
+            // Add glow effect
+            this.ctx.shadowColor=color;
+            this.ctx.shadowBlur=8;
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, 3, 0, Math.PI*2);
+            this.ctx.fill();
+            this.ctx.shadowBlur=0;
+
+            this.ctx.restore();
+        }
+    }
+
+    // Draw contextual controls (only shows relevant actions)
+    drawControlsHelp(myPlayer) {
+        if (!myPlayer) return;
+
         const helpX=20;
-        const helpY=this.canvas.height-280; // Moved up from -200
+        const controls=[];
 
-        this.ctx.fillStyle='rgba(0, 0, 0, 0.6)';
-        this.ctx.fillRect(helpX-5, helpY-20, 200, 215);
+        // Always show basic movement
+        if (myPlayer.shipType==='eva') {
+            controls.push(['W', 'Jump']);
+            controls.push(['A/D', 'Move']);
+        } else {
+            controls.push(['W', 'Thrust']);
+            controls.push(['A/D', 'Rotate']);
+        }
 
-        this.ctx.fillStyle='#aaa';
-        this.ctx.font='bold 12px monospace';
+        // Context: Mining (only when not on pad)
+        if (!myPlayer.onPad&&myPlayer.shipType!=='eva') {
+            controls.push(['SPACE', 'Mine']);
+        }
+
+        // Context: Vehicle interactions
+        if (myPlayer.shipType==='eva') {
+            controls.push(['E', 'Enter Vehicle']);
+        } else {
+            controls.push(['X', 'Exit (hold 2s)']);
+        }
+
+        // Context: On landing pad
+        if (myPlayer.onPad) {
+            controls.push(['B', 'Station Menu']);
+            controls.push(['T', 'Transfer Cargo']);
+        }
+
+        // Context: Has cargo
+        if (myPlayer.cargoAmount>0) {
+            controls.push(['J', 'Jettison']);
+        }
+
+        // Context: Ship systems
+        if (myPlayer.shipType!=='eva') {
+            controls.push(['L', 'Spotlight']);
+            controls.push(['G', 'Tether']);
+        }
+
+        // Context: Dead
+        if (myPlayer.dead) {
+            controls.push(['R', 'Respawn']);
+        }
+
+        // Always show these
+        controls.push(['ESC', 'Menu']);
+
+        // Calculate panel height
+        const panelHeight=controls.length*15+20;
+        const helpY=this.canvas.height-panelHeight-20;
+
+        // Draw semi-transparent background
+        this.ctx.fillStyle='rgba(0, 0, 0, 0.5)';
+        this.ctx.fillRect(helpX-5, helpY-15, 145, panelHeight);
+
         this.ctx.textAlign='left';
-        this.ctx.fillText('CONTROLS', helpX, helpY-5);
-
-        this.ctx.fillStyle='#888';
-        this.ctx.font='11px monospace';
-
-        const controls=[
-            ['W / UP', 'Thrust'],
-            ['A / D', 'Rotate left/right'],
-            ['SPACE', 'Mine ore (hold)'],
-            ['X', 'Exit Vehicle'],
-            ['E', 'Enter Vehicle / Interact'],
-            ['G', 'Toggle tether'],
-            ['B', 'Open Station Menu'],
-            ['F', 'Transfer fuel (docked)'],
-            ['T', 'Transfer cargo (landed)'],
-            ['J', 'Jettison 25% cargo'],
-            ['K', 'Toggle position lights'],
-            ['L', 'Toggle spotlight'],
-            ['H', 'Toggle antenna'],
-            ['1-4', 'Pings (Alert/Help/Res)'],
-            ['R', 'Respawn (when dead)'],
-            ['ENTER', 'Open Chat'],
-            ['ESC', 'Settings / Quit']
-        ];
 
         controls.forEach((ctrl, i) => {
             const [key, desc]=ctrl;
 
             // Draw shortcut key
             this.ctx.fillStyle='#6af';
-            this.ctx.font='bold 12px monospace';
+            this.ctx.font='bold 11px monospace';
             this.ctx.shadowColor='#00aaff';
-            this.ctx.shadowBlur=4;
-            this.ctx.fillText(key.padEnd(8), helpX, helpY+12+i*15);
+            this.ctx.shadowBlur=3;
+            this.ctx.fillText(key.padEnd(6), helpX, helpY+i*15);
 
             // Draw description
             this.ctx.shadowBlur=0;
-            this.ctx.fillStyle='#bbb';
-            this.ctx.font='12px monospace';
-            this.ctx.fillText(desc, helpX+75, helpY+12+i*15);
+            this.ctx.fillStyle='#aaa';
+            this.ctx.font='11px monospace';
+            this.ctx.fillText(desc, helpX+55, helpY+i*15);
         });
     }
 
@@ -2310,6 +2406,72 @@ export class Renderer {
         if (myPlayer.onPad) {
             this.drawStationUI(myPlayer, state);
         }
+
+        // Draw Quickbar at bottom center
+        this.drawQuickbar(myPlayer);
+    }
+
+    drawQuickbar(myPlayer) {
+        if (!myPlayer||myPlayer.dead) return;
+
+        const slotCount=9;
+        const slotSize=50;
+        const slotGap=4;
+        const totalWidth=(slotSize+slotGap)*slotCount-slotGap;
+        const startX=(this.canvas.width-totalWidth)/2;
+        const startY=this.canvas.height-70;
+
+        // Get cargo for display
+        const cargo=myPlayer.cargo||[];
+
+        for (let i=0; i<slotCount; i++) {
+            const x=startX+i*(slotSize+slotGap);
+            const y=startY;
+
+            // Slot background
+            this.ctx.fillStyle='rgba(20, 20, 30, 0.8)';
+            this.ctx.strokeStyle=this.selectedQuickbarSlot===i? '#6af':'#444';
+            this.ctx.lineWidth=this.selectedQuickbarSlot===i? 2:1;
+            this.ctx.beginPath();
+            this.ctx.roundRect(x, y, slotSize, slotSize, 4);
+            this.ctx.fill();
+            this.ctx.stroke();
+
+            // Keybind number
+            this.ctx.fillStyle='#666';
+            this.ctx.font='10px monospace';
+            this.ctx.textAlign='left';
+            this.ctx.fillText(String(i+1), x+3, y+12);
+
+            // Item if exists
+            const item=cargo[i];
+            if (item) {
+                // Draw colored square for ore
+                const color=this.getOreColor(item.type);
+                this.ctx.fillStyle=color;
+                this.ctx.fillRect(x+10, y+15, 30, 25);
+
+                // Amount
+                this.ctx.fillStyle='#fff';
+                this.ctx.font='bold 10px monospace';
+                this.ctx.textAlign='right';
+                this.ctx.fillText(item.amount, x+slotSize-4, y+slotSize-4);
+            }
+        }
+    }
+
+    getOreColor(type) {
+        const colors={
+            'IRON_ORE': '#cd853f',
+            'COPPER_ORE': '#daa520',
+            'BITITE': '#4a4a4a',
+            'SILVER_ORE': '#c0c0c0',
+            'TITANIUM_ORE': '#b0c4de',
+            'GOLD_ORE': '#ffd700',
+            'PLATINUM_ORE': '#e5e4e2',
+            'DIAMOND': '#b9f2ff'
+        };
+        return colors[type]||'#888';
     }
 
     drawStationUI(player, state) {

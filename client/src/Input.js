@@ -7,10 +7,10 @@ export class Input {
             left: false,
             right: false,
             mining: false,
-            mining: false,
             transferFuel: false,
             transferCargo: false,
-            interact: false,
+            exitVehicle: false, // X key held for 2 seconds to exit
+            enterVehicle: false, // E key to enter nearby vehicle
             toggleLights: false,
             toggleSpotlight: false,
             toggleAntenna: false
@@ -26,6 +26,11 @@ export class Input {
         // Input update interval for smooth spotlight updates
         this.lastInputTime=0;
         this.inputInterval=50; // Send input every 50ms for smooth spotlight
+
+        // Exit vehicle hold timer (2 seconds to exit)
+        this.exitHoldStart=null;
+        this.exitHoldDuration=2000; // 2 seconds
+        this.isHoldingX=false;
 
         window.addEventListener('keydown', (e) => this.handleKey(e, true));
         window.addEventListener('keyup', (e) => this.handleKey(e, false));
@@ -94,19 +99,24 @@ export class Input {
                 }
                 break;
             case 'KeyX':
-                if (this.state.interact!==isDown) {
-                    this.state.interact=isDown;
-                    changed=true;
+                // X must be HELD for 2 seconds to exit vehicle
+                if (isDown&&!this.isHoldingX) {
+                    this.isHoldingX=true;
+                    this.exitHoldStart=Date.now();
+                } else if (!isDown&&this.isHoldingX) {
+                    this.isHoldingX=false;
+                    this.exitHoldStart=null;
+                    // Cancel exit if released before 2 seconds
+                    if (this.state.exitVehicle) {
+                        this.state.exitVehicle=false;
+                        changed=true;
+                    }
                 }
                 break;
             case 'KeyE':
-                // Interact was E, but user wants X. Let's keep E as a secondary or remove.
-                // User said "Make X the exit moonlander button".
-                // I'll keep E for now for boarding or just remove?
-                // Actually boarding and exiting are the same "interact".
-                // Let's just make X the primary.
-                if (this.state.interact!==isDown) {
-                    this.state.interact=isDown;
+                // E is now ONLY for entering vehicles (not exiting)
+                if (this.state.enterVehicle!==isDown) {
+                    this.state.enterVehicle=isDown;
                     changed=true;
                 }
                 break;
@@ -134,17 +144,30 @@ export class Input {
             case 'KeyJ':
                 if (isDown) this.jettisonCargo(); // Drop 25% of cargo
                 break;
-            // Ping keys
+            // Quickbar keys (1-9)
             case 'Digit1':
+            case 'Digit2':
+            case 'Digit3':
+            case 'Digit4':
+            case 'Digit5':
+            case 'Digit6':
+            case 'Digit7':
+            case 'Digit8':
+            case 'Digit9':
+                if (isDown) this.selectQuickbarSlot(parseInt(e.code.replace('Digit', ''))-1);
+                break;
+
+            // Ping keys (moved to Ctrl+1-4 or F1-F4)
+            case 'F1':
                 if (isDown) this.sendPing('yellow'); // "Check this out"
                 break;
-            case 'Digit2':
+            case 'F2':
                 if (isDown) this.sendPing('red'); // "Danger/Help!"
                 break;
-            case 'Digit3':
+            case 'F3':
                 if (isDown) this.sendPing('green'); // "Resources here"
                 break;
-            case 'Digit4':
+            case 'F4':
                 if (isDown) this.sendPing('blue'); // "Regroup here"
                 break;
         }
@@ -156,6 +179,12 @@ export class Input {
 
     sendPing(type) {
         this.socket.emit('ping', {type});
+    }
+
+    selectQuickbarSlot(index) {
+        this.socket.emit('selectQuickbar', {slot: index});
+        // Also dispatch a custom event for UI updates
+        window.dispatchEvent(new CustomEvent('quickbarSelect', {detail: {slot: index}}));
     }
 
     toggleTether() {
@@ -185,7 +214,28 @@ export class Input {
         }
     }
 
+    // Check if X has been held long enough
+    updateExitHold() {
+        if (this.isHoldingX&&this.exitHoldStart) {
+            const elapsed=Date.now()-this.exitHoldStart;
+            if (elapsed>=this.exitHoldDuration&&!this.state.exitVehicle) {
+                this.state.exitVehicle=true;
+                this.sendInput();
+            }
+        }
+    }
+
+    // Get exit hold progress (0-1) for UI display
+    getExitHoldProgress() {
+        if (!this.isHoldingX||!this.exitHoldStart) return 0;
+        const elapsed=Date.now()-this.exitHoldStart;
+        return Math.min(1, elapsed/this.exitHoldDuration);
+    }
+
     sendInput() {
+        // Update exit hold state before sending
+        this.updateExitHold();
+
         this.socket.emit('input', {
             thrust: this.state.up,
             left: this.state.left,
@@ -194,7 +244,8 @@ export class Input {
             transferFuel: this.state.transferFuel,
             spotlightAngle: this.spotlightAngle,
             transferCargo: this.state.transferCargo,
-            interact: this.state.interact,
+            exitVehicle: this.state.exitVehicle,
+            enterVehicle: this.state.enterVehicle,
             toggleLights: this.state.toggleLights,
             toggleSpotlight: this.state.toggleSpotlight,
             toggleAntenna: this.state.toggleAntenna

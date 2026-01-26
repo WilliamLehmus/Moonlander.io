@@ -122,6 +122,9 @@ export class Player {
         this.podLifeSupport=60; // Seconds of life support
         this.podX=0; // Pod position (separate from body)
         this.podY=0;
+
+        // Debug options
+        this.infiniteFuel=false;
         this.podVX=0; // Pod velocity
         this.podVY=0;
         this.beaconPulse=0; // For distress beacon animation
@@ -169,6 +172,10 @@ export class Player {
             if (this.lightsOn&&this.power<=0) this.lightsOn=false;
         }
         this.lastLightsInput=!!input.toggleLights;
+
+        // Track exit/enter vehicle inputs for edge detection
+        this.lastExitVehicle=!!input.exitVehicle;
+        this.lastEnterVehicle=!!input.enterVehicle;
     }
 
     // Get total cargo weight
@@ -342,33 +349,27 @@ export class Player {
             this.antennaOn=false;
         }
 
-        // Rotation (positive Z = CCW in physics, but we want visual CW for right)
-        if (this.inputs.left) {
-            this.body.setAngularVelocity(new ammo.btVector3(0, 0, 3));
-        } else if (this.inputs.right) {
-            this.body.setAngularVelocity(new ammo.btVector3(0, 0, -3));
-        } else {
-            this.body.setAngularVelocity(new ammo.btVector3(0, 0, 0));
-        }
-
-        // Thrust - uses fuel
-        // EVA Movement (Walking/Jetpack)
+        // EVA Movement (Walking/Jetpack) vs Ship Movement
         if (this.shipType==='eva') {
-            // Apply low damping to allow natural falling (user requested same fall rate)
+            // EVA mode: left/right MOVE the character (no rotation)
             this.body.setDamping(0.05, 0.0); // Match ship linear damping, zero angular
             this.body.setAngularFactor(new ammo.btVector3(0, 0, 0)); // No rotation for stick figure
+            this.body.setAngularVelocity(new ammo.btVector3(0, 0, 0)); // Stop any rotation
 
-            const WALK_FORCE=30;
+            const WALK_FORCE=50; // Increased for better responsiveness
             const JUMP_FORCE=150;
 
+            // Left/right MOVES the character horizontally
             if (this.inputs.left) {
                 this.body.applyCentralForce(new ammo.btVector3(-WALK_FORCE, 0, 0));
-            } else if (this.inputs.right) {
+            }
+            if (this.inputs.right) {
                 this.body.applyCentralForce(new ammo.btVector3(WALK_FORCE, 0, 0));
             }
 
-            if (this.inputs.thrust&&this.power>0) { // Jump / Jetpack - USES POWER for EVA
-                this.body.applyCentralForce(new ammo.btVector3(0, -this.thrustForce||15, 0)); // Up is negative Y
+            // Up/thrust makes character jump with a force
+            if (this.inputs.thrust&&this.power>0) {
+                this.body.applyCentralForce(new ammo.btVector3(0, -JUMP_FORCE, 0)); // Up is negative Y
                 this.power-=5*dt; // Ion jetpack is inefficient
                 if (this.power<0) this.power=0;
             }
@@ -379,6 +380,14 @@ export class Player {
                 this.takeDamage(0.5*dt); // Suffocation damage
             }
         } else {
+            // Ship mode: Rotation (positive Z = CCW in physics, but we want visual CW for right)
+            if (this.inputs.left) {
+                this.body.setAngularVelocity(new ammo.btVector3(0, 0, 3));
+            } else if (this.inputs.right) {
+                this.body.setAngularVelocity(new ammo.btVector3(0, 0, -3));
+            } else {
+                this.body.setAngularVelocity(new ammo.btVector3(0, 0, 0));
+            }
             // Ship Movement
             this.body.setDamping(0.05, 0.05); // Basic space damping
             this.body.setAngularFactor(new ammo.btVector3(0, 0, 1)); // Allow Z rotation
@@ -392,8 +401,10 @@ export class Player {
                 const forceY=Math.sin(thrustAngle)*this.thrustForce;
 
                 this.body.applyCentralForce(new ammo.btVector3(forceX, forceY, 0));
-                this.fuel-=this.fuelConsumption*dt;
-                if (this.fuel<0) this.fuel=0;
+                if (!this.infiniteFuel) {
+                    this.fuel-=this.fuelConsumption*dt;
+                    if (this.fuel<0) this.fuel=0;
+                }
             } else if (this.inputs.thrust&&this.fuel<=0) {
                 // Out of fuel message or effect could be added here
             }
@@ -453,6 +464,24 @@ export class Player {
     getVelocity() {
         const vel=this.body.getLinearVelocity();
         return {vx: vel.x(), vy: vel.y()};
+    }
+
+    // Debug helper: set position
+    setPosition(x, y) {
+        const ammo=this.physicsWorld.ammo;
+        const transform=new ammo.btTransform();
+        this.body.getMotionState().getWorldTransform(transform);
+        transform.setOrigin(new ammo.btVector3(x, y, 0));
+        this.body.setWorldTransform(transform);
+        this.body.getMotionState().setWorldTransform(transform);
+        this.body.activate();
+    }
+
+    // Debug helper: set velocity
+    setVelocity(vx, vy) {
+        const ammo=this.physicsWorld.ammo;
+        this.body.setLinearVelocity(new ammo.btVector3(vx, vy, 0));
+        this.body.activate();
     }
 
     serialize() {

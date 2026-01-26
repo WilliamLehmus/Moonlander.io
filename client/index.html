@@ -55,24 +55,79 @@
 
   <!-- Escape Menu -->
   <div id="escapeMenu" class="modal hidden">
-    <div class="modal-content">
+    <div class="modal-content settings-content">
       <h2>Settings</h2>
-      <div class="setting-group">
-        <label for="masterVolume">Master Volume</label>
-        <input type="range" id="masterVolume" min="0" max="100" value="100">
+
+      <div class="settings-tabs">
+        <button class="settings-tab-btn active" data-settings-tab="audio">Audio</button>
+        <button class="settings-tab-btn" data-settings-tab="controls">Controls</button>
       </div>
-      <div class="setting-group">
-        <label for="musicVolume">Music Volume</label>
-        <input type="range" id="musicVolume" min="0" max="100" value="100">
+
+      <div id="settings-tab-audio" class="settings-tab-content active">
+        <div class="setting-group">
+          <label for="masterVolume">Master Volume</label>
+          <input type="range" id="masterVolume" min="0" max="100" value="100">
+        </div>
+        <div class="setting-group">
+          <label for="musicVolume">Music Volume</label>
+          <input type="range" id="musicVolume" min="0" max="100" value="100">
+        </div>
+        <div class="setting-group">
+          <label for="sfxVolume">Sound Effects</label>
+          <input type="range" id="sfxVolume" min="0" max="100" value="100">
+        </div>
+        <div class="setting-group">
+          <label for="notificationVolume">Notification Volume</label>
+          <input type="range" id="notificationVolume" min="0" max="100" value="50">
+        </div>
       </div>
-      <div class="setting-group">
-        <label for="sfxVolume">Sound Effects</label>
-        <input type="range" id="sfxVolume" min="0" max="100" value="100">
+
+      <div id="settings-tab-controls" class="settings-tab-content hidden">
+        <div class="controls-grid">
+          <div class="control-section">
+            <h4>Movement</h4>
+            <div class="control-row"><span class="key">W / UP</span><span>Thrust / Jump</span></div>
+            <div class="control-row"><span class="key">A / D</span><span>Rotate / Move</span></div>
+          </div>
+          <div class="control-section">
+            <h4>Actions</h4>
+            <div class="control-row"><span class="key">SPACE</span><span>Mine ore (hold)</span></div>
+            <div class="control-row"><span class="key">X</span><span>Exit vehicle (hold 2s)</span></div>
+            <div class="control-row"><span class="key">E</span><span>Enter vehicle</span></div>
+            <div class="control-row"><span class="key">G</span><span>Toggle tether</span></div>
+            <div class="control-row"><span class="key">J</span><span>Jettison cargo</span></div>
+          </div>
+          <div class="control-section">
+            <h4>Station</h4>
+            <div class="control-row"><span class="key">B</span><span>Station menu</span></div>
+            <div class="control-row"><span class="key">F</span><span>Transfer fuel</span></div>
+            <div class="control-row"><span class="key">T</span><span>Transfer cargo</span></div>
+          </div>
+          <div class="control-section">
+            <h4>Systems</h4>
+            <div class="control-row"><span class="key">L</span><span>Spotlight</span></div>
+            <div class="control-row"><span class="key">K</span><span>Position lights</span></div>
+            <div class="control-row"><span class="key">H</span><span>Antenna</span></div>
+          </div>
+          <div class="control-section">
+            <h4>Communication</h4>
+            <div class="control-row"><span class="key">F1-F4</span><span>Ping markers</span></div>
+            <div class="control-row"><span class="key">ENTER</span><span>Chat</span></div>
+          </div>
+          <div class="control-section">
+            <h4>Quickbar</h4>
+            <div class="control-row"><span class="key">1-9</span><span>Select slot</span></div>
+            <div class="control-row"><span class="key">Q</span><span>Inventory</span></div>
+          </div>
+          <div class="control-section">
+            <h4>Other</h4>
+            <div class="control-row"><span class="key">R</span><span>Respawn</span></div>
+            <div class="control-row"><span class="key">ESC</span><span>Menu</span></div>
+            <div class="control-row"><span class="key">`</span><span>Debug menu</span></div>
+          </div>
+        </div>
       </div>
-      <div class="setting-group">
-        <label for="notificationVolume">Notification Volume</label>
-        <input type="range" id="notificationVolume" min="0" max="100" value="50">
-      </div>
+
       <button id="resumeBtn">Resume Game</button>
       <button id="quitBtn" class="danger">Quit to Lobby</button>
     </div>
@@ -104,6 +159,60 @@
       </div>
 
       <button id="closeStationBtn">Close</button>
+    </div>
+  </div>
+
+  <!-- Inventory Menu -->
+  <div id="inventoryMenu" class="modal hidden">
+    <div class="modal-content inventory-content">
+      <h2>Inventory</h2>
+      <div class="inventory-container">
+        <div class="inventory-section">
+          <h3 id="shipInventoryTitle">Ship Cargo (0/3 slots)</h3>
+          <div class="inventory-grid" id="shipInventory">
+            <!-- Inventory slots injected via JS -->
+          </div>
+        </div>
+        <div class="inventory-section" id="stationInventorySection">
+          <h3>Station Storage (0/12 slots)</h3>
+          <div class="inventory-grid" id="stationInventory">
+            <!-- Station inventory slots -->
+          </div>
+        </div>
+      </div>
+      <div class="inventory-actions">
+        <button id="transferToStation" disabled>Transfer to Station →</button>
+        <button id="transferToShip" disabled>← Transfer to Ship</button>
+      </div>
+      <button id="closeInventoryBtn">Close (Q)</button>
+    </div>
+  </div>
+
+  <!-- Debug Menu (Development Only) -->
+  <div id="debugMenu" class="modal hidden">
+    <div class="modal-content debug-content">
+      <h2>Debug Menu (Dev Only)</h2>
+      <div class="debug-section">
+        <h3>Resources</h3>
+        <button id="debugAddFuel">+1000 Fuel</button>
+        <button id="debugAddParts">+100 Spare Parts</button>
+        <button id="debugAddOre">+500 All Ores</button>
+        <button id="debugAddMaterials">+100 All Materials</button>
+      </div>
+      <div class="debug-section">
+        <h3>Ship</h3>
+        <button id="debugRepairShip">Repair Ship</button>
+        <button id="debugSpawnScout">Spawn Scout</button>
+        <button id="debugSpawnCargo">Spawn Cargo Ship</button>
+        <button id="debugInfiniteFuel">Toggle Infinite Fuel</button>
+      </div>
+      <div class="debug-section">
+        <h3>Game State</h3>
+        <button id="debugTeleportBase">Teleport to Base</button>
+        <button id="debugMaxBuildings">Max All Buildings</button>
+        <button id="debugKillPlayer">Kill Player (Test)</button>
+      </div>
+      <button id="closeDebugBtn">Close</button>
     </div>
   </div>
 

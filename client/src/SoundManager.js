@@ -24,6 +24,7 @@ export class SoundManager {
         this.isRefining=false;
         this.lowFuelWarningSound=null;
         this.isLowFuelWarningActive=false;
+        this.hasPlayedOutOfFuel=false; // Track if out_of_fuel sound has been played
 
         // Music blending
         this.musicTracks=[];
@@ -52,7 +53,8 @@ export class SoundManager {
             power_down: '/Sounds/power_down.mp3',
             refinery: '/Sounds/refinery.mp3',
             low_fuel_warning: '/Sounds/low_fuel_warning.mp3',
-            jettison: '/Sounds/jettison.mp3'
+            jettison: '/Sounds/jettison.mp3',
+            out_of_fuel: '/Sounds/out_of_fuel.mp3'
         };
 
         const menuMusicSrc='/Music/Track1.mp3';
@@ -400,8 +402,21 @@ export class SoundManager {
         this.playSound('power_down');
     }
 
-    setThrust(thrusting) {
+    setThrust(thrusting, hasFuel=true) {
         if (!this.soundsLoaded) return;
+
+        // Don't play thrust sound if no fuel
+        if (!hasFuel) {
+            if (this.isThrusting) {
+                this.isThrusting=false;
+                if (this.sounds.thrust) {
+                    this.sounds.thrust.pause();
+                    this.sounds.thrust.currentTime=0;
+                }
+            }
+            return;
+        }
+
         if (thrusting&&!this.isThrusting) {
             this.isThrusting=true;
             if (this.sounds.ignite) {
@@ -421,5 +436,17 @@ export class SoundManager {
                 this.sounds.thrust.currentTime=0;
             }
         }
+    }
+
+    // Play out of fuel sound (only once per fuel depletion)
+    playOutOfFuel() {
+        if (!this.soundsLoaded||!this.sounds.out_of_fuel||this.hasPlayedOutOfFuel) return;
+        this.hasPlayedOutOfFuel=true;
+        this.playSound('out_of_fuel');
+    }
+
+    // Reset out of fuel flag when refueled
+    resetOutOfFuel() {
+        this.hasPlayedOutOfFuel=false;
     }
 }

@@ -303,10 +303,12 @@ io.on('connection', (socket) => {
             if (room&&room.ready) {
                 const player=room.game.players.get(socket.id);
                 if (player&&!player.dead) {
-                    const dropped=player.jettisonCargo(0.25); // Drop 25%
-                    if (dropped>0) {
-                        console.log(`Player ${socket.id} jettisoned ${dropped} cargo`);
-                        socket.emit('cargoJettisoned', {amount: dropped});
+                    // Get jettisoned items with physics
+                    const droppedItems=room.game.jettisonCargoWithPhysics(socket.id, 0.25);
+                    if (droppedItems.length>0) {
+                        const totalAmount=droppedItems.reduce((sum, item) => sum+item.amount, 0);
+                        console.log(`Player ${socket.id} jettisoned ${totalAmount} cargo (${droppedItems.length} types)`);
+                        socket.emit('cargoJettisoned', {amount: totalAmount});
                         // BROADCAST JETTISON SOUND
                         room.game.broadcast('playSound', {type: 'jettison', playerId: socket.id});
                     }
@@ -350,6 +352,135 @@ io.on('connection', (socket) => {
     });
 
     // DISCONNECT
+    // INVENTORY TRANSFER
+    socket.on('transferInventory', (data) => {
+        const code=playerRooms.get(socket.id);
+        if (!code) return;
+
+        const room=rooms.get(code);
+        if (!room||!room.ready) return;
+
+        const game=room.game;
+        const player=game.players.get(socket.id);
+        if (!player||player.dead) return;
+
+        if (data.from==='ship'&&data.to==='station') {
+            // Transfer cargo from ship to station
+            const cargo=player.cargo[data.slotIndex];
+            if (cargo) {
+                const oreKey=cargo.type.toLowerCase().replace('_ore', '');
+                if (game.baseResources.ores[oreKey]!==undefined) {
+                    game.baseResources.ores[oreKey]+=cargo.amount;
+                    player.cargo.splice(data.slotIndex, 1);
+                    console.log(`Transferred ${cargo.amount} ${cargo.type} to station`);
+                }
+            }
+        } else if (data.from==='station'&&data.to==='ship') {
+            // Transfer ore from station to ship
+            const oreKey=data.oreType.toLowerCase().replace('_ore', '');
+            if (game.baseResources.ores[oreKey]>0) {
+                // Check if player has cargo space
+                const currentWeight=player.cargo.reduce((sum, c) => sum+c.amount, 0);
+                const maxCargo=player.maxCargoCapacity||500;
+                const transferAmount=Math.min(game.baseResources.ores[oreKey], maxCargo-currentWeight, 100);
+
+                if (transferAmount>0) {
+                    // Add to player cargo
+                    const existingCargo=player.cargo.find(c => c.type===data.oreType);
+                    if (existingCargo) {
+                        existingCargo.amount+=transferAmount;
+                    } else {
+                        player.cargo.push({type: data.oreType, amount: transferAmount});
+                    }
+                    game.baseResources.ores[oreKey]-=transferAmount;
+                    console.log(`Transferred ${transferAmount} ${data.oreType} to ship`);
+                }
+            }
+        }
+    });
+
+    // DEBUG COMMANDS (Development Only)
+    socket.on('debugCommand', (data) => {
+        const code=playerRooms.get(socket.id);
+        if (!code) return;
+
+        const room=rooms.get(code);
+        if (!room||!room.ready) return;
+
+        const game=room.game;
+        const player=game.players.get(socket.id);
+
+        console.log(`DEBUG: ${socket.id} issued ${data.command}`);
+
+        switch (data.command) {
+            case 'addFuel':
+                game.baseResources.fuel=Math.min(10000, game.baseResources.fuel+(data.amount||1000));
+                break;
+
+            case 'addParts':
+                game.baseResources.spareParts+=(data.amount||100);
+                break;
+
+            case 'addAllOres':
+                const amount=data.amount||500;
+                for (const key of Object.keys(game.baseResources.ores)) {
+                    game.baseResources.ores[key]+=amount;
+                }
+                break;
+
+            case 'addAllMaterials':
+                const matAmount=data.amount||100;
+                for (const key of Object.keys(game.baseResources.materials)) {
+                    game.baseResources.materials[key]+=matAmount;
+                }
+                break;
+
+            case 'repairShip':
+                if (player) {
+                    player.damage=0;
+                }
+                break;
+
+            case 'spawnShip':
+                // Spawn a new vehicle at base
+                if (game.voxelMap.landingPadPosition) {
+                    const pos=game.voxelMap.landingPadPosition;
+                    game.spawnVehicle(pos.x, pos.y-50, data.type||'scout');
+                }
+                break;
+
+            case 'infiniteFuel':
+                if (player) {
+                    player.infiniteFuel=data.enabled;
+                }
+                break;
+
+            case 'teleportBase':
+                if (player&&game.voxelMap.landingPadPosition) {
+                    const pos=game.voxelMap.landingPadPosition;
+                    player.setPosition(pos.x, pos.y-30);
+                    player.setVelocity(0, 0);
+                }
+                break;
+
+            case 'maxBuildings':
+                for (const key of Object.keys(game.buildings)) {
+                    game.buildings[key].level=5;
+                }
+                game.recalculateBuildingEffects();
+                break;
+
+            case 'killPlayer':
+                if (player) {
+                    player.takeDamage(100);
+                }
+                break;
+
+            default:
+                console.log(`Unknown debug command: ${data.command}`);
+        }
+    });
+
     socket.on('disconnect', () => {
         console.log('Player disconnected:', socket.id);
 
