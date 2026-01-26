@@ -104,6 +104,12 @@ document.addEventListener('click', () => {
   }
 }, {once: true});
 
+// Listen for notifications
+window.addEventListener('notification', (e) => {
+  if (renderer) renderer.showMessage(e.detail.message);
+});
+
+
 
 // ============================================
 // LOBBY FUNCTIONS
@@ -997,11 +1003,84 @@ window.handleUpgradeBuilding=function(key) {
 // GAME LOOP
 // ============================================
 
+// ============================================
+// CABLE SYSTEM LOGIC
+// ============================================
+let cableStartPoint=null;
+
+window.addEventListener('cableClick', (e) => {
+  if (!renderer||!myId) return;
+
+  const worldX=renderer.cameraX+e.detail.x;
+  const worldY=renderer.cameraY+e.detail.y;
+  const cableType=input.state.cableType||'power';
+
+  // Check if starting a new line
+  if (!cableStartPoint) {
+    cableStartPoint={x: worldX, y: worldY};
+    soundManager.playSound('ui_click');
+  } else {
+    // Complete segment
+    socket.emit('placeCable', {
+      x1: cableStartPoint.x,
+      y1: cableStartPoint.y,
+      x2: worldX,
+      y2: worldY,
+      type: cableType
+    });
+    soundManager.playSound('ui_click');
+    // Advance start point to end point for continuous drawing
+    cableStartPoint={x: worldX, y: worldY};
+  }
+});
+
+// Cancel cable placement on mode toggle
+window.addEventListener('keydown', (e) => {
+  if (e.code==='KeyC') {
+    cableStartPoint=null;
+  }
+});
+
+function updateCablePreview() {
+  if (input&&input.state.cableMode&&cableStartPoint&&renderer) {
+    const worldMouseX=renderer.cameraX+input.mouseX;
+    const worldMouseY=renderer.cameraY+input.mouseY;
+
+    // Validate distance
+    const dx=worldMouseX-cableStartPoint.x;
+    const dy=worldMouseY-cableStartPoint.y;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    const valid=dist<=120;
+
+    renderer.drawCablePreview({
+      active: true,
+      x1: cableStartPoint.x,
+      y1: cableStartPoint.y,
+      x2: worldMouseX,
+      y2: worldMouseY,
+      type: input.state.cableType||'power',
+      valid: valid
+    }, renderer.cameraX, renderer.cameraY);
+  }
+}
+
 function gameLoop() {
   requestAnimationFrame(gameLoop);
 
+  const now=performance.now();
+  const dt=(now-renderer.lastTime)/1000;
+  renderer.lastTime=now;
+
   if (currentRoom&&renderer) {
     renderer.draw(gameState, myId);
+
+    // Draw cables overlay
+    if (gameState.cables) {
+      renderer.drawCables(gameState.cables, renderer.cameraX, renderer.cameraY);
+    }
+    // Draw cable placement preview
+    updateCablePreview();
+
 
     if (input) {
       const myPlayer=gameState.players.find(p => p.id===myId);
@@ -1077,5 +1156,8 @@ function gameLoop() {
 
       wasDead=myPlayer? myPlayer.dead:false;
     }
+
+    // Update particles (was missing)
+    renderer.updateParticles(Math.min(dt, 0.05));
   }
 }

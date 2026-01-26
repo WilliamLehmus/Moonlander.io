@@ -238,6 +238,54 @@ io.on('connection', (socket) => {
         }
     });
 
+    // CRAFT MATERIAL
+    socket.on('craftMaterial', (data, callback) => {
+        const code=playerRooms.get(socket.id);
+        if (code) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const result=room.game.craftMaterial(data.tier, data.amount);
+                if (callback) callback({success: result});
+            }
+        }
+    });
+
+    // UPGRADE SHIP
+    socket.on('upgradeShip', (data, callback) => {
+        const code=playerRooms.get(socket.id);
+        if (code) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const result=room.game.upgradeShip(socket.id, data.upgradeKey);
+                if (callback) callback(result);
+            }
+        }
+    });
+
+    // PURCHASE SHIP
+    socket.on('purchaseShip', (data, callback) => {
+        const code=playerRooms.get(socket.id);
+        if (code) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const result=room.game.purchaseShip(socket.id, data.type);
+                if (callback) callback(result);
+            }
+        }
+    });
+
+    // PLACE CABLE
+    socket.on('placeCable', (data, callback) => {
+        const code=playerRooms.get(socket.id);
+        if (code) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const result=room.game.placeCableSegment(socket.id, data);
+                if (callback) callback(result);
+            }
+        }
+    });
+
     // GET ROOM LIST (for debugging/admin)
     socket.on('getRooms', (callback) => {
         const roomList=Array.from(rooms.values()).map(r => r.getInfo());

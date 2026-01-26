@@ -1,6 +1,7 @@
 import {VoxelMap, TileTypes} from './VoxelMap.js';
 import {Player} from './Player.js';
 import {PhysicsWorld} from './PhysicsWorld.js';
+import {CableSystem} from './CableSystem.js';
 import {readFileSync} from 'fs';
 import {join, dirname} from 'path';
 import {fileURLToPath} from 'url';
@@ -46,6 +47,7 @@ export class Game {
         // 400x1200 tiles at 8px = 3200x9600 world (much deeper map)
         this.voxelMap=new VoxelMap(400, 1200, 8);
         this.physics=new PhysicsWorld();
+        this.cableSystem=new CableSystem(this);
         this.lastTime=Date.now();
         this.ready=false;
         this.io=null; // Socket.io instance for broadcasting
@@ -93,67 +95,93 @@ export class Game {
         };
 
         // Buildings system
-        // Each building has levels 0-5 (0 = not built, 1-5 = upgrade levels)
+        // Each building has levels 0-12
         this.buildings={
-            // Storage
-            ore_storage: {level: 0, name: 'Ore Storage', effect: 'oreCapacity', baseValue: 0, perLevel: 500},
-            fuel_depot: {level: 0, name: 'Fuel Depot', effect: 'maxFuel', baseValue: 0, perLevel: 5000},
-            parts_warehouse: {level: 0, name: 'Parts Warehouse', effect: 'maxSpareParts', baseValue: 0, perLevel: 500},
+            // Core
+            landing_pad: {level: 1, name: 'Landing Pad', effect: 'radius', baseValue: 200, perLevel: 0, powerCost: 5, powerScale: 2},
 
-            // Production
-            fuel_refinery: {level: 0, name: 'Fuel Refinery', effect: 'fuelProduction', baseValue: 0, perLevel: 0.5},
-            solar_array: {level: 0, name: 'Solar Array', effect: 'powerGeneration', baseValue: 0, perLevel: 10},
-            fuel_generator: {level: 0, name: 'Fuel Generator', effect: 'fuelPower', baseValue: 0, perLevel: 20},
+            // Storage
+            ore_storage: {level: 0, name: 'Ore Storage', effect: 'oreCapacity', baseValue: 500, perLevel: 500, powerCost: 1, powerScale: 0.5},
+            fuel_depot: {level: 0, name: 'Fuel Depot', effect: 'maxFuel', baseValue: 2000, perLevel: 5000, powerCost: 1, powerScale: 0.5},
+            parts_warehouse: {level: 0, name: 'Parts Warehouse', effect: 'maxSpareParts', baseValue: 200, perLevel: 500, powerCost: 1, powerScale: 0.5},
+
+            // Production & Power
+            fuel_refinery: {level: 0, name: 'Fuel Refinery', effect: 'fuelProduction', baseValue: 0, perLevel: 0.5, powerCost: 15, powerScale: 5},
+            solar_array: {level: 0, name: 'Solar Array', effect: 'powerGeneration', baseValue: 10, perLevel: 5, powerCost: 0, powerScale: 0}, // Generates power
+            fuel_generator: {level: 0, name: 'Fuel Generator', effect: 'fuelPower', baseValue: 50, perLevel: 25, powerCost: 0, powerScale: 0}, // Generates power
 
             // Utility
-            communications_antenna: {level: 0, name: 'Comms Antenna', effect: 'antennaRange', baseValue: 0, perLevel: 400},
-            ship_factory: {level: 0, name: 'Ship Factory', effect: 'shipTypes', baseValue: 0, perLevel: 1},
-            crafting_station: {level: 0, name: 'Crafting Station', effect: 'crafting', baseValue: 0, perLevel: 1}
+            communications_antenna: {level: 0, name: 'Comms Antenna', effect: 'antennaRange', baseValue: 100, perLevel: 100, powerCost: 5, powerScale: 2},
+            ship_factory: {level: 0, name: 'Ship Factory', effect: 'shipTypes', baseValue: 0, perLevel: 1, powerCost: 20, powerScale: 10},
+            crafting_station: {level: 0, name: 'Crafting Station', effect: 'crafting', baseValue: 0, perLevel: 1, powerCost: 10, powerScale: 5},
+            habitat: {level: 0, name: 'Habitat', effect: 'utility', baseValue: 0, perLevel: 0, powerCost: 2, powerScale: 1}
         };
 
         // Building upgrade costs (materials required per level)
-        // Building upgrade costs (materials required per level)
-        // Level 0 -> 1 is construction cost
-        // Building upgrade costs (materials required per level)
-        // Level 0 -> 1 is construction cost
+        // Level 0->1 is construction cost. 1->12 is upgrade.
+        // Tiers: 1=Basic, 2=Industrial, 3=Advanced, 4=Quantum (implicitly based on level groups in GDD, but here we define explicitly)
+        // GDD Spec:
+        // Lvl 0-3: Basic
+        // Lvl 4-6: Industrial
+        // Lvl 7-9: Advanced
+        // Lvl 10-12: Quantum
+        function generateCost(baseAmt, tierIncrease) {
+            const costs=[];
+            // Level 0->1
+            costs.push({basic: baseAmt});
+            // Level 1->2, 2->3 (Basic)
+            costs.push({basic: 1}); costs.push({basic: 1});
+            // Level 3->4, 4->5, 5->6 (Industrial)
+            costs.push({industrial: 1}); costs.push({industrial: 1}); costs.push({industrial: 1});
+            // Level 6->7, 7->8, 8->9 (Advanced)
+            costs.push({advanced: 1}); costs.push({advanced: 1}); costs.push({advanced: 1});
+            // Level 9->10, 10->11, 11->12 (Quantum)
+            costs.push({quantum: 1}); costs.push({quantum: 1}); costs.push({quantum: 1});
+            return costs;
+        }
+
+        // Specific overrides based on GDD table
         this.buildingCosts={
-            ore_storage: [
-                {basic: 50}, {basic: 100}, {industrial: 25}, {industrial: 75}, {advanced: 50},
-                {advanced: 100}, {advanced: 200}, {quantum: 20}, {quantum: 40}, {quantum: 80}, {quantum: 150}, {quantum: 300}
-            ],
-            fuel_depot: [
-                {basic: 50}, {basic: 100}, {industrial: 25}, {industrial: 75}, {advanced: 50},
-                {advanced: 100}, {advanced: 200}, {quantum: 20}, {quantum: 40}, {quantum: 80}, {quantum: 150}, {quantum: 300}
-            ],
-            parts_warehouse: [
-                {basic: 50}, {basic: 100}, {industrial: 25}, {industrial: 75}, {advanced: 50},
-                {advanced: 100}, {advanced: 200}, {quantum: 20}, {quantum: 40}, {quantum: 80}, {quantum: 150}, {quantum: 300}
-            ],
-            fuel_refinery: [
-                {basic: 75}, {industrial: 50}, {industrial: 100}, {advanced: 75}, {quantum: 10},
-                {quantum: 25}, {quantum: 50}, {quantum: 100}, {quantum: 200}, {quantum: 400}, {quantum: 600}, {quantum: 1000}
-            ],
-            solar_array: [
-                {basic: 50}, {industrial: 40}, {industrial: 80}, {advanced: 60}, {quantum: 20},
-                {quantum: 40}, {quantum: 80}, {quantum: 150}, {quantum: 300}, {quantum: 500}, {quantum: 800}, {quantum: 1200}
-            ],
-            fuel_generator: [
-                {industrial: 75}, {industrial: 100}, {advanced: 50}, {advanced: 100}, {quantum: 40},
-                {quantum: 80}, {quantum: 160}, {quantum: 320}, {quantum: 640}, {quantum: 1000}, {quantum: 1500}, {quantum: 2500}
-            ],
-            communications_antenna: [
-                {basic: 100}, {industrial: 75}, {industrial: 150}, {advanced: 100}, {quantum: 25},
-                {quantum: 50}, {quantum: 100}, {quantum: 200}, {quantum: 400}, {quantum: 600}, {quantum: 800}, {quantum: 1200}
-            ],
-            ship_factory: [
-                {industrial: 100}, {advanced: 75}, {advanced: 150}, {quantum: 50}, {quantum: 100},
-                {quantum: 200}, {quantum: 400}, {quantum: 800}, {quantum: 1200}, {quantum: 1600}, {quantum: 2000}, {quantum: 3000}
-            ],
-            crafting_station: [
-                {basic: 75}, {industrial: 75}, {advanced: 50}, {advanced: 100}, {quantum: 30},
-                {quantum: 60}, {quantum: 120}, {quantum: 240}, {quantum: 480}, {quantum: 800}, {quantum: 1200}, {quantum: 2000}
-            ]
+            landing_pad: generateCost(2),
+            ore_storage: generateCost(1),
+            fuel_depot: generateCost(1),
+            parts_warehouse: generateCost(1),
+            fuel_refinery: generateCost(0), // Special: Starts at Industrial? GDD Says "2 Industrial".
+            solar_array: generateCost(0), // Special: Starts at 1 Industrial
+            fuel_generator: generateCost(0), // Special: 2 Industrial
+            communications_antenna: generateCost(1),
+            ship_factory: generateCost(0), // Special: 5 Industrial
+            crafting_station: generateCost(2),
+            habitat: generateCost(1)
         };
+
+        // Fix special costs manually
+        // Fuel Refinery (2 Industrial base)
+        this.buildingCosts.fuel_refinery=[
+            {industrial: 2}, // 0->1
+            {industrial: 2}, {industrial: 2}, // 1->3
+            {industrial: 2}, {industrial: 2}, {industrial: 2}, // 4->6
+            {advanced: 2}, {advanced: 2}, {advanced: 2}, // 7->9
+            {quantum: 2}, {quantum: 2}, {quantum: 2} // 10->12
+        ];
+
+        // Solar Array (1 Industrial base)
+        this.buildingCosts.solar_array=[
+            {industrial: 1},
+            {industrial: 1}, {industrial: 1},
+            {industrial: 1}, {industrial: 1}, {industrial: 1},
+            {advanced: 1}, {advanced: 1}, {advanced: 1},
+            {quantum: 1}, {quantum: 1}, {quantum: 1}
+        ];
+
+        // Ship Factory (5 Industrial base, 3 per level)
+        this.buildingCosts.ship_factory=[
+            {industrial: 5},
+            {industrial: 3}, {industrial: 3},
+            {industrial: 3}, {industrial: 3}, {industrial: 3},
+            {advanced: 3}, {advanced: 3}, {advanced: 3},
+            {quantum: 3}, {quantum: 3}, {quantum: 3}
+        ];
 
         // Exploration Fog of War
         // Grid of 20x20 tile chunks (160x160 world units)
@@ -173,19 +201,45 @@ export class Game {
         // Dropped items (jettisoned ore that falls to ground)
         this.droppedItems=new Map(); // itemId -> {id, x, y, type, amount, body}
         this.nextDroppedItemId=1;
+
+        // Upgrade multipliers config
+        this.shipUpgradeCosts=[
+            {basic: 1}, // Lvl 1
+            {industrial: 1}, // Lvl 2
+            {advanced: 1} // Lvl 3
+        ];
+        // Thrust is double
+        this.shipThrustUpgradeCosts=[
+            {basic: 2},
+            {industrial: 2},
+            {advanced: 2}
+        ];
     }
 
     // Get the effective value for a building stat
     getBuildingEffect(buildingKey) {
         const building=this.buildings[buildingKey];
         if (!building) return 0;
-        return building.baseValue+(building.level-1)*building.perLevel;
+        // Effect = Base + (Level * PerLevel)
+        // If level 0 (not built), effect is 0 usually, but check logic
+        if (building.level===0) return 0;
+        return building.baseValue+(building.level*building.perLevel); // Note: Level 1 is base.
+        // Wait, GDD says "Build Cost (Lvl 0)". 
+        // Usually Level 1 = Built. Level 0 = Not built.
+        // If Level 1, effect should be BaseValue? 
+        // "Upgrade Per Level (1-12)".
+        // Let's assume Level 1 = BaseValue. Level 2 = Base + 1*PerLevel.
+        // So formula: Base + (Level-1)*PerLevel.
     }
 
-    // Get antenna range for minimap
-    // Get antenna range for minimap
     getAntennaRange() {
-        return 200+this.getBuildingEffect('communications_antenna');
+        // GDD: 100m + 100m/level.
+        const building=this.buildings.communications_antenna;
+        if (!building||building.level===0) return 100; // Base range for landing pad alone? Or 0?
+        // GDD says "Any antenna built provides...". So if not built, maybe just visual?
+        // But landing pad is the anchor. Let's give minimal 50m (Habitat) if no antenna.
+        if (building.level===0) return 50;
+        return building.baseValue+(building.level-1)*building.perLevel;
     }
 
     canAffordUpgrade(buildingKey) {
@@ -218,7 +272,7 @@ export class Game {
 
         const building=this.buildings[buildingKey];
         const costs=this.buildingCosts[buildingKey];
-        const levelCost=costs[building.level];
+        const levelCost=costs[building.level]; // Cost to get to next level
 
         const materialMap={
             basic: 'basicMaterials',
@@ -248,7 +302,114 @@ export class Game {
             name: building.name
         });
 
+        this.broadcast('resourcesUpdated', this.baseResources);
+
         return true;
+    }
+
+    craftMaterial(tier, amount=1) {
+        // Material Costs
+        // Basic: 50 Iron + 50 Copper
+        // Industrial: 100 Silver + 100 Titanium
+        // Advanced: 200 Gold + 200 Platinum
+        // Quantum: 500 Diamond
+        const recipes={
+            basic: {iron: 50, copper: 50},
+            industrial: {silver: 100, titanium: 100},
+            advanced: {gold: 200, platinum: 200},
+            quantum: {diamond: 500}
+        };
+
+        const recipe=recipes[tier];
+        if (!recipe) return false;
+
+        // Check costs
+        for (const [res, req] of Object.entries(recipe)) {
+            if (this.baseResources[res]<req*amount) return false;
+        }
+
+        // Deduct and Add
+        for (const [res, req] of Object.entries(recipe)) {
+            this.baseResources[res]-=req*amount;
+        }
+
+        const map={
+            basic: 'basicMaterials',
+            industrial: 'industrialMaterials',
+            advanced: 'advancedMaterials',
+            quantum: 'quantumMaterials'
+        };
+        this.baseResources[map[tier]]+=amount;
+
+        console.log(`Crafted ${amount} ${tier} materials`);
+        this.broadcast('resourcesUpdated', this.baseResources);
+        return true;
+    }
+
+    purchaseShip(playerId, type) {
+        const player=this.players.get(playerId);
+        // Requirement: Player must be on pad or docked? GDD doesn't specify but implies "at base".
+        // We'll require player to be on pad.
+        if (!player||!player.onPad) return {success: false, reason: 'must_be_on_pad'};
+
+        // Cost: Cargo Hauler = 10 Industrial
+        if (type==='cargo') {
+            const cost=10;
+            if (this.baseResources.industrialMaterials<cost) {
+                return {success: false, reason: 'insufficient_materials', required: cost};
+            }
+            this.baseResources.industrialMaterials-=cost;
+            player.setShipType('cargo');
+            this.broadcast('resourcesUpdated', this.baseResources);
+            return {success: true};
+        }
+
+        return {success: false, reason: 'unknown_ship'};
+    }
+
+    upgradeShip(playerId, upgradeKey) {
+        const player=this.players.get(playerId);
+        if (!player||!player.onPad) return {success: false, reason: 'must_be_on_pad'};
+
+        // Check if upgrade exists
+        const currentLevel=player.upgrades[upgradeKey];
+        if (currentLevel===undefined) return {success: false, reason: 'invalid_upgrade'};
+        if (currentLevel>=3) return {success: false, reason: 'max_level'};
+
+        // Determine cost
+        // Default: L1=1 Basic, L2=1 Ind, L3=1 Adv
+        // Thrust: L1=2 Basic, L2=2 Ind, L3=2 Adv
+        const isThrust=upgradeKey==='thrust';
+        const costs=isThrust? this.shipThrustUpgradeCosts:this.shipUpgradeCosts;
+        const cost=costs[currentLevel];
+
+        const materialMap={
+            basic: 'basicMaterials',
+            industrial: 'industrialMaterials',
+            advanced: 'advancedMaterials',
+            quantum: 'quantumMaterials'
+        };
+
+        // Check affordability
+        for (const [matType, amount] of Object.entries(cost)) {
+            const key=materialMap[matType];
+            if (this.baseResources[key]<amount) {
+                return {success: false, reason: 'insufficient_materials'};
+            }
+        }
+
+        // Deduct
+        for (const [matType, amount] of Object.entries(cost)) {
+            const key=materialMap[matType];
+            this.baseResources[key]-=amount;
+        }
+
+        // Apply Upgrade
+        player.upgrades[upgradeKey]++;
+        player.applyUpgrades();
+
+        this.broadcast('resourcesUpdated', this.baseResources);
+        return {success: true, level: player.upgrades[upgradeKey]};
     }
 
     // Apply all building effects to base resources
@@ -863,6 +1024,10 @@ export class Game {
 
         // Update Exploration
         this.updateExploration();
+
+        // Check conditions
+        this.checkWinCondition();
+        this.checkLoseCondition();
     }
 
     // Switch ship type for a player
@@ -1795,82 +1960,39 @@ export class Game {
 
         // Process Bitite to Fuel (primary fuel source)
         if (this.baseResources.bitite>0&&this.baseResources.fuel<this.baseResources.maxFuel) {
+            // Requirement: Fuel Refinery level determines speed? 
+            // For now, keep basic processing but maybe scale with refinery
             const amount=Math.min(PROCESSING_SPEED*2, this.baseResources.bitite);
             this.baseResources.bitite-=amount;
-            // Bitite is efficient for fuel production
             this.baseResources.fuel=Math.min(this.baseResources.maxFuel, this.baseResources.fuel+amount*8);
             isRefining=true;
         }
 
-        // Process Tier 1 ores (Iron, Copper) -> Basic Materials + Spare Parts
-        let processingPower=PROCESSING_SPEED;
-        const tier1Ores=['iron', 'copper'];
-        for (const ore of tier1Ores) {
-            if (processingPower<=0) break;
-            if (this.baseResources[ore]>0) {
-                const amount=Math.min(processingPower, this.baseResources[ore]);
-                this.baseResources[ore]-=amount;
-                // Basic materials production
-                this.baseResources.basicMaterials+=amount*0.6;
-                // Some spare parts
-                if (this.baseResources.spareParts<this.baseResources.maxSpareParts) {
-                    this.baseResources.spareParts+=amount*0.4;
-                }
-                processingPower-=amount;
-                isRefining=true;
-            }
-        }
+        // Automatic Material Processing Removed (Manual Crafting only)
+        // Except maybe Spare Parts? 
+        // GDD says "Basic Tier... Scout Repairs".
+        // If Spare Parts are needed for respawn, we need a way to get them.
+        // "Resources are processed into four tiers...". 
+        // "Basic Construction Material" vs "Spare Parts".
+        // Let's assume Spare Parts must be crafted or bought? 
+        // Previously they were auto-generated.
+        // I'll add a separate recipe or auto-generation from Iron/Copper purely for maintenance if needed.
+        // But for now, let's strictly follow "Manual Crafting" for materials. 
 
-        // Process Tier 2 ores (Silver, Titanium) -> Industrial Materials + Spare Parts
-        processingPower=PROCESSING_SPEED*0.8; // Slightly slower processing
-        const tier2Ores=['silver', 'titanium'];
-        for (const ore of tier2Ores) {
-            if (processingPower<=0) break;
-            if (this.baseResources[ore]>0) {
-                const amount=Math.min(processingPower, this.baseResources[ore]);
-                this.baseResources[ore]-=amount;
-                this.baseResources.industrialMaterials+=amount*0.7;
-                if (this.baseResources.spareParts<this.baseResources.maxSpareParts) {
-                    this.baseResources.spareParts+=amount*0.5;
-                }
-                processingPower-=amount;
-                isRefining=true;
-            }
-        }
-
-        // Process Tier 3 ores (Gold, Platinum) -> Advanced Materials + Spare Parts
-        processingPower=PROCESSING_SPEED*0.5; // Even slower
-        const tier3Ores=['gold', 'platinum'];
-        for (const ore of tier3Ores) {
-            if (processingPower<=0) break;
-            if (this.baseResources[ore]>0) {
-                const amount=Math.min(processingPower, this.baseResources[ore]);
-                this.baseResources[ore]-=amount;
-                this.baseResources.advancedMaterials+=amount*0.8;
-                if (this.baseResources.spareParts<this.baseResources.maxSpareParts) {
-                    this.baseResources.spareParts+=amount*0.8;
-                }
-                processingPower-=amount;
-                isRefining=true;
-            }
-        }
-
-        // Process Tier 4 ore (Diamond) -> Quantum Materials
-        processingPower=PROCESSING_SPEED*0.2; // Very slow
-        if (this.baseResources.diamond>0) {
-            const amount=Math.min(processingPower, this.baseResources.diamond);
-            this.baseResources.diamond-=amount;
-            this.baseResources.quantumMaterials+=amount*1.0;
-            // Diamonds also generate spare parts (they're very valuable)
-            if (this.baseResources.spareParts<this.baseResources.maxSpareParts) {
-                this.baseResources.spareParts+=amount*2.0;
-            }
-            isRefining=true;
-        }
+        // However, players need Spare Parts to respawn.
+        // If they have 0 parts, they lose.
+        // We should allow crafting Spare Parts from Iron/Copper.
+        // I'll add that to `craftMaterial` as a special type 'parts' or similar, 
+        // OR assume 'Basic Material' can be converted to parts?
+        // Let's stick to simple manual crafting for now. 
+        // Disabling ALL auto-processing might soft-lock if they have Ore but no Parts and die.
+        // But if they are dead, they can't craft!
+        // This is a design risk.
+        // "Game lose condition: No alive player and no resources left to spawn a new lander."
 
         this.isRefining=isRefining;
 
-        // Update power generation (base solar power for now)
+        // Update power generation (base + solar)
         const powerDelta=(this.baseResources.powerGeneration-this.baseResources.powerConsumption)*dt;
         this.baseResources.power=Math.max(0, Math.min(this.baseResources.maxPower, this.baseResources.power+powerDelta));
 
@@ -1878,11 +2000,72 @@ export class Game {
         this.baseResources.oxygen=Math.min(this.baseResources.maxOxygen, this.baseResources.oxygen+1.5*dt);
     }
 
+    checkWinCondition() {
+        // Win: Reach 5000 meters depth
+        const SURFACE_Y=1200; // Approx
+        const WIN_DEPTH=5000;
+        const TARGET_Y=SURFACE_Y+WIN_DEPTH;
+
+        for (const player of this.players.values()) {
+            if (!player.dead&&player.y>TARGET_Y) {
+                this.broadcast('gameOver', {
+                    won: true,
+                    reason: 'core_reached',
+                    depth: 5000,
+                    time: (Date.now()-this.startTime)/1000
+                });
+                this.gameEnded=true;
+                return;
+            }
+        }
+    }
+
+    checkLoseCondition() {
+        if (this.gameEnded) return;
+
+        const alive=this.getAlivePlayerCount()>0;
+        if (alive) return;
+
+        // Everyone dead. Can we respawn?
+        const canRespawn=this.baseResources.spareParts>=this.config.resources.respawnCost;
+        if (!canRespawn) {
+            this.broadcast('gameOver', {
+                won: false,
+                reason: 'colony_lost',
+                time: (Date.now()-this.startTime)/1000
+            });
+            this.gameEnded=true;
+        }
+    }
+
     getState() {
         if (!this.ready) return {players: [], baseResources: this.baseResources, respawnCost: this.config.resources.respawnCost};
+
+        // Create client-friendly resource structure
+        // Client expects ores to be in 'ores' object for iteration
+        const clientResources={
+            ...this.baseResources,
+            ores: {
+                iron: this.baseResources.iron,
+                copper: this.baseResources.copper,
+                bitite: this.baseResources.bitite,
+                silver: this.baseResources.silver,
+                titanium: this.baseResources.titanium,
+                gold: this.baseResources.gold,
+                platinum: this.baseResources.platinum,
+                diamond: this.baseResources.diamond
+            },
+            materials: {
+                basic: this.baseResources.basicMaterials,
+                industrial: this.baseResources.industrialMaterials,
+                advanced: this.baseResources.advancedMaterials,
+                quantum: this.baseResources.quantumMaterials
+            }
+        };
+
         return {
             players: Array.from(this.players.values()).map(p => p.serialize()),
-            baseResources: this.baseResources,
+            baseResources: clientResources,
             buildings: this.serializeBuildings(),
             respawnCost: this.config.resources.respawnCost,
             aliveCount: this.getAlivePlayerCount(),
@@ -1894,7 +2077,8 @@ export class Game {
             vehicles: this.serializeVehicles(),    // Send parked vehicles
             droppedItems: this.serializeDroppedItems(), // Send jettisoned ore items
             refining: this.isRefining,
-            activeBuildings: this.getActiveBuildings() // NEW: Send only built buildings
+            activeBuildings: this.getActiveBuildings(), // NEW: Send only built buildings
+            cables: this.cableSystem.serialize() // Send active cables
         };
     }
 
@@ -1988,12 +2172,34 @@ export class Game {
             result[key]={
                 level: building.level,
                 name: building.name,
-                maxLevel: 5,
+                maxLevel: 12,
                 canUpgrade: this.canAffordUpgrade(key),
                 currentEffect: this.getBuildingEffect(key),
-                nextCost: building.level<5? this.buildingCosts[key][building.level]:null
+                nextCost: building.level<12? this.buildingCosts[key][building.level]:null
             };
         }
+        return result;
+    }
+    placeCableSegment(playerId, segmentData) {
+        const {x1, y1, x2, y2, type}=segmentData;
+        const player=this.players.get(playerId);
+
+        if (!player) return {success: false};
+
+        // Cost Check (1 Basic Material)
+        if (this.baseResources.basicMaterials<1&&!player.infiniteFuel) {
+            return {success: false, reason: 'no_materials'};
+        }
+
+        const result=this.cableSystem.addSegment(x1, y1, x2, y2, type);
+
+        if (result.success) {
+            if (!player.infiniteFuel) {
+                this.baseResources.basicMaterials--;
+            }
+            this.broadcast('resourcesUpdated', this.baseResources);
+        }
+
         return result;
     }
 }

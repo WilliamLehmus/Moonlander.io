@@ -16,7 +16,7 @@ const SHIP_TYPES={
         width: 30, height: 30, mass: 2.5,
         maxFuel: 1000, fuelConsumption: 45,
         cargoCapacity: 1500,
-        thrustForce: 150,
+        thrustForce: 150, // Higher thrust for heavier ship
         maxPower: 150,
         basePowerRegen: 2.0
     },
@@ -25,10 +25,10 @@ const SHIP_TYPES={
         width: 6, height: 12, mass: 0.1,
         maxFuel: 0, fuelConsumption: 0,
         cargoCapacity: 50,
-        thrustForce: 15,
+        thrustForce: 15, // Jump force
         maxPower: 20,
         maxOxygen: 100,
-        oxygenConsumption: 1.5, // Units per second
+        oxygenConsumption: 1.5,
         basePowerRegen: 1.0
     }
 };
@@ -41,12 +41,21 @@ export class Player {
         this.config=config||{};
 
         this.shipType='scout';
+
+        // Upgrades (0-3 levels)
+        this.upgrades={
+            power: 0,
+            thrust: 0,
+            fuel: 0,
+            laser: 0,
+            spotlight: 0
+        };
+
         const stats=SHIP_TYPES[this.shipType];
 
         // Create RigidBody
-        // Box shape based on ship type
         this.body=this.physicsWorld.createBox(spawnX, spawnY, stats.width, stats.height, stats.mass);
-        this.body.setActivationState(4); // DISABLE_DEACTIVATION
+        this.body.setActivationState(4);
 
         const diff=this.config.difficulty||{};
 
@@ -60,83 +69,79 @@ export class Player {
         this.maxPower=stats.maxPower;
         this.basePowerRegen=stats.basePowerRegen;
         this.powerRegen=this.basePowerRegen*(diff.powerGenerationMultiplier||1);
-        this.lightsOn=true;      // Position lights
-        this.spotlightOn=true;   // Main spotlight
-        this.antennaOn=false;    // Communications antenna
+
+        this.lightsOn=true;
+        this.spotlightOn=true;
+        this.antennaOn=false;
+
         this.lightPowerDrain=0.5*(diff.powerConsumptionMultiplier||1);
         this.spotlightPowerDrain=1.0*(diff.powerConsumptionMultiplier||1);
         this.antennaPowerDrain=0.5*(diff.powerConsumptionMultiplier||1);
-        this.miningPowerDrain=7.5*(diff.powerConsumptionMultiplier||1); // Decreased by 50%
+        this.miningPowerDrain=7.5*(diff.powerConsumptionMultiplier||1);
 
-        // Oxygen system (EVA only)
+        // Oxygen system (EVA)
         this.oxygen=100;
         this.maxOxygen=100;
-        this.oxygenConsumption=0; // Set when going EVA
+        this.oxygenConsumption=0;
 
-        this.damage=0; // 0-11 damage levels
+        this.damage=0;
         this.inputs={thrust: false, left: false, right: false, mining: false, transferFuel: false, transferCargo: false, interact: false, toggleAntenna: false, toggleSpotlight: false, toggleLights: false};
-        this.lastInteract=false; // To detect edge-trigger
+        this.lastInteract=false;
         this.color=`hsl(${Math.random()*360}, 70%, 50%)`;
         this.dead=false;
         this.landed=false;
-        this.onPad=false; // Whether player is on landing pad
-        this.deathTime=null; // When the player died
+        this.onPad=false;
+        this.deathTime=null;
         this.spawnX=spawnX;
         this.spawnY=spawnY;
 
-        // Thrust force (can change with ship type)
         this.thrustForce=stats.thrustForce;
-
-        // Spotlight direction (angle in radians, 0 = right, PI/2 = down)
         this.spotlightAngle=0;
 
         // Mining system
         this.mining=false;
-        this.miningTarget=null; // {x, y} grid coordinates of ore being mined
-        this.miningProgress=0; // 0-1 progress on current ore
-        this.miningRange=this.config.mining?.range||80; // World units to mine from
+        this.miningTarget=null;
+        this.miningProgress=0;
+        this.miningRange=this.config.mining?.range||80;
 
         // Cargo system
-        this.cargo=[]; // Array of {type, amount}
-        this.cargoCapacity=stats.cargoCapacity; // Max cargo units
-        this.cargoWeight=0; // Current weight affecting physics
+        this.cargo=[];
+        this.cargoCapacity=stats.cargoCapacity;
+        this.cargoWeight=0;
 
-        // Ping system
-        this.activePing=null; // {type: 'yellow'|'red'|'green'|'blue', x, y, timestamp}
-
-        // Docking/fuel transfer system
-        this.dockingTarget=null; // ID of player we can dock with
-        this.isDocked=false; // Currently docked
-        this.fuelTransferring=false; // Currently transferring fuel
-        this.fuelTransferred=0; // Amount transferred in current session (for minimum check)
+        this.activePing=null;
+        this.dockingTarget=null;
+        this.isDocked=false;
+        this.fuelTransferring=false;
+        this.fuelTransferred=0;
 
         // Tether system
-        this.tetheredTo=null; // ID of player we're tethered to
-        this.tetherLength=0; // Current tether length
-        this.maxTetherLength=this.config.difficulty?.cableMaxLength||150; // Max length before snapping
-        this.tetherTension=0; // 0-1, how taut the rope is
-        this.tetherBroken=false; // If tether snapped
+        this.tetheredTo=null;
+        this.tetherLength=0;
+        this.maxTetherLength=this.config.difficulty?.cableMaxLength||150;
+        this.tetherTension=0;
+        this.tetherBroken=false;
 
-        // Survival pod system
-        this.inPod=false; // In survival pod mode after death
-        this.podLifeSupport=60; // Seconds of life support
-        this.podX=0; // Pod position (separate from body)
+        // Survival pod
+        this.inPod=false;
+        this.podLifeSupport=60;
+        this.podX=0;
         this.podY=0;
 
         // Debug options
         this.infiniteFuel=false;
-        this.podVX=0; // Pod velocity
+        this.podVX=0;
         this.podVY=0;
-        this.beaconPulse=0; // For distress beacon animation
+        this.beaconPulse=0;
 
         this.isMiningResource=false;
         this.transferring=false;
 
-        // Tmp vectors/quat for reading state to avoid GC
-        // Note: In real production, reuse single global instances if possible, 
-        // but here one per player is fine.
         this.tmpTrans=new this.physicsWorld.ammo.btTransform();
         this.wasThrusting=false;
+
+        // Initial stat calculation
+        this.applyUpgrades();
     }
 
     destroy() {
@@ -519,6 +524,7 @@ export class Player {
             lightsOn: this.lightsOn,
             spotlightOn: this.spotlightOn,
             antennaOn: this.antennaOn,
+            upgrades: this.upgrades,
             // Oxygen system
             oxygen: this.oxygen,
             maxOxygen: this.maxOxygen,
@@ -725,6 +731,41 @@ export class Player {
         // Recalculate mass with cargo
         this.updateMass();
 
+        // Re-apply upgrades to new ship stats
+        this.applyUpgrades();
+
         return previousShipState;
+    }
+
+    // Apply upgrade multipliers to current stats
+    applyUpgrades() {
+        const stats=SHIP_TYPES[this.shipType]||SHIP_TYPES.scout;
+
+        // 1. Power Generation (Solar Panels)
+        // Level 1-3: +25% per level
+        const powerMult=1+(this.upgrades.power*0.25);
+        this.powerRegen=stats.basePowerRegen*powerMult*(this.config.difficulty?.powerGenerationMultiplier||1);
+
+        // 2. Thrust Force
+        // Level 1-3: +20% per level
+        const thrustMult=1+(this.upgrades.thrust*0.20);
+        this.thrustForce=stats.thrustForce*thrustMult;
+
+        // 3. Max Fuel
+        // Level 1-3: +33% per level
+        const fuelMult=1+(this.upgrades.fuel*0.33);
+        const oldMax=this.maxFuel;
+        this.maxFuel=stats.maxFuel*fuelMult;
+        // If max increased, we don't automatically fill it, but ratio is preserved? 
+        // No, standard game logic: capacity increases, current fuel stays same until refuel.
+
+        // 4. Mining Efficiency (Laser)
+        // Level 1-3: -20% power draw per level
+        // Base drain is 7.5. Lvl 3 = -60% -> 3.0 drain.
+        const miningMult=Math.max(0.1, 1-(this.upgrades.laser*0.20));
+        this.miningPowerDrain=7.5*miningMult*(this.config.difficulty?.powerConsumptionMultiplier||1);
+
+        // 5. Spotlight Range (Not physical, handled in serialization/client)
+        // +50m per level
     }
 }

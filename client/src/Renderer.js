@@ -3110,4 +3110,59 @@ export class Renderer {
         this.ctx.textAlign='center';
         this.ctx.fillText('Press R to respawn (if resources available)', centerX, boxY+boxHeight-15);
     }
+    // Draw all cables
+    drawCables(cables, cameraX, cameraY) {
+        if (!cables||cables.length===0) return;
+
+        this.ctx.save();
+        this.ctx.lineWidth=2;
+
+        for (const cable of cables) {
+            // Determine color
+            let color='#ffffff';
+            if (cable.type==='power') color='#ff3333'; // Red
+            else if (cable.type==='fuel') color='#33cc33'; // Green
+            else if (cable.type==='data') color='#3333cc'; // Blue
+
+            this.ctx.strokeStyle=color;
+            this.ctx.beginPath();
+            this.ctx.moveTo(cable.x1-cameraX, cable.y1-cameraY);
+
+            // Simple Line for now
+            this.ctx.lineTo(cable.x2-cameraX, cable.y2-cameraY);
+            this.ctx.stroke();
+
+            // Draw endpoints (anchors)
+            this.ctx.fillStyle='#555';
+            this.ctx.fillRect(cable.x1-cameraX-2, cable.y1-cameraY-2, 4, 4);
+            this.ctx.fillRect(cable.x2-cameraX-2, cable.y2-cameraY-2, 4, 4);
+        }
+
+        this.ctx.restore();
+    }
+
+    // Draw placement preview
+    drawCablePreview(data, cameraX, cameraY) {
+        if (!data||!data.active) return;
+
+        const {x1, y1, x2, y2, type, valid}=data;
+
+        this.ctx.save();
+        this.ctx.lineWidth=2;
+        this.ctx.setLineDash([5, 5]);
+
+        let color='#ffffff';
+        if (type==='power') color='#ff3333';
+        else if (type==='fuel') color='#33cc33';
+        else if (type==='data') color='#3333cc';
+
+        this.ctx.strokeStyle=valid? color:'#ff0000'; // Red if invalid
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(x1-cameraX, y1-cameraY);
+        this.ctx.lineTo(x2-cameraX, y2-cameraY);
+        this.ctx.stroke();
+
+        this.ctx.restore();
+    }
 }

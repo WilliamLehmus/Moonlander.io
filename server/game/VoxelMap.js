@@ -684,9 +684,9 @@ export class VoxelMap {
 
         this.basePadBounds={
             x1: padLeftWorld.x-this.tileSize*4,
-            y1: platformWorldPos.y-this.tileSize*25, // Much shorter height (approx 200px)
+            y1: platformWorldPos.y-this.tileSize*8, // Reduced from 25 to 8 for tighter docking
             x2: padRightWorld.x+this.tileSize*4,
-            y2: platformWorldPos.y+this.tileSize*3
+            y2: platformWorldPos.y+this.tileSize*2
         };
 
 
@@ -733,6 +733,11 @@ export class VoxelMap {
         };
 
         console.log(`Moon base created: pad at (${this.landingPadPosition.x}, ${this.landingPadPosition.y}), base at (${this.basePosition.x}, ${this.basePosition.y})`);
+    }
+
+    getBuildingLocation(id) {
+        if (!this.buildingPositions) return null;
+        return this.buildingPositions.find(b => b.id===id);
     }
 
     isOnLandingPad(worldX, worldY) {

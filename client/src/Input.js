@@ -38,6 +38,7 @@ export class Input {
         // Track mouse movement
         if (canvas) {
             canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+            canvas.addEventListener('mousedown', (e) => this.handleMouseClick(e));
         }
         window.addEventListener('mousemove', (e) => this.handleMouseMove(e));
     }
@@ -121,7 +122,10 @@ export class Input {
                 }
                 break;
             case 'KeyG':
-                if (isDown) this.toggleTether(); // Remapped tether to G
+                if (isDown) this.toggleTether();
+                break;
+            case 'KeyC':
+                if (isDown) this.toggleCableMode();
                 break;
             case 'KeyL':
                 if (this.state.toggleSpotlight!==isDown) {
@@ -154,7 +158,17 @@ export class Input {
             case 'Digit7':
             case 'Digit8':
             case 'Digit9':
-                if (isDown) this.selectQuickbarSlot(parseInt(e.code.replace('Digit', ''))-1);
+                if (isDown) {
+                    const slot=parseInt(e.code.replace('Digit', ''))-1;
+                    if (this.state.cableMode) {
+                        // Switch cable type
+                        if (slot===0) {this.state.cableType='power'; window.dispatchEvent(new CustomEvent('notification', {detail: {message: 'Power Cable (Red)'}}));}
+                        else if (slot===1) {this.state.cableType='fuel'; window.dispatchEvent(new CustomEvent('notification', {detail: {message: 'Fuel Cable (Green)'}}));}
+                        else if (slot===2) {this.state.cableType='data'; window.dispatchEvent(new CustomEvent('notification', {detail: {message: 'Data Cable (Blue)'}}));}
+                    } else {
+                        this.selectQuickbarSlot(slot);
+                    }
+                }
                 break;
 
             // Ping keys (moved to Ctrl+1-4 or F1-F4)
@@ -232,6 +246,16 @@ export class Input {
         return Math.min(1, elapsed/this.exitHoldDuration);
     }
 
+    toggleCableMode() {
+        this.state.cableMode=!this.state.cableMode;
+        if (this.state.cableMode) {
+            this.state.cableType=this.state.cableType||'power';
+            window.dispatchEvent(new CustomEvent('notification', {detail: {message: 'Cable Mode: ON (1=Power, 2=Fuel, 3=Data)'}}));
+        } else {
+            window.dispatchEvent(new CustomEvent('notification', {detail: {message: 'Cable Mode: OFF'}}));
+        }
+    }
+
     sendInput() {
         // Update exit hold state before sending
         this.updateExitHold();
@@ -250,5 +274,18 @@ export class Input {
             toggleSpotlight: this.state.toggleSpotlight,
             toggleAntenna: this.state.toggleAntenna
         });
+    }
+
+    // Handle mouse click for placement
+    handleMouseClick(e) {
+        if (!this.state.cableMode) return;
+
+        // Convert screen click to world coordinates?
+        // Input class only knows screen mouseX/Y.
+        // It needs Camera position to know World X/Y. 
+        // We'll dispatch an event that main.js (which knows camera) handles.
+        window.dispatchEvent(new CustomEvent('cableClick', {
+            detail: {x: this.mouseX, y: this.mouseY}
+        }));
     }
 }
