@@ -213,12 +213,31 @@ export class Renderer {
             console.log(`Landing platform sprite loaded: ${this.landingPlatformSprite.width}x${this.landingPlatformSprite.height}`);
         };
 
+        // Materials sprite sheet
+        this.materialsSprite=new Image();
+        this.materialsSprite.src='/sprites/materials_spritesheet.png';
+        this.materialsSpriteLoaded=false;
+        this.materialsSprite.onload=() => {
+            this.materialsSpriteLoaded=true;
+            console.log(`Materials sprite sheet loaded`);
+        };
+
+        // Ores sprite sheet
+        this.oresSprite=new Image();
+        this.oresSprite.src='/sprites/ores_spritesheet.png';
+        this.oresSpriteLoaded=false;
+        this.oresSprite.onload=() => {
+            this.oresSpriteLoaded=true;
+            console.log(`Ores sprite sheet loaded`);
+        };
+
         // NEW: Load building sprites
         this.buildingSprites={};
         const buildingSubtypes=[
             'ore_storage', 'fuel_depot', 'parts_warehouse',
             'fuel_refinery', 'solar_array', 'fuel_generator',
-            'communications_antenna', 'ship_factory', 'crafting_station'
+            'communications_antenna', 'ship_factory', 'crafting_station',
+            'placeable_light'
         ];
         this.buildingsLoadedCount=0;
         buildingSubtypes.forEach(id => {
@@ -1302,7 +1321,8 @@ export class Renderer {
             TITANIUM_ORE: 14,    // 300-600m
             GOLD_ORE: 15,        // 400-800m
             PLATINUM_ORE: 16,    // 800-1400m
-            DIAMOND: 17          // 3500-5000m, extremely rare
+            DIAMOND: 17,         // 3500-5000m, extremely rare
+            HELIUM3: 18
         };
 
         const getRockColors=(y) => {
@@ -1337,7 +1357,8 @@ export class Renderer {
             [TileTypes.TITANIUM_ORE]: {main: '#708090', border: '#4a5568', glow: '#b0c4de'},  // Silvery blue
             [TileTypes.GOLD_ORE]: {main: '#ffd700', border: '#b8860b', glow: '#ffec8b'},      // Gold
             [TileTypes.PLATINUM_ORE]: {main: '#e5e4e2', border: '#a9a9a9', glow: '#ffffff'},  // Platinum white
-            [TileTypes.DIAMOND]: {main: '#b9f2ff', border: '#87ceeb', glow: '#e0ffff'}        // Crystal blue
+            [TileTypes.DIAMOND]: {main: '#b9f2ff', border: '#87ceeb', glow: '#e0ffff'},       // Crystal blue
+            [TileTypes.HELIUM3]: {main: '#7fffd4', border: '#458b74', glow: '#c0ffc0'}        // Minty green
         };
 
         for (let y=startY; y<endY; y++) {
@@ -1421,7 +1442,7 @@ export class Renderer {
                     }
 
                     // Add glow effect for ore tiles (only if visible)
-                    if (tile>=TileTypes.IRON_ORE&&tile<=TileTypes.DIAMOND&&colors.glow) {
+                    if (tile>=TileTypes.IRON_ORE&&tile<=TileTypes.HELIUM3&&colors.glow) {
                         this.ctx.fillStyle=colors.glow;
                         this.ctx.globalAlpha=(exposureLevel===2? 0.2:1)*(0.3+Math.sin(performance.now()/500+x+y)*0.15);
                         this.ctx.fillRect(wx+2, wy+2, this.tileSize-4, this.tileSize-4);
@@ -2111,7 +2132,8 @@ export class Renderer {
             'TITANIUM_ORE': '#b0c4de',
             'GOLD_ORE': '#ffd700',
             'PLATINUM_ORE': '#e5e4e2',
-            'DIAMOND': '#b9f2ff'
+            'DIAMOND': '#b9f2ff',
+            'HELIUM3': '#7fffd4'
         };
 
         for (const item of droppedItems) {
@@ -2669,10 +2691,23 @@ export class Renderer {
             // Item if exists
             const item=cargo[i];
             if (item) {
-                // Draw colored square for ore
-                const color=this.getOreColor(item.type);
-                this.ctx.fillStyle=color;
-                this.ctx.fillRect(x+10, y+15, 30, 25);
+                // Determine if it's a material or ore
+                const materialOrder=['basic', 'industrial', 'advanced', 'quantum', 'fuel'];
+                const materialIndex=materialOrder.indexOf(item.type.toLowerCase());
+
+                if (materialIndex!==-1&&this.materialsSpriteLoaded) {
+                    // Draw material sprite
+                    this.ctx.drawImage(
+                        this.materialsSprite,
+                        materialIndex*32, 0, 32, 32,
+                        x+10, y+10, 30, 30
+                    );
+                } else {
+                    // Draw colored square for ore
+                    const color=this.getOreColor(item.type);
+                    this.ctx.fillStyle=color;
+                    this.ctx.fillRect(x+10, y+15, 30, 25);
+                }
 
                 // Amount
                 this.ctx.fillStyle='#fff';
@@ -2692,7 +2727,8 @@ export class Renderer {
             'TITANIUM_ORE': '#b0c4de',
             'GOLD_ORE': '#ffd700',
             'PLATINUM_ORE': '#e5e4e2',
-            'DIAMOND': '#b9f2ff'
+            'DIAMOND': '#b9f2ff',
+            'HELIUM3': '#7fffd4'
         };
         return colors[type]||'#888';
     }
@@ -2704,157 +2740,191 @@ export class Renderer {
         const baseRes=state.baseResources;
 
         // Larger panel for more info
-        const panelW=500;
-        const panelH=280;
+        const panelW=680;
+        const panelH=360;
         const x=(width-panelW)/2;
         const topOffset=height*0.1;
-        const y=80+topOffset; // Below top HUD
+        const y=60+topOffset;
 
-        // Background
-        ctx.fillStyle='rgba(0, 0, 0, 0.9)';
+        // Background with subtle glow
+        ctx.save();
+        ctx.shadowBlur=15;
+        ctx.shadowColor='rgba(0, 240, 255, 0.3)';
+        ctx.fillStyle='rgba(10, 10, 22, 0.95)';
         ctx.strokeStyle='#00f0ff';
         ctx.lineWidth=2;
         ctx.beginPath();
-        ctx.roundRect(x, y, panelW, panelH, 10);
+        if (ctx.roundRect) {
+            ctx.roundRect(x, y, panelW, panelH, 15);
+        } else {
+            ctx.rect(x, y, panelW, panelH);
+        }
         ctx.fill();
         ctx.stroke();
+        ctx.restore();
 
-        // Title
+        // Header
         ctx.fillStyle='#00f0ff';
-        ctx.font='bold 16px monospace';
+        ctx.font='bold 22px monospace';
         ctx.textAlign='center';
-        ctx.fillText('MOON STATION ALPHA', x+panelW/2, y+25);
+        ctx.fillText('MOON STATION ALPHA', x+panelW/2, y+40);
 
-        // Grid layout
-        const col1=x+20;
-        const col2=x+panelW/2+10;
-        let rowY=y+50;
-        const rowH=18;
+        // Subheader line
+        ctx.strokeStyle='rgba(0, 240, 255, 0.2)';
+        ctx.beginPath();
+        ctx.moveTo(x+40, y+55);
+        ctx.lineTo(x+panelW-40, y+55);
+        ctx.stroke();
+
+        // Layout Columns
+        const gap=25;
+        const colW=(panelW-gap*4)/3;
+        const col1=x+gap;
+        const col2=col1+colW+gap;
+        const col3=col2+colW+gap;
+
+        let rowY=y+90;
+        const rowH=24;
 
         ctx.textAlign='left';
-        ctx.font='11px monospace';
 
-        // === Column 1: Resources ===
+        // === Column 1: Base Systems ===
+        ctx.font='bold 14px monospace';
         ctx.fillStyle='#888';
-        ctx.fillText('RESOURCES', col1, rowY);
-        rowY+=rowH;
+        ctx.fillText('STATUS & LOGISTICS', col1, rowY-10);
 
-        ctx.fillStyle='#ffaa00';
-        ctx.fillText(`Fuel: ${Math.floor(baseRes.fuel)} / ${baseRes.maxFuel}`, col1, rowY);
-        rowY+=rowH;
+        const drawSystem=(label, value, max, color, yPos) => {
+            ctx.font='11px monospace';
+            ctx.fillStyle='#aaa';
+            ctx.fillText(label, col1, yPos);
+            ctx.textAlign='right';
+            ctx.fillStyle=color;
+            ctx.fillText(`${Math.floor(value)} / ${max}`, col1+colW, yPos);
+            ctx.textAlign='left';
 
-        ctx.fillStyle='#ccc';
-        ctx.fillText(`Parts: ${Math.floor(baseRes.spareParts)} / ${baseRes.maxSpareParts}`, col1, rowY);
-        rowY+=rowH;
+            // Small progress bar
+            ctx.fillStyle='rgba(255,255,255,0.05)';
+            ctx.fillRect(col1, yPos+6, colW, 4);
+            ctx.fillStyle=color;
+            ctx.fillRect(col1, yPos+6, colW*Math.min(1, value/max), 4);
+        };
 
-        ctx.fillStyle='#0af';
-        ctx.fillText(`Power: ${Math.floor(baseRes.power)} / ${baseRes.maxPower}`, col1, rowY);
-        rowY+=rowH+5;
+        drawSystem('STATION FUEL', baseRes.fuel||0, baseRes.maxFuel||10000, '#ffaa00', rowY+10);
+        drawSystem('SPARE PARTS', baseRes.spareParts||0, baseRes.maxSpareParts||1000, '#ccc', rowY+45);
+        drawSystem('GRID POWER', baseRes.power||0, baseRes.maxPower||100, '#0af', rowY+80);
 
-        // Ore storage
+        // === Column 2: Ore Storage ===
+        let oreY=y+105;
+        ctx.font='bold 14px monospace';
         ctx.fillStyle='#888';
-        ctx.fillText('ORE STORAGE', col1, rowY);
-        rowY+=rowH;
+        ctx.fillText('ORE HOLDING', col2, oreY-25);
 
         const ores=[
-            {name: 'Iron', val: baseRes.iron, color: '#8b4513'},
-            {name: 'Copper', val: baseRes.copper, color: '#b87333'},
-            {name: 'Bitite', val: baseRes.bitite, color: '#4a4a4a'},
-            {name: 'Silver', val: baseRes.silver, color: '#c0c0c0'},
-            {name: 'Titanium', val: baseRes.titanium, color: '#708090'},
-            {name: 'Gold', val: baseRes.gold, color: '#ffd700'},
-            {name: 'Platinum', val: baseRes.platinum, color: '#e5e4e2'},
-            {name: 'Diamond', val: baseRes.diamond, color: '#b9f2ff'}
+            {name: 'Iron', key: 'iron', color: '#8b4513', index: 0},
+            {name: 'Copper', key: 'copper', color: '#b87333', index: 1},
+            {name: 'Bitite', key: 'bitite', color: '#4a4a4a', index: 2},
+            {name: 'Silver', key: 'silver', color: '#c0c0c0', index: 3},
+            {name: 'Titanium', key: 'titanium', color: '#708090', index: 4},
+            {name: 'Gold', key: 'gold', color: '#ffd700', index: 5},
+            {name: 'Platinum', key: 'platinum', color: '#e5e4e2', index: 6},
+            {name: 'Diamond', key: 'diamond', color: '#b9f2ff', index: 7},
+            {name: 'Helium3', key: 'helium3', color: '#7fffd4', index: 8}
         ];
 
-        let oreX=col1;
-        let oreCount=0;
+        ctx.font='12px monospace';
         for (const ore of ores) {
-            if (ore.val>0||oreCount<4) {
-                ctx.fillStyle=ore.color;
-                ctx.fillText(`${ore.name}: ${Math.floor(ore.val)}`, oreX, rowY);
-                oreX+=ore.name.length>6? 90:75;
-                if (oreX>col1+200) {
-                    oreX=col1;
-                    rowY+=rowH;
-                }
-                oreCount++;
+            const val=baseRes[ore.key]||0;
+            if (this.oresSpriteLoaded) {
+                // Larger icons (24x24)
+                ctx.drawImage(this.oresSprite, ore.index*32, 0, 32, 32, col2, oreY-16, 22, 22);
             }
+            ctx.fillStyle=ore.color;
+            ctx.fillText(ore.name, col2+30, oreY+2);
+            ctx.textAlign='right';
+            ctx.fillStyle='#fff';
+            ctx.fillText(Math.floor(val), col2+colW, oreY+2);
+            ctx.textAlign='left';
+            oreY+=rowH+2;
         }
-        rowY+=rowH;
 
-        // === Column 2: Materials & Status ===
-        let col2Y=y+50;
-
+        // === Column 3: Materials & Refinery ===
+        let matY=y+105;
+        ctx.font='bold 14px monospace';
         ctx.fillStyle='#888';
-        ctx.fillText('MATERIALS', col2, col2Y);
-        col2Y+=rowH;
+        ctx.fillText('PROCESSED ASSETS', col3, matY-25);
 
-        ctx.fillStyle='#8b8b6b';
-        ctx.fillText(`Basic: ${Math.floor(baseRes.basicMaterials||0)}`, col2, col2Y);
-        col2Y+=rowH;
+        const materials=[
+            {label: 'Basic', key: 'basic', color: '#8b8b6b', index: 0},
+            {label: 'Industrial', key: 'industrial', color: '#7090a0', index: 1},
+            {label: 'Advanced', key: 'advanced', color: '#daa520', index: 2},
+            {label: 'Quantum', key: 'quantum', color: '#ff69b4', index: 3},
+            {label: 'Liquid Fuel', key: 'fuel', color: '#33ff33', index: 4}
+        ];
 
-        ctx.fillStyle='#7090a0';
-        ctx.fillText(`Industrial: ${Math.floor(baseRes.industrialMaterials||0)}`, col2, col2Y);
-        col2Y+=rowH;
+        for (const mat of materials) {
+            if (this.materialsSpriteLoaded) {
+                ctx.drawImage(this.materialsSprite, mat.index*32, 0, 32, 32, col3, matY-16, 22, 22);
+            }
+            ctx.fillStyle=mat.color;
+            ctx.font='12px monospace';
+            ctx.fillText(mat.label, col3+30, matY+2);
+            ctx.textAlign='right';
+            ctx.fillStyle='#fff';
+            ctx.fillText(Math.floor(baseRes[mat.key]||0), col3+colW, matY+2);
+            ctx.textAlign='left';
+            matY+=rowH+2;
+        }
 
-        ctx.fillStyle='#c0a040';
-        ctx.fillText(`Advanced: ${Math.floor(baseRes.advancedMaterials||0)}`, col2, col2Y);
-        col2Y+=rowH;
-
-        ctx.fillStyle='#a0c0ff';
-        ctx.fillText(`Quantum: ${Math.floor(baseRes.quantumMaterials||0)}`, col2, col2Y);
-        col2Y+=rowH+5;
-
-        // Processing status
+        matY+=15;
+        ctx.font='bold 14px monospace';
         ctx.fillStyle='#888';
-        ctx.fillText('STATUS', col2, col2Y);
-        col2Y+=rowH;
+        ctx.fillText('OPERATIONS', col3, matY-5);
+        matY+=20;
 
         const time=Date.now()/1000;
         const dots=".".repeat(Math.floor(time%4));
-        ctx.fillStyle='#ff0';
-        ctx.fillText(`Refining${dots}`, col2, col2Y);
-        col2Y+=rowH;
+        ctx.fillStyle='#ffcc00';
+        ctx.font='italic 11px monospace';
+        ctx.fillText(`REFINERY: ACTIVE${dots}`, col3, matY);
+        matY+=18;
 
-        // Antenna range
         const antennaRange=state.antennaRange||400;
-        ctx.fillStyle='#0f0';
-        ctx.fillText(`Antenna Range: ${antennaRange}m`, col2, col2Y);
-        col2Y+=rowH;
+        ctx.fillStyle='#00ffaa';
+        ctx.fillText(`COMM-LINK: ${antennaRange}m`, col3, matY);
 
-        // === Bottom Section: Actions ===
-        const bottomY=y+panelH-50;
+        // === Bottom Bar actions ===
+        const bottomY=y+panelH-35;
 
-        // Transfer Prompt
-        ctx.textAlign='left';
+        ctx.fillStyle='rgba(255, 255, 255, 0.03)';
+        ctx.fillRect(x+20, bottomY-20, panelW-40, 45);
+        ctx.strokeStyle='rgba(0, 240, 255, 0.1)';
+        ctx.strokeRect(x+20, bottomY-20, panelW-40, 45);
+
+        ctx.textAlign='center';
         if (player.cargo&&player.cargo.length>0) {
             ctx.fillStyle='#ff0055';
-            ctx.font='bold 12px monospace';
-            ctx.fillText('[HOLD T] Transfer Cargo', col1, bottomY);
+            ctx.font='bold 14px monospace';
+            ctx.fillText('[HOLD T] TRANSFER CARGO TO STATION STORAGE', x+panelW/2, bottomY+8);
         } else {
             ctx.fillStyle='#555';
-            ctx.fillText('Cargo Hold Empty', col1, bottomY);
+            ctx.font='12px monospace';
+            ctx.fillText('CARGO HOLD DEPLETED - NO ASSETS TO TRANSFER', x+panelW/2, bottomY+8);
         }
 
-        // Repair/Refuel Status
-        ctx.fillStyle='#0f0';
-        const maxFuel=player.maxFuel||500;
+        // Mini status indicators for ship (far left/right)
+        ctx.textAlign='left';
+        ctx.font='bold 10px monospace';
+        const maxShipFuel=player.maxFuel||500;
+
         if (player.damage>0&&baseRes.spareParts>0) {
-            ctx.fillText('REPAIRING...', col1, bottomY+18);
+            ctx.fillStyle='#0f0';
+            ctx.fillText('● AUTO-REPAIR IN PROGRESS', x+35, y+panelH-65);
         }
-        if (player.fuel<maxFuel&&baseRes.fuel>0) {
-            ctx.fillText('REFUELING...', col1+100, bottomY+18);
+        if (player.fuel<maxShipFuel&&baseRes.fuel>0) {
+            ctx.fillStyle='#ffaa00';
+            ctx.textAlign='right';
+            ctx.fillText('AUTO-REFUELING ACTIVE ●', x+panelW-35, y+panelH-65);
         }
-        if ((player.power||0)<(player.maxPower||100)) {
-            ctx.fillText('CHARGING...', col1+200, bottomY+18);
-        }
-
-        // Total value
-        ctx.textAlign='right';
-        ctx.fillStyle='#ff0';
-        ctx.font='bold 14px monospace';
-        ctx.fillText(`TOTAL VALUE: ${Math.floor(baseRes.totalValue||0)}`, x+panelW-20, bottomY+18);
     }
 
     showMessage(text, duration=3000) {
@@ -2869,8 +2939,8 @@ export class Renderer {
             x,
             y,
             color,
-            life: 2.0, // 2 seconds
-            vy: -30 // Float upward
+            life: 1.2, // Reduced from 2.0s
+            vy: -60 // Faster upward float
         });
     }
 
@@ -2885,7 +2955,7 @@ export class Renderer {
 
     drawFloatingTexts() {
         for (const ft of this.floatingTexts) {
-            const alpha=Math.min(1, ft.life);
+            const alpha=Math.min(1, ft.life*2); // Fade out faster
             const screenX=ft.x-this.cameraX;
             const screenY=ft.y-this.cameraY;
 

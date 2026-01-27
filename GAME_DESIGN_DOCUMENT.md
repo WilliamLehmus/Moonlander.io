@@ -7,6 +7,10 @@
 - Don't open the base menu automatically when player is close to the landing pad
 
 
+Bugs: 
+- The mining success message like (3 iron ) sometimes stays and lingers there, it's not removed.
+
+
 ## 1. Game Overview
 
 **Moonlander.io** is a cooperative multiplayer physics-based exploration game where players pilot lunar landers into the depths of a procedurally generated moon. Starting from a shared moon base on the surface, teams of 2-8 players venture into an ever-deepening cave system to extract resources, rescue stranded companions, and uncover the mysteries buried deep within the lunar crust.
@@ -77,15 +81,16 @@ This includes all available resources: ore, fuel, spare parts, and cargo.
 
 ## 5. Construction & Base Building
 
-### 5.1 Building Materials
-Resources are processed into four tiers of construction materials at the **Crafting Station**:
+### 5.1 Crafting Materials
+Ores are processed into five types of materials at the **Fuel Refinery**. The refinery automatically processes ores into materials as soon as resources are available.
 
-| Tier | Name | Composition (Input) | Primary Use |
-|------|------|-------------------|-------------|
-| 1 | **Basic** | 50 Iron + 50 Copper | Level 0-3 Buildings, Scout Repairs |
-| 2 | **Industrial** | 100 Silver + 100 Titanium | Level 4-6 Buildings, Cargo Hauler Upgrades |
-| 3 | **Advanced** | 200 Gold + 200 Platinum | Level 7-9 Buildings, Ship Tech |
-| 4 | **Quantum** | 500 Diamond | Level 10-12 Buildings, End-game Tech |
+| Material | Tier | Primary Use |
+|----------|------|-------------|
+| **Basic** | 1 | Level 1 Upgrades, Basic Buildings, Cables, Lights |
+| **Industrial** | 2 | Level 2 Upgrades, Industrial Buildings, Cargo Hauler |
+| **Advanced** | 3 | Level 3 Upgrades, Advanced Tech |
+| **Quantum** | 4 | Level 4 Upgrades, End-game Tech |
+| **Fuel** | N/A | Ship Propulsion, Power Generation |
 
 ### 5.2 Building Anywhere
 Players can build bases anywhere in the cave system if they carry the required construction materials. 
@@ -95,22 +100,29 @@ Players can build bases anywhere in the cave system if they carry the required c
 3. **Resource Network**: All buildings within the same Landing Pad's radius automatically share resources. A **Fuel Depot** in range makes fuel available at the Landing Pad. 
 4. **Power Requirement**: Every building (except the Solar Array/Fuel Generator) requires power to function. A Landing Pad with no power connected will not provide repair/refuel/charge services to landed ships. 
 
-### 5.3 Building Catalog & Costs
-New buildings start at Level 0. Upgrading increases their efficiency and power draw.
+### 5.3 Building Catalog
+Buildings have 4 upgrade levels (Level 1 to Level 4).
 
-| Building | Build Cost (Lvl 0) | Upgrade Per Level (1-12) | Power Req (Base) | Power Scaling |
-|----------|-------------------|-------------------------|------------------|---------------|
-| **Landing Pad** | 2 Basic | 1 Mat of current Tier | 5 kW | +2 kW/lvl |
-| **Habitat** | 1 Basic | 1 Mat of current Tier | 2 kW | +1 kW/lvl |
-| **Ore Storage** | 1 Basic | 1 Mat of current Tier | 1 kW | +0.5 kW/lvl |
-| **Fuel Depot** | 1 Basic | 1 Mat of current Tier | 1 kW | +0.5 kW/lvl |
-| **Parts Warehouse**| 1 Basic | 1 Mat of current Tier | 1 kW | +0.5 kW/lvl |
-| **Fuel Refinery** | 2 Industrial| 2 Mat of current Tier | 15 kW | +5 kW/lvl |
-| **Solar Array** | 1 Industrial| 1 Mat of current Tier | generates 10kW | +5 kW/lvl |
-| **Fuel Generator**| 2 Industrial| 1 Mat of current Tier | generates 50kW | +25 kW/lvl |
-| **Comm Antenna** | 1 Basic | 1 Mat of current Tier | 5 kW | +2 kW/lvl |
-| **Ship Factory** | 5 Industrial| 3 Mat of current Tier | 20 kW | +10 kW/lvl |
-| **Crafting Station**| 2 Basic | 2 Mat of current Tier | 10 kW | +5 kW/lvl |
+| Building | Build Cost (Lvl 1) | Upgrade Cost | Power Req (Base) | Size |
+|----------|-------------------|--------------|------------------|------|
+| **Landing Pad** | 20 Basic | 1 Mat of current Tier | 5 kW | Anchor |
+| **Habitat** | 20 Basic | 1 Mat of current Tier | 2 kW | 2x2 |
+| **Ore Storage** | 20 Basic | 1 Mat of current Tier | 1 kW | 2x2 |
+| **Fuel Depot** | 20 Basic | 1 Mat of current Tier | 1 kW | 2x2 |
+| **Parts Warehouse**| 20 Basic | 1 Mat of current Tier | 1 kW | 2x2 |
+| **Fuel Refinery** | 20 Industrial| 2 Mat of current Tier | 15 kW | 2x2 |
+| **Solar Array** | 20 Industrial| 1 Mat of current Tier | generates 10kW | 2x2 |
+| **Fuel Generator**| 20 Industrial| 1 Mat of current Tier | generates 50kW | 2x2 |
+| **Comm Antenna** | 20 Basic | 1 Mat of current Tier | 5 kW | 2x2 |
+| **Ship Factory** | 50 Industrial| 3 Mat of current Tier | 20 kW | 2x2 |
+| **Crafting Station**| 20 Basic | 2 Mat of current Tier | 10 kW | 2x2 |
+| **Placeable Light** | 20 Basic | N/A | 1 kW | 1x1 |
+
+**Building Notes:**
+- **The Anchor**: A **Landing Pad** must be placed first to establish a base.
+- **Build Zone**: The Landing Pad creates a ~80m radius buildable zone.
+- **Inventory Size**: Most buildings take up **2x2 slots** in a cargo grid.
+- **Base Sharing**: Buildings within a zone share resources and power if connected.
 
 ---
 
@@ -118,16 +130,19 @@ New buildings start at Level 0. Upgrading increases their efficiency and power d
 
 Cables are physical ropes that connect different bases or remote buildings, enabling resource and data sharing across long distances.
 
-### 6.1 Cable Types
-1. **Power Cable (Red)**: Shares electricity between connected Landing Pads/Buildings.
-2. **Fuel Cable (Green)**: Shares fuel between connected Landing Pads/Depots.
-3. **Data Cable (Blue)**: Shares radar and antenna information between connected Landing Pads.
+### 6.1 Craftable Items
+Items can be crafted at the Landing Pad / Crafting Station if materials are available.
+
+| Item | Cost | Use |
+|------|------|-----|
+| **Red Cable** | 20 Basic | Power sharing |
+| **Green Cable** | 20 Basic | Fuel sharing |
+| **Blue Cable** | 20 Basic | Data sharing |
+| **Light** | 20 Basic | Environmental lighting (needs power) |
 
 ### 6.2 Placement & Constraints
-- **Connection Points**: Cables connect primarily between **Landing Pads**, which act as the central distribution switch for each local base. 
-- **Wall Attachment**: Cables can be "stapled" to cave walls to guide them around corners.
+- **Connection Points**: Cables connect central distribution points.
 - **Length Limit**: A single cable section has a maximum length of **120 meters**.
-- **Installation**: Players must craft the specific cable type (1 Material per 100m) and have them in their inventory or quickbar to start placing.
 
 ---
 
@@ -166,36 +181,55 @@ Connecting two bases with a **Data Cable (Blue)** merges their radar networks.
 ## 9. Ship Classes & Upgrades
 
 ### 9.1 Ship Classes
+Ships have 4 upgrade levels corresponding to the crafting material tiers.
+
 | Feature | **Scout** (Standard) | **Cargo Hauler** | **Astronaut** (EVA) |
 |---------|-----------------------|------------------|---------------------|
-| **Cost** | Free (Starting) | 10 Industrial Mats | N/A |
+| **Cost** | Free (Starting) | 50 Industrial Mats | N/A |
 | **Fuel** | 500 units | 1000 units | N/A |
-| **Cargo Capacity** | 500 units | 1500 units | 50 units |
-| **Special** | High Agility | Low Agility, High Mass | Oxygen-Limited (~67s) |
+| **Inventory** | 3 slots | 6 slots (2x3 grid) | 1 slot |
+| **Special** | High Agility | Low Agility, Heavy | Oxygen-Limited |
 
 ### 9.2 Ship Upgrades
-Each ship can be upgraded at the **Ship Factory**. Upgrades have exactly **3 levels**.
+Each ship can be upgraded at the **Ship Factory** through 4 levels.
 
-| Upgrade | Level 1 Cost | Level 2 Cost | Level 3 Cost | Benefit per Level |
-|---------|--------------|--------------|--------------|-------------------|
-| **Power Gen** | 1 Basic | 1 Industrial | 1 Advanced | +25% Regen speed |
-| **Thrust Force** | 2 Basic | 2 Industrial | 2 Advanced | +20% Thrust power |
-| **Max Fuel** | 1 Basic | 1 Industrial | 1 Advanced | +33% Fuel tank size |
-| **Laser Efficiency**| 1 Basic | 1 Industrial | 1 Advanced | -20% Mining Power draw |
-| **Spotlight** | 1 Basic | 1 Industrial | 1 Advanced | +50m Light range |
+| Upgrade Level | Material Required | Cost |
+|---------------|-------------------|------|
+| **Level 1** | Basic | 5 Materials |
+| **Level 2** | Industrial | 5 Materials |
+| **Level 3** | Advanced | 5 Materials |
+| **Level 4** | Quantum | 5 Materials |
+
+**Upgradable Systems:**
+- **Power Gen**: +25% Regen speed
+- **Thrust Force**: +20% Thrust power
+- **Max Fuel**: +33% Fuel tank size
+- **Laser Efficiency**: -20% Mining Power draw
+- **Spotlight**: +50m Light range
 
 ---
 
 ## 10. Resource Economy
 
 ### 10.1 Ore Types & Distribution
-| Resource | Primary Biome | Processing | Use |
-|----------|---------------|------------|-----|
-| **Iron/Copper** | Shallow | Basic Tier | Base Repairs, Tier 1 Buildings |
-| **Bitite** | All Caves | Fuel Refinement| Ship & Base Fuel |
-| **Silver/Titanium**| Deep Tunnels | Indust. Tier| Tier 2 Buildings, Advanced Shells |
-| **Gold/Platinum** | Abyssal | Adv. Tier | Tier 3 Buildings, Electronics |
-| **Diamond/He-3**| The Core | Quantum Tier| End-game Upgrades, Fusion Power |
+All higher tier ores are refined into their primary material plus a fraction of lower tier materials.
+
+| Resource | Biome | Yield Type | Primary Material | Bonus Output |
+|----------|-------|------------|------------------|--------------|
+| **Iron** | Shallow | High | Basic (100%) | None |
+| **Copper** | Shallow | Low | Basic (100%) | None |
+| **Silver** | Deep | High | Industrial (90%) | Basic (10%) |
+| **Titanium** | Deep | Low | Industrial (90%) | Basic (10%) |
+| **Gold** | Abyss | High | Advanced (80%) | Industrial (10%), Basic (10%) |
+| **Platinum** | Abyss | Low | Advanced (80%) | Industrial (10%), Basic (10%) |
+| **Diamond** | Core | High | Quantum (70%) | Advanced/Ind/Basic (10% each) |
+| **Helium-3** | Core | Low | Quantum (70%) | Advanced/Ind/Basic (10% each) |
+| **Bitite** | All | Med | Fuel | N/A |
+
+**Refining Yields:**
+- Yield per ore increases with **Fuel Refinery** level.
+- High yield ores (Iron, Silver, Gold, Diamond) provide more materials per unit than Low yield ores.
+- Bitite is found at all depths to ensure fuel availability.
 
 ### 10.2 Cargo Physics
 - **Mass Scaling:** Each unit of cargo adds `0.002` to ship mass.

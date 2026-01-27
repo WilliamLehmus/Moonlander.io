@@ -2,7 +2,7 @@
     "difficulty": {
         "fuelConsumptionMultiplier": 1.0,
         "miningSpeedMultiplier": 1.0,
-        "powerGenerationMultiplier": 1.2,
+        "powerGenerationMultiplier": 2.0,
         "powerConsumptionMultiplier": 1.0,
         "lightLossDepth": 10,
         "cableMaxLength": 150
@@ -22,5 +22,110 @@
         "attachRange": 80,
         "strength": 0.8,
         "snapLength": 180
+    },
+    "ores": {
+        "iron": {
+            "yield": 5.0,
+            "highYield": true,
+            "material": "basic"
+        },
+        "copper": {
+            "yield": 2.0,
+            "highYield": false,
+            "material": "basic"
+        },
+        "silver": {
+            "yield": 3.0,
+            "highYield": true,
+            "material": "industrial",
+            "bonus": {
+                "basic": 0.1
+            }
+        },
+        "titanium": {
+            "yield": 1.0,
+            "highYield": false,
+            "material": "industrial",
+            "bonus": {
+                "basic": 0.1
+            }
+        },
+        "gold": {
+            "yield": 2.0,
+            "highYield": true,
+            "material": "advanced",
+            "bonus": {
+                "industrial": 0.1,
+                "basic": 0.1
+            }
+        },
+        "platinum": {
+            "yield": 0.8,
+            "highYield": false,
+            "material": "advanced",
+            "bonus": {
+                "industrial": 0.1,
+                "basic": 0.1
+            }
+        },
+        "diamond": {
+            "yield": 1.5,
+            "highYield": true,
+            "material": "quantum",
+            "bonus": {
+                "advanced": 0.1,
+                "industrial": 0.1,
+                "basic": 0.1
+            }
+        },
+        "helium3": {
+            "yield": 0.6,
+            "highYield": false,
+            "material": "quantum",
+            "bonus": {
+                "advanced": 0.1,
+                "industrial": 0.1,
+                "basic": 0.1
+            }
+        },
+        "bitite": {
+            "yield": 8.0,
+            "material": "fuel"
+        }
+    },
+    "crafting": {
+        "items": {
+            "cable_red": {
+                "basic": 20
+            },
+            "cable_green": {
+                "basic": 20
+            },
+            "cable_blue": {
+                "basic": 20
+            },
+            "light": {
+                "basic": 20
+            }
+        },
+        "ships": {
+            "cargo": {
+                "industrial": 50
+            }
+        },
+        "upgrades": {
+            "level1": {
+                "basic": 5
+            },
+            "level2": {
+                "industrial": 5
+            },
+            "level3": {
+                "advanced": 5
+            },
+            "level4": {
+                "quantum": 5
+            }
+        }
     }
 }

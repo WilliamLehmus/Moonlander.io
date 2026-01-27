@@ -14,7 +14,8 @@ export const TileTypes={
     TITANIUM_ORE: 14,    // 300-600m
     GOLD_ORE: 15,        // 400-800m
     PLATINUM_ORE: 16,    // 800-1400m
-    DIAMOND: 17          // 3500-5000m, extremely rare
+    DIAMOND: 17,         // 3500-5000m, extremely rare
+    HELIUM3: 18          // Deep pockets
 };
 
 // Simple Seeded Random Number Generator
@@ -70,6 +71,10 @@ export class VoxelMap {
         for (let y=0; y<height; y++) {
             this.tiles[y]=new Array(width).fill(TileTypes.EMPTY);
         }
+
+        // Initialize persistent mining progress (0 to 1)
+        this.miningProgress=new Float32Array(width*height);
+        this.damagedVoxels=new Set(); // Set of "x,y" strings
     }
 
     setPhysicsWorld(physicsWorld) {
@@ -546,8 +551,9 @@ export class VoxelMap {
             {type: TileTypes.SILVER_ORE, minDepth: 200, maxDepth: 500, rarity: 0.010, clusterSize: 5},
             {type: TileTypes.TITANIUM_ORE, minDepth: 400, maxDepth: 700, rarity: 0.006, clusterSize: 5},
             {type: TileTypes.GOLD_ORE, minDepth: 600, maxDepth: 850, rarity: 0.004, clusterSize: 4},
-            {type: TileTypes.PLATINUM_ORE, minDepth: 800, maxDepth: 950, rarity: 0.002, clusterSize: 3},
-            {type: TileTypes.DIAMOND, minDepth: 900, maxDepth: 1000, rarity: 0.001, clusterSize: 2}
+            {type: TileTypes.PLATINUM_ORE, minDepth: 600, maxDepth: 1000, rarity: 0.003, clusterSize: 4},
+            {type: TileTypes.DIAMOND, minDepth: 900, maxDepth: 1200, rarity: 0.001, clusterSize: 2},
+            {type: TileTypes.HELIUM3, minDepth: 800, maxDepth: 1200, rarity: 0.001, clusterSize: 2}
         ];
 
         for (const config of oreConfigs) {
@@ -761,6 +767,23 @@ export class VoxelMap {
     set(x, y, value) {
         if (x<0||x>=this.width||y<0||y>=this.height) return;
         this.tiles[y][x]=value;
+        // Reset mining progress when tile type changes
+        this.miningProgress[y*this.width+x]=0;
+    }
+
+    damageTile(x, y, amount) {
+        if (x<0||x>=this.width||y<0||y>=this.height) return 0;
+        const idx=y*this.width+x;
+        this.miningProgress[idx]+=amount;
+        if (this.miningProgress[idx]>0) {
+            this.damagedVoxels.add(`${x},${y}`);
+        }
+        return this.miningProgress[idx];
+    }
+
+    getMiningProgress(x, y) {
+        if (x<0||x>=this.width||y<0||y>=this.height) return 0;
+        return this.miningProgress[y*this.width+x];
     }
 
     worldToGrid(wx, wy) {
@@ -786,6 +809,8 @@ export class VoxelMap {
         if (tile===TileTypes.EMPTY||tile===TileTypes.BASE||tile===TileTypes.PAD) return false;
 
         this.tiles[gy][gx]=TileTypes.EMPTY;
+        this.miningProgress[gy*this.width+gx]=0; // Reset progress
+        this.damagedVoxels.delete(`${gx},${gy}`);
 
         // 1. Remove the old collision body (handles merged bodies internally)
         this.removeCollisionBody(gx, gy);

@@ -5,8 +5,8 @@ const SHIP_TYPES={
     scout: {
         name: 'Scout',
         width: 20, height: 28, mass: 1,
-        maxFuel: 500, fuelConsumption: 30,
-        cargoCapacity: 500,
+        maxFuel: 500, fuelConsumption: 15,
+        cargoCapacity: 3, // Now slots
         thrustForce: 80,
         maxPower: 100,
         basePowerRegen: 2.0
@@ -14,9 +14,9 @@ const SHIP_TYPES={
     cargo: {
         name: 'Cargo Hauler',
         width: 30, height: 30, mass: 2.5,
-        maxFuel: 1000, fuelConsumption: 45,
-        cargoCapacity: 1500,
-        thrustForce: 150, // Higher thrust for heavier ship
+        maxFuel: 1000, fuelConsumption: 25,
+        cargoCapacity: 6, // 2x3 grid
+        thrustForce: 150,
         maxPower: 150,
         basePowerRegen: 2.0
     },
@@ -24,8 +24,8 @@ const SHIP_TYPES={
         name: 'Astronaut',
         width: 6, height: 12, mass: 0.1,
         maxFuel: 0, fuelConsumption: 0,
-        cargoCapacity: 50,
-        thrustForce: 15, // Jump force
+        cargoCapacity: 1, // 1 slot
+        thrustForce: 15,
         maxPower: 20,
         maxOxygen: 100,
         oxygenConsumption: 1.5,
@@ -193,29 +193,42 @@ export class Player {
 
     // Get total cargo amount
     getCargoAmount() {
-        return this.cargo.reduce((sum, item) => sum+item.amount, 0);
+        return this.cargo.length; // Now counting entries/slots
     }
 
-    // Add cargo if space available
+    // Add cargo if space available (Stacking up to 50 per slot)
     addCargo(type, amount) {
-        const currentAmount=this.getCargoAmount();
-        const spaceAvailable=this.cargoCapacity-currentAmount;
-        const amountToAdd=Math.min(amount, spaceAvailable);
+        if (amount<=0) return 0;
+        const STACK_SIZE=50;
 
-        if (amountToAdd<=0) return 0;
+        let remainingToAdd=amount;
+        let totalAdded=0;
 
-        // Find existing cargo of this type or create new
-        const existing=this.cargo.find(c => c.type===type);
-        if (existing) {
-            existing.amount+=amountToAdd;
-        } else {
-            this.cargo.push({type, amount: amountToAdd});
+        // 1. First, fill up existing stacks of the same type
+        const existingStacks=this.cargo.filter(c => c.type===type&&c.amount<STACK_SIZE);
+        for (const stack of existingStacks) {
+            const spaceInStack=STACK_SIZE-stack.amount;
+            const toAdd=Math.min(remainingToAdd, spaceInStack);
+            stack.amount+=toAdd;
+            remainingToAdd-=toAdd;
+            totalAdded+=toAdd;
+            if (remainingToAdd<=0) break;
         }
 
-        // Update physics mass
-        this.updateMass();
+        // 2. If still have ore, try to open new slots
+        while (remainingToAdd>0&&this.cargo.length<this.cargoCapacity) {
+            const toAdd=Math.min(remainingToAdd, STACK_SIZE);
+            this.cargo.push({type, amount: toAdd});
+            remainingToAdd-=toAdd;
+            totalAdded+=toAdd;
+        }
 
-        return amountToAdd;
+        // Update physics mass if we added anything
+        if (totalAdded>0) {
+            this.updateMass();
+        }
+
+        return totalAdded;
     }
 
     // Update physics body mass based on cargo
@@ -737,35 +750,28 @@ export class Player {
         return previousShipState;
     }
 
-    // Apply upgrade multipliers to current stats
+    // Apply upgrade multipliers to current stats (4 levels)
     applyUpgrades() {
         const stats=SHIP_TYPES[this.shipType]||SHIP_TYPES.scout;
 
         // 1. Power Generation (Solar Panels)
-        // Level 1-3: +25% per level
+        // Level 1-4: +25% per level
         const powerMult=1+(this.upgrades.power*0.25);
         this.powerRegen=stats.basePowerRegen*powerMult*(this.config.difficulty?.powerGenerationMultiplier||1);
 
         // 2. Thrust Force
-        // Level 1-3: +20% per level
+        // Level 1-4: +20% per level
         const thrustMult=1+(this.upgrades.thrust*0.20);
         this.thrustForce=stats.thrustForce*thrustMult;
 
         // 3. Max Fuel
-        // Level 1-3: +33% per level
+        // Level 1-4: +33% per level
         const fuelMult=1+(this.upgrades.fuel*0.33);
-        const oldMax=this.maxFuel;
         this.maxFuel=stats.maxFuel*fuelMult;
-        // If max increased, we don't automatically fill it, but ratio is preserved? 
-        // No, standard game logic: capacity increases, current fuel stays same until refuel.
 
         // 4. Mining Efficiency (Laser)
-        // Level 1-3: -20% power draw per level
-        // Base drain is 7.5. Lvl 3 = -60% -> 3.0 drain.
+        // Level 1-4: -20% power draw per level
         const miningMult=Math.max(0.1, 1-(this.upgrades.laser*0.20));
         this.miningPowerDrain=7.5*miningMult*(this.config.difficulty?.powerConsumptionMultiplier||1);
-
-        // 5. Spotlight Range (Not physical, handled in serialization/client)
-        // +50m per level
     }
 }

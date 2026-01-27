@@ -153,7 +153,13 @@ function getOreColor(type) {
     'TITANIUM_ORE': '#b0c4de',
     'GOLD_ORE': '#ffd700',
     'PLATINUM_ORE': '#e5e4e2',
-    'DIAMOND': '#b9f2ff'
+    'DIAMOND': '#b9f2ff',
+    'HELIUM3': '#7fffd4',
+    'BASIC': '#8b8b6b',
+    'INDUSTRIAL': '#7090a0',
+    'ADVANCED': '#daa520',
+    'QUANTUM': '#ff69b4',
+    'FUEL': '#33ff33'
   };
   return colors[type]||'#888';
 }
@@ -198,8 +204,32 @@ function renderQuickbar(player) {
       } else {
         const div=document.createElement('div');
         div.className='item-icon';
-        div.style.background=getOreColor(item.type);
-        div.style.borderRadius='4px';
+
+        // Resolve sprite from sheets
+        const oreMap={
+          'IRON_ORE': 0, 'COPPER_ORE': 1, 'BITITE': 2, 'SILVER_ORE': 3,
+          'TITANIUM_ORE': 4, 'GOLD_ORE': 5, 'PLATINUM_ORE': 6, 'DIAMOND': 7, 'HELIUM3': 8
+        };
+        const matMap={
+          'BASIC': 0, 'INDUSTRIAL': 1, 'ADVANCED': 2, 'QUANTUM': 3, 'FUEL': 4
+        };
+
+        if (oreMap[item.type]!==undefined) {
+          div.style.backgroundImage="url('/sprites/ores_spritesheet.png')";
+          div.style.backgroundSize="288px 32px";
+          div.style.backgroundPosition=`-${oreMap[item.type]*32}px 0px`;
+          div.style.backgroundRepeat="no-repeat";
+          div.style.imageRendering="pixelated";
+        } else if (matMap[item.type]!==undefined) {
+          div.style.backgroundImage="url('/sprites/materials_spritesheet.png')";
+          div.style.backgroundSize="160px 32px";
+          div.style.backgroundPosition=`-${matMap[item.type]*32}px 0px`;
+          div.style.backgroundRepeat="no-repeat";
+          div.style.imageRendering="pixelated";
+        } else {
+          div.style.backgroundColor=getOreColor(item.type);
+          div.style.borderRadius='4px';
+        }
         slot.appendChild(div);
       }
 
@@ -248,12 +278,6 @@ let wasOnPad=false; // Track landing pad state for auto-open station menu
 
 // Initialize audio on first user interaction
 document.addEventListener('click', () => {
-  const splash=document.getElementById('splashScreen');
-  if (splash) {
-    splash.style.opacity='0';
-    setTimeout(() => splash.classList.add('hidden'), 1000);
-  }
-
   if (!soundManager.soundsLoaded) {
     soundManager.loadSounds().then(() => {
       if (!currentRoom) {
@@ -788,7 +812,7 @@ if (closeDebugBtn) {
 
 function getShipInventorySlots(shipType) {
   switch (shipType) {
-    case 'eva': return 2;
+    case 'eva': return 1;
     case 'cargo': return 6;
     case 'scout':
     default: return 3;
@@ -931,11 +955,34 @@ function createInventorySlot(item, index, location) {
       img.style.objectFit='contain';
       slot.appendChild(img);
     } else {
-      // Create colored div for ore type
+      // Create icon div for ore or material
       const icon=document.createElement('div');
       icon.className='item-icon';
-      icon.style.background=getOreColor(item.type);
-      icon.style.borderRadius='4px';
+
+      const oreMap={
+        'IRON_ORE': 0, 'COPPER_ORE': 1, 'BITITE': 2, 'SILVER_ORE': 3,
+        'TITANIUM_ORE': 4, 'GOLD_ORE': 5, 'PLATINUM_ORE': 6, 'DIAMOND': 7, 'HELIUM3': 8
+      };
+      const matMap={
+        'BASIC': 0, 'INDUSTRIAL': 1, 'ADVANCED': 2, 'QUANTUM': 3, 'FUEL': 4
+      };
+
+      if (oreMap[item.type]!==undefined) {
+        icon.style.backgroundImage="url('/sprites/ores_spritesheet.png')";
+        icon.style.backgroundSize="288px 32px";
+        icon.style.backgroundPosition=`-${oreMap[item.type]*32}px 0px`;
+        icon.style.backgroundRepeat="no-repeat";
+        icon.style.imageRendering='pixelated';
+      } else if (matMap[item.type]!==undefined) {
+        icon.style.backgroundImage="url('/sprites/materials_spritesheet.png')";
+        icon.style.backgroundSize="160px 32px";
+        icon.style.backgroundPosition=`-${matMap[item.type]*32}px 0px`;
+        icon.style.backgroundRepeat="no-repeat";
+        icon.style.imageRendering='pixelated';
+      } else {
+        icon.style.backgroundColor=getOreColor(item.type);
+        icon.style.borderRadius='4px';
+      }
       slot.appendChild(icon);
     }
 
@@ -984,6 +1031,9 @@ function createInventorySlot(item, index, location) {
 function formatOreName(type) {
   if (typeof type==='string'&&(type.startsWith('cable_spool_')||type.startsWith('cable_'))) {
     return type.replace('cable_spool_', '').replace('cable_', '').toUpperCase()+' CABLE';
+  }
+  if (['BASIC', 'INDUSTRIAL', 'ADVANCED', 'QUANTUM', 'FUEL'].includes(type.toUpperCase())) {
+    return type.charAt(0).toUpperCase()+type.slice(1).toLowerCase();
   }
   return String(type).replace('_ORE', '').replace('_', ' ').toLowerCase();
 }
@@ -1151,8 +1201,8 @@ stationTabBtns.forEach(btn => {
 });
 
 const SHIP_TYPES=[
-  {id: 'scout', name: 'Scout', cargo: 500, fuel: 500, desc: 'Fast, agile, standard lander.'},
-  {id: 'cargo', name: 'Cargo Hauler', cargo: 1500, fuel: 1000, desc: 'Heavy, high capacity. Requires Ship Factory Lv2.', reqFactory: 2}
+  {id: 'scout', name: 'Scout', cargo: 3, fuel: 500, desc: 'Fast, agile lander. 3 cargo slots.'},
+  {id: 'cargo', name: 'Cargo Hauler', cargo: 6, fuel: 1000, desc: 'Heavy lander. 6 cargo slots (2x3). Cost: 50 Industrial.'}
 ];
 
 function renderShipList() {
@@ -1233,10 +1283,10 @@ function renderBuildingList() {
     let costHtml='';
     if (b.nextCost) {
       const costs=[];
-      if (b.nextCost.basic) costs.push(`<span class="cost-basic">${b.nextCost.basic} Bas</span>`);
-      if (b.nextCost.industrial) costs.push(`<span class="cost-industrial">${b.nextCost.industrial} Ind</span>`);
-      if (b.nextCost.advanced) costs.push(`<span class="cost-advanced">${b.nextCost.advanced} Adv</span>`);
-      if (b.nextCost.quantum) costs.push(`<span class="cost-quantum">${b.nextCost.quantum} Qnt</span>`);
+      if (b.nextCost.basic) costs.push(`<span class="cost-basic">${b.nextCost.basic} Basic</span>`);
+      if (b.nextCost.industrial) costs.push(`<span class="cost-industrial">${b.nextCost.industrial} Indust.</span>`);
+      if (b.nextCost.advanced) costs.push(`<span class="cost-advanced">${b.nextCost.advanced} Adv.</span>`);
+      if (b.nextCost.quantum) costs.push(`<span class="cost-quantum">${b.nextCost.quantum} Quant.</span>`);
       costHtml=`<div class="building-cost" style="margin-top:5px; font-size:0.8rem">Cost: ${costs.join(', ')}</div>`;
     } else if (isMax) {
       costHtml=`<div class="building-cost" style="margin-top:5px; font-size:0.8rem">Max Level Reached</div>`;
@@ -1280,20 +1330,25 @@ function renderCraftingList() {
       name: 'Power Cable (Red)',
       type: 'cable_red',
       icon: '/sprites/cable_red.png',
-      cost: {copper: 10}
+      cost: {basic: 20}
     },
     {
       name: 'Fuel Cable (Green)',
-      type: 'cable_red', // Wait, green cable
       type: 'cable_green',
       icon: '/sprites/cable_green.png',
-      cost: {iron: 10}
+      cost: {basic: 20}
     },
     {
       name: 'Data Cable (Blue)',
       type: 'cable_blue',
       icon: '/sprites/cable_blue.png',
-      cost: {gold: 5}
+      cost: {basic: 20}
+    },
+    {
+      name: 'Placeable Light',
+      type: 'light',
+      icon: '/sprites/placeable_light.png',
+      cost: {basic: 20}
     }
   ];
 
@@ -1505,10 +1560,6 @@ function updateCablePreview() {
 function gameLoop() {
   requestAnimationFrame(gameLoop);
 
-  const now=performance.now();
-  const dt=(now-renderer.lastTime)/1000;
-  renderer.lastTime=now;
-
   if (currentRoom&&renderer) {
     renderer.draw(gameState, myId);
 
@@ -1633,8 +1684,17 @@ function gameLoop() {
 
       wasDead=myPlayer? myPlayer.dead:false;
     }
-
-    // Update particles (was missing)
-    renderer.updateParticles(Math.min(dt, 0.05));
   }
 }
+
+// Global escape key listener to close menus
+window.addEventListener('keydown', (e) => {
+  if (e.key==='Escape') {
+    // Hide all menus
+    const menus=['inventoryMenu', 'stationMenu'];
+    menus.forEach(id => {
+      const el=document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    });
+  }
+});
