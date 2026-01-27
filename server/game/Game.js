@@ -999,7 +999,7 @@ export class Game {
         // Check if ship type is unlocked (e.g. requires Ship Factory level)
         // Hardcoded for now: Cargo ship requires level 2 factory
         if (type==='cargo') {
-            const factoryLevel=this.buildings.shipFactory.level;
+            const factoryLevel=this.buildings.ship_factory.level;
             if (factoryLevel<2) {
                 return {success: false, reason: 'locked', requiredLevel: 2};
             }
