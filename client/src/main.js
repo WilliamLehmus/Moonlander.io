@@ -777,8 +777,17 @@ function openStationMenu() {
   stationMenuEl.classList.remove('hidden');
   stationMenuOpen=true;
   soundManager.playSound('menu_pop');
+
+  // Default to Overview if valid, or just update everything
+  // Check which tab is active
+  const activeTab=document.querySelector('.station-tabs .tab-btn.active');
+  if (activeTab&&activeTab.dataset.tab==='overview') {
+    updateStationOverview();
+  }
+
   renderShipList();
   renderBuildingList();
+  renderCraftingList();
 }
 
 function closeStationMenu() {
@@ -788,6 +797,20 @@ function closeStationMenu() {
 }
 
 closeStationBtn.addEventListener('click', closeStationMenu);
+
+// Update overview when game state changes
+socket.on('gameState', (state) => {
+  gameState=state;
+  if (stationMenuOpen) {
+    const activeTab=document.querySelector('.station-tabs .tab-btn.active');
+    if (activeTab&&activeTab.dataset.tab==='overview') {
+      updateStationOverview();
+    }
+    // Also update lists if needed, but they are usually static or event-driven
+    // renderBuildingList(); // Buildings change level
+    // renderCraftingList(); // Materials change
+  }
+});
 
 // Debug Menu Functions (Development Only)
 function openDebugMenu() {
@@ -1171,8 +1194,96 @@ document.getElementById('debugKillPlayer')?.addEventListener('click', () => {
 
 // Tab switching
 // Station Menu Tab Switching
+// Tab switching
+// Station Menu Tab Switching
 const stationTabBtns=document.querySelectorAll('.station-tabs .tab-btn');
 const stationTabContents=document.querySelectorAll('.station-tab');
+
+function updateStationOverview() {
+  if (!gameState) return;
+  const baseRes=gameState.baseResources||{};
+
+  // Render Status Bars
+  const statusContainer=document.getElementById('stationStatusBars');
+  if (statusContainer) {
+    statusContainer.innerHTML=`
+      <div class="status-bar-item">
+        <div class="status-bar-label"><span>STATION FUEL</span><span class="status-bar-val">${Math.floor(baseRes.fuel||0)} / ${baseRes.maxFuel||10000}</span></div>
+        <div class="status-bar-track"><div class="status-bar-fill" style="width: ${Math.min(100, (baseRes.fuel||0)/(baseRes.maxFuel||10000)*100)}%; background: #ffaa00;"></div></div>
+      </div>
+      <div class="status-bar-item">
+        <div class="status-bar-label"><span>SPARE PARTS</span><span class="status-bar-val">${Math.floor(baseRes.spareParts||0)} / ${baseRes.maxSpareParts||1000}</span></div>
+        <div class="status-bar-track"><div class="status-bar-fill" style="width: ${Math.min(100, (baseRes.spareParts||0)/(baseRes.maxSpareParts||1000)*100)}%; background: #ccc;"></div></div>
+      </div>
+      <div class="status-bar-item">
+        <div class="status-bar-label"><span>GRID POWER</span><span class="status-bar-val">${Math.floor(baseRes.power||0)} / ${baseRes.maxPower||100}</span></div>
+        <div class="status-bar-track"><div class="status-bar-fill" style="width: ${Math.min(100, (baseRes.power||0)/(baseRes.maxPower||100)*100)}%; background: #0af;"></div></div>
+      </div>
+    `;
+  }
+
+  // Render Ores
+  const oreContainer=document.getElementById('stationOreGrid');
+  if (oreContainer&&renderer) {
+    const ores=[
+      {name: 'Iron', key: 'iron', type: 'IRON_ORE'},
+      {name: 'Copper', key: 'copper', type: 'COPPER_ORE'},
+      {name: 'Bitite', key: 'bitite', type: 'BITITE'},
+      {name: 'Silver', key: 'silver', type: 'SILVER_ORE'},
+      {name: 'Titanium', key: 'titanium', type: 'TITANIUM_ORE'},
+      {name: 'Gold', key: 'gold', type: 'GOLD_ORE'},
+      {name: 'Platinum', key: 'platinum', type: 'PLATINUM_ORE'},
+      {name: 'Diamond', key: 'diamond', type: 'DIAMOND'},
+      {name: 'Helium3', key: 'helium3', type: 'HELIUM3'}
+    ];
+
+    let oreHtml='';
+    ores.forEach(ore => {
+      const amount=baseRes.ores? (baseRes.ores[ore.key]||0):0;
+      const color=renderer.getOreColor(ore.type);
+      oreHtml+=`
+          <div class="ore-row">
+            <div class="ore-color-box" style="background: ${color}; box-shadow: 0 0 5px ${color};"></div>
+            <div class="ore-name">${ore.name}</div>
+            <div class="ore-amount">${amount}</div>
+          </div>
+        `;
+    });
+    oreContainer.innerHTML=oreHtml;
+  }
+
+  // Render Processed Assets (Materials)
+  const assetContainer=document.getElementById('stationAssetsGrid');
+  if (assetContainer) {
+    const assets=[
+      {name: 'Basic', key: 'basic', color: '#aaa'},
+      {name: 'Industrial', key: 'industrial', color: '#fa0'},
+      {name: 'Advanced', key: 'advanced', color: '#f44'},
+      {name: 'Quantum', key: 'quantum', color: '#a0f'},
+      {name: 'Liquid Fuel', key: 'fuel', color: '#ffaa00', isValue: true} // Fuel is already shown but maybe liquid units?
+    ];
+    let assetHtml='';
+
+    // Building materials
+    if (baseRes.materials) {
+      Object.entries(baseRes.materials).forEach(([key, amt]) => {
+        // Map key to friendly name if desired, or just list them
+        let displayKey=key.charAt(0).toUpperCase()+key.slice(1);
+        // Simple list
+        assetHtml+=`
+                <div class="ore-row">
+                   <div class="ore-color-box" style="background: #33a;"></div>
+                   <div class="ore-name">${displayKey} Alloy</div>
+                   <div class="ore-amount">${amt}</div>
+                </div>
+             `;
+      });
+    }
+
+    // Add processed fuel count separately if needed or just stats
+    assetContainer.innerHTML=assetHtml||'<div style="color:#666; font-size:0.8rem; padding:10px;">No processed alloys in storage.</div>';
+  }
+}
 
 stationTabBtns.forEach(btn => {
   btn.addEventListener('click', () => {
@@ -1196,6 +1307,8 @@ stationTabBtns.forEach(btn => {
       renderBuildingList();
     } else if (tabName==='crafting') {
       renderCraftingList();
+    } else if (tabName==='overview') {
+      updateStationOverview();
     }
   });
 });

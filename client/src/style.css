@@ -323,7 +323,8 @@ canvas {
 
 /* Station Menu */
 .station-content {
-  max-width: 600px;
+  max-width: 800px;
+  width: 90%;
   gap: 1rem;
 }
 
@@ -731,4 +732,82 @@ canvas {
   border-color: #fff;
   background: rgba(255, 255, 255, 0.1);
   transform: scale(1.1);
+}
+/* Station Overview */
+.overview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.5rem;
+  height: 100%;
+}
+
+.overview-column h3 {
+  color: #888;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  border-bottom: 1px solid #333;
+  padding-bottom: 0.5rem;
+}
+
+.status-bar-item {
+  margin-bottom: 1rem;
+}
+
+.status-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: #aaa;
+  margin-bottom: 0.3rem;
+  font-family: monospace;
+}
+
+.status-bar-val {
+  color: #fff;
+}
+
+.status-bar-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.status-bar-fill {
+  height: 100%;
+  background: #0af;
+  box-shadow: 0 0 5px currentColor;
+}
+
+.ore-grid, .assets-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ore-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ore-color-box {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+}
+
+.ore-name {
+  color: #ccc;
+  font-size: 0.9rem;
+  flex: 1;
+}
+
+.ore-amount {
+  color: #fff;
+  font-family: monospace;
+  font-weight: bold;
 }

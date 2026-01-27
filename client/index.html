@@ -162,12 +162,36 @@
       <h2>Moon Base Operations</h2>
 
       <div class="station-tabs">
-        <button class="tab-btn active" data-tab="hangar">Hangar</button>
+        <button class="tab-btn active" data-tab="overview">Overview</button>
+        <button class="tab-btn" data-tab="hangar">Hangar</button>
         <button class="tab-btn" data-tab="construction">Construction</button>
         <button class="tab-btn" data-tab="crafting">Crafting</button>
       </div>
 
-      <div id="tab-hangar" class="station-tab active">
+      <div id="tab-overview" class="station-tab active">
+        <div class="overview-grid">
+          <div class="overview-column">
+            <h3>Status & Logistics</h3>
+            <div class="status-bars" id="stationStatusBars">
+              <!-- Injected via JS -->
+            </div>
+          </div>
+          <div class="overview-column">
+            <h3>Ore Holding</h3>
+            <div class="ore-grid" id="stationOreGrid">
+              <!-- Injected via JS -->
+            </div>
+          </div>
+          <div class="overview-column">
+            <h3>Processed Assets</h3>
+            <div class="assets-grid" id="stationAssetsGrid">
+              <!-- Injected via JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-hangar" class="station-tab hidden">
         <h3>Available Ships</h3>
         <div class="ship-list" id="shipList">
           <!-- Ship items injected here via JS -->

@@ -2663,9 +2663,9 @@ export class Renderer {
         const totalCount=state?.players?.length||0;
         this.ctx.fillText(`PLAYERS: ${aliveCount}/${totalCount} alive`, this.canvas.width-20, 70+topOffset);
         // Draw Station UI if landed
-        if (myPlayer.onPad) {
-            this.drawStationUI(myPlayer, state);
-        }
+        // if (myPlayer.onPad) {
+        //     this.drawStationUI(myPlayer, state);
+        // }
 
         // minimap
         this.drawMinimap(myPlayer, state);
