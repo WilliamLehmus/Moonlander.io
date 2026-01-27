@@ -637,6 +637,26 @@ export class Game {
         }
     }
 
+    handleCableAction(playerId, data) {
+        const player=this.players.get(playerId);
+        if (!player||player.dead) return;
+
+        switch (data.action) {
+            case 'start':
+                this.cableSystem.startLine(playerId, data.x, data.y, data.type, data.anchorId);
+                break;
+            case 'attach':
+                this.cableSystem.attachLine(playerId, data.x, data.y, data.targetId);
+                break;
+            case 'drop':
+                this.cableSystem.dropLine(playerId, data.x, data.y);
+                break;
+            case 'pickup':
+                this.cableSystem.pickupSpool(playerId, data.spoolId);
+                break;
+        }
+    }
+
     // Try to board nearby vehicle when in EVA mode
     tryBoardVehicle(player) {
         const pos=player.getPosition();

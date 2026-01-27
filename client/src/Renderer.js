@@ -3205,13 +3205,26 @@ export class Renderer {
         this.ctx.fillText('Press R to respawn (if resources available)', centerX, boxY+boxHeight-15);
     }
     // Draw all cables
-    drawCables(cables, cameraX, cameraY) {
+    drawCables(cables, players, cameraX, cameraY) {
         if (!cables||cables.length===0) return;
 
         this.ctx.save();
         this.ctx.lineWidth=2;
 
         for (const cable of cables) {
+            let x2=cable.x2;
+            let y2=cable.y2;
+            let isPreview=cable.isPreview;
+
+            // If it's a preview cable (active drag), snap end to player's current visual position
+            if (isPreview&&players) {
+                const player=players.find(p => p.id===cable.playerId);
+                if (player) {
+                    x2=player.x;
+                    y2=player.y;
+                }
+            }
+
             // Determine color
             let color='#ffffff';
             if (cable.type==='power'||cable.type==='cable_red') color='#ff3333'; // Red (Power)
@@ -3222,15 +3235,15 @@ export class Renderer {
             this.ctx.beginPath();
             this.ctx.moveTo(cable.x1-cameraX, cable.y1-cameraY);
 
-            // Simple Line for now
-            this.ctx.lineTo(cable.x2-cameraX, cable.y2-cameraY);
+            // Simple Line
+            this.ctx.lineTo(x2-cameraX, y2-cameraY);
             this.ctx.stroke();
 
             // Draw endpoints (anchors) or Spool
             if (cable.isSpool) {
                 // Draw Spool Icon
-                const sx=cable.x2-cameraX;
-                const sy=cable.y2-cameraY;
+                const sx=x2-cameraX;
+                const sy=y2-cameraY;
                 this.ctx.fillStyle=color;
                 this.ctx.beginPath();
                 this.ctx.arc(sx, sy, 5, 0, Math.PI*2);
@@ -3244,9 +3257,14 @@ export class Renderer {
                 this.ctx.font='8px monospace';
                 this.ctx.fillText("SPOOL", sx-10, sy-8);
             } else {
+                // Draw start anchor
                 this.ctx.fillStyle='#555';
                 this.ctx.fillRect(cable.x1-cameraX-2, cable.y1-cameraY-2, 4, 4);
-                this.ctx.fillRect(cable.x2-cameraX-2, cable.y2-cameraY-2, 4, 4);
+
+                // Draw end anchor only if NOT a preview (active drag)
+                if (!isPreview) {
+                    this.ctx.fillRect(x2-cameraX-2, y2-cameraY-2, 4, 4);
+                }
             }
         }
 

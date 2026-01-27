@@ -1414,24 +1414,20 @@ window.handleCraftItem=function(itemType) {
 // ============================================
 // CABLE SYSTEM LOGIC
 // ============================================
-let cableStartPoint=null; // Local reference for preview
-// We need to sync this with server state ideally, but we'll manage strictly by user actions for now.
-// Actually, if we drop the line, we clear this.
+// Local reference not needed as we rely on server state (gameState.cables)
+// but can keep for prediction/smoothness if needed, but omitted for simplicity.
 
 function getNearestInteractable(x, y) {
-  const interactRadius=20;
+  const interactRadius=30;
 
-  // Check Spools (from gameState using cables list where isSpool=true?)
-  // Game state sends cables: [{..., isSpool: true, x2, y2}]
-  // x2,y2 is the spool position.
+  // Check Spools
   if (gameState.cables) {
     for (const c of gameState.cables) {
       if (c.isSpool) {
         const dx=x-c.x2;
         const dy=y-c.y2;
         if (dx*dx+dy*dy<interactRadius*interactRadius) {
-          return {type: 'spool', id: c.id, x: c.x2, y: c.y2}; // We need ID! serialization needs to send spool ID (c.id?)
-          // In CableSystem.serialize: id=c.id (which is Spool ID for spools)
+          return {type: 'spool', id: c.id, x: c.x2, y: c.y2, cableType: c.type};
         }
       }
     }
@@ -1442,19 +1438,25 @@ function getNearestInteractable(x, y) {
     for (const b of gameState.activeBuildings) {
       const dx=x-b.x;
       const dy=y-b.y;
-      // Simple radius check - buildings are large though.
-      if (dx*dx+dy*dy<50*50) { // 50px radius for building anchor
+      if (dx*dx+dy*dy<50*50) {
         return {type: 'building', id: b.id, x: b.x, y: b.y};
       }
     }
   }
 
-  // Check Base/Pad (if not in activeBuildings)
-  if (gameState.basePosition) {
-    const dx=x-gameState.basePosition.x;
-    const dy=y-gameState.basePosition.y;
+  // Check Helper: Base/Pad
+  if (gameState.activeBuildings&&gameState.activeBuildings.length===0&&gameState.landingPadPosition) {
+    // If no buildings found yet, allow base attach
+    // Actually activeBuildings should contain LANDING_PAD if it's considered a building. 
+    // Server Game.js: getActiveBuildings iterates 'this.buildings'. 'landing_pad' is one.
+    // So handled above.
+  }
+  // Fallback if landing pad isn't in activeBuildings for some reason
+  if (gameState.landingPadPosition) {
+    const dx=x-gameState.landingPadPosition.x;
+    const dy=y-gameState.landingPadPosition.y;
     if (dx*dx+dy*dy<60*60) {
-      return {type: 'building', id: 'landing_pad', x: gameState.basePosition.x, y: gameState.basePosition.y};
+      return {type: 'building', id: 'landing_pad', x: gameState.landingPadPosition.x, y: gameState.landingPadPosition.y};
     }
   }
 
@@ -1469,92 +1471,135 @@ window.addEventListener('cableClick', (e) => {
   const cableType=input.state.cableType||'power';
   const target=getNearestInteractable(worldX, worldY);
 
-  if (!cableStartPoint) {
-    // START / PICKUP
+  // Check if we are currently dragging a line (Server state)
+  const activeLine=gameState.cables? gameState.cables.find(c => c.isPreview&&c.playerId===myId):null;
+
+  if (activeLine) {
+    // FINISH ACTION (Attach or Drop)
+    if (target) {
+      // Attach to target
+      socket.emit('cableAction', {action: 'attach', x: target.x, y: target.y, targetId: target.id});
+      soundManager.playSound('ui_click');
+    } else {
+      // Check for wall attach or drop
+      const gridX=Math.floor(worldX/renderer.tileSize);
+      const gridY=Math.floor(worldY/renderer.tileSize);
+      let isWall=false;
+      if (renderer.voxelMap&&renderer.voxelMap[gridY]&&renderer.voxelMap[gridY][gridX]>0) {
+        isWall=true;
+      }
+
+      if (isWall) {
+        socket.emit('cableAction', {action: 'attach', x: worldX, y: worldY});
+        soundManager.playSound('ui_click');
+      } else {
+        socket.emit('cableAction', {action: 'drop', x: worldX, y: worldY});
+        soundManager.playSound('ui_click');
+      }
+    }
+  } else {
+    // START ACTION (Start or Pickup)
     if (target) {
       if (target.type==='spool') {
-        socket.emit('placeCable', {action: 'pickup', spoolId: target.id});
-        // Set local start point to follow player?
-        // Actually, pickup attaches to player. We should set cableStartPoint to target.x/y
-        // But we need to track PLAYER position for the other end.
-        // Visual preview might glitch until next state update.
-        // Let's just set it to spool pos for now.
-        cableStartPoint={x: target.x, y: target.y};
+        socket.emit('cableAction', {action: 'pickup', spoolId: target.id});
+        soundManager.playSound('ui_click');
       } else {
-        // Start from building
-        socket.emit('placeCable', {action: 'start', x: target.x, y: target.y, type: cableType, targetId: target.id});
-        cableStartPoint={x: target.x, y: target.y};
+        socket.emit('cableAction', {action: 'start', x: target.x, y: target.y, type: cableType, anchorId: target.id});
         soundManager.playSound('ui_click');
       }
     } else {
-      // Start from empty space? (User: "require... start at landing pad")
-      // Check if near player? 
-      renderer.showMessage("Must start at Base/Connector or Pick up Spool");
-    }
-  } else {
-    // ATTACH / DROP
-    if (target) {
-      // Attach to building/connect to spool?
-      // Connecting to spool is "Attach".
-      socket.emit('placeCable', {action: 'attach', x: target.x, y: target.y, targetId: target.id});
-      soundManager.playSound('ui_click');
-      // Cable finished.
-      cableStartPoint=null;
-    } else {
-      // Check for wall? Canvas input doesn't check walls easily.
-      // Assuming click on wall = Attach. Click on air = Drop.
-      // We can send "Attach" and let server decide if it's a wall.
-      // If server says "No Wall", then we Drop? 
-      // Let's explicitly trigger DROP if Shift is held? Or just logic:
-      // Try attach. If valid wall, attach. Else Drop?
-      // Safer: 
-      // Drop: Explicit Click on empty air.
-      // Attach: Click on Wall.
-
-      // Let's send "attach" attempt. If it fails (not a wall), server could auto-drop?
-      // Or we send "drop" if clicked far from walls.
-      // Simple: Just send "drop" if no target found. 
-      // Wait, "Attach to wall" is a requirement. 
-      // We can raycast `renderer` to see if wall.
-
-      const isWall=renderer.voxelMap&&renderer.voxelMap[Math.floor(worldY/8)]&&renderer.voxelMap[Math.floor(worldY/8)][Math.floor(worldX/8)]>0;
-
-      if (isWall) {
-        socket.emit('placeCable', {action: 'attach', x: worldX, y: worldY});
-        cableStartPoint={x: worldX, y: worldY}; // Continue line!
-      } else {
-        // Drop spool
-        socket.emit('placeCable', {action: 'drop', x: worldX, y: worldY});
-        cableStartPoint=null;
-      }
+      renderer.showMessage("Must start at Base, Connector, or Spool");
     }
   }
 });
 
-// Cancel cable placement (Clear local state)
-
-
 function updateCablePreview() {
-  if (input&&input.state.cableMode&&cableStartPoint&&renderer) {
-    const worldMouseX=renderer.cameraX+input.mouseX;
-    const worldMouseY=renderer.cameraY+input.mouseY;
+  if (!input||!input.cableMode||!renderer) return;
 
-    // Validate distance
-    const dx=worldMouseX-cableStartPoint.x;
-    const dy=worldMouseY-cableStartPoint.y;
-    const dist=Math.sqrt(dx*dx+dy*dy);
-    const valid=dist<=120;
+  const worldMouseX=renderer.cameraX+input.mouseX;
+  const worldMouseY=renderer.cameraY+input.mouseY;
+  const target=getNearestInteractable(worldMouseX, worldMouseY);
+  const activeLine=gameState.cables? gameState.cables.find(c => c.isPreview&&c.playerId===myId):null;
 
-    renderer.drawCablePreview({
-      active: true,
-      x1: cableStartPoint.x,
-      y1: cableStartPoint.y,
-      x2: worldMouseX,
-      y2: worldMouseY,
-      type: input.state.cableType||'power',
-      valid: valid
-    }, renderer.cameraX, renderer.cameraY);
+  const ctx=renderer.ctx;
+  ctx.save();
+  ctx.font='12px Consolas, monospace'; // Monospace for tech feel
+  ctx.textAlign='center';
+  ctx.lineWidth=2;
+
+  let actionText="";
+  let color='#fff';
+
+  if (activeLine) {
+    // Dragging mode
+    if (target) {
+      if (target.type==='spool') {
+        if (activeLine.type!==target.cableType) {
+          actionText="WRONG TYPE";
+          color='#f44';
+        } else {
+          actionText="EXTEND";
+          color='#4f4';
+        }
+      } else {
+        actionText="ATTACH";
+        color='#4f4';
+      }
+
+      // Draw target highlight
+      ctx.beginPath();
+      ctx.arc(target.x-renderer.cameraX, target.y-renderer.cameraY, 25, 0, Math.PI*2);
+      ctx.strokeStyle=color;
+      ctx.stroke();
+    } else {
+      // Check wall
+      const gridX=Math.floor(worldMouseX/renderer.tileSize);
+      const gridY=Math.floor(worldMouseY/renderer.tileSize);
+      const isWall=renderer.voxelMap&&renderer.voxelMap[gridY]&&renderer.voxelMap[gridY][gridX]>0;
+
+      if (isWall) {
+        actionText="ATTACH (WALL)";
+        color='#ff8';
+      } else {
+        actionText="DROP";
+        color='#aaf';
+      }
+    }
+  } else {
+    // Start mode
+    if (target) {
+      if (target.type==='spool') {
+        actionText="PICKUP";
+        color='#4ff';
+      } else {
+        actionText="START";
+        color='#4f4';
+      }
+      // Draw target highlight
+      ctx.beginPath();
+      ctx.arc(target.x-renderer.cameraX, target.y-renderer.cameraY, 25, 0, Math.PI*2);
+      ctx.strokeStyle=color;
+      ctx.stroke();
+    } else {
+      actionText=""; // Don't show text if nothing to do
+    }
   }
+
+  if (actionText) {
+    const sx=input.mouseX;
+    const sy=input.mouseY-25;
+
+    // Text background
+    const metrics=ctx.measureText(actionText);
+    const tw=metrics.width;
+    ctx.fillStyle='rgba(0,0,0,0.5)';
+    ctx.fillRect(sx-tw/2-5, sy-12, tw+10, 16);
+
+    ctx.fillStyle=color;
+    ctx.fillText(actionText, sx, sy);
+  }
+
+  ctx.restore();
 }
 
 function gameLoop() {
@@ -1565,7 +1610,7 @@ function gameLoop() {
 
     // Draw cables overlay
     if (gameState.cables) {
-      renderer.drawCables(gameState.cables, renderer.cameraX, renderer.cameraY);
+      renderer.drawCables(gameState.cables, gameState.players, renderer.cameraX, renderer.cameraY);
     }
     // Draw cable placement preview
     updateCablePreview();

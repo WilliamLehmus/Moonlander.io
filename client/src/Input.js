@@ -32,6 +32,9 @@ export class Input {
         this.exitHoldDuration=2000; // 2 seconds
         this.isHoldingX=false;
 
+        // Cable placement mode
+        this.cableMode=false;
+
         window.addEventListener('keydown', (e) => this.handleKey(e, true));
         window.addEventListener('keyup', (e) => this.handleKey(e, false));
 
@@ -41,6 +44,10 @@ export class Input {
             canvas.addEventListener('mousedown', (e) => this.handleMouseClick(e));
         }
         window.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+    }
+
+    setCableMode(enabled) {
+        this.cableMode=enabled;
     }
 
     handleMouseMove(e) {
@@ -263,7 +270,7 @@ export class Input {
 
     // Handle mouse click for placement
     handleMouseClick(e) {
-        if (!this.state.cableMode) return;
+        if (!this.cableMode) return;
 
         // Convert screen click to world coordinates?
         // Input class only knows screen mouseX/Y.

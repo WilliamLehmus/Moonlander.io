@@ -76,7 +76,53 @@ export class CableSystem {
         const line=this.activeLines.get(playerId);
         if (!line) return {success: false};
 
-        // Validate length
+        // Check if target is a Spool (Connect two loose ends)
+        if (targetId&&this.spools.has(targetId)) {
+            const spool=this.spools.get(targetId);
+
+            // Check type match
+            if (spool.type!==line.type) {
+                return {success: false, reason: 'cable_type_mismatch'};
+            }
+
+            // Dist check to spool
+            const idx=spool.x-line.anchorX;
+            const idy=spool.y-line.anchorY;
+            if (Math.sqrt(idx*idx+idy*idy)>this.MAX_LENGTH) {
+                return {success: false, reason: 'too_long'};
+            }
+
+            // 1. Convert Spool's loose rope to a fixed segment
+            this.segments.push({
+                id: this.nextId++,
+                type: spool.type,
+                x1: spool.anchorX,
+                y1: spool.anchorY,
+                x2: spool.x,
+                y2: spool.y
+            });
+
+            // 2. Create connecting segment (Active Line -> Spool)
+            this.segments.push({
+                id: this.nextId++,
+                type: line.type,
+                x1: line.anchorX,
+                y1: line.anchorY,
+                x2: spool.x,
+                y2: spool.y
+            });
+
+            // 3. Remove Spool
+            if (spool.body) this.game.physics.removeBody(spool.body);
+            this.spools.delete(targetId);
+
+            // 4. Finish Active Line (Connection Complete)
+            this.activeLines.delete(playerId);
+
+            return {success: true, connected: true};
+        }
+
+        // Standard Attach (Continue Line)
         const dx=x-line.anchorX;
         const dy=y-line.anchorY;
         const dist=Math.sqrt(dx*dx+dy*dy);
@@ -153,6 +199,7 @@ export class CableSystem {
                 y1: spool.anchorY,
                 x2: spool.x,
                 y2: spool.y,
+                id: spool.id,
                 isSpool: true // Client can render spool sprite at x2,y2
             });
         }
@@ -170,7 +217,8 @@ export class CableSystem {
                     y1: line.anchorY,
                     x2: player.x,
                     y2: player.y,
-                    isPreview: true
+                    isPreview: true,
+                    playerId: pid
                 });
             }
         }

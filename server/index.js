@@ -274,13 +274,25 @@ io.on('connection', (socket) => {
         }
     });
 
-    // PLACE CABLE
-    socket.on('placeCable', (data, callback) => {
+    // CABLE ACTIONS
+    socket.on('cableAction', (data, callback) => {
         const code=playerRooms.get(socket.id);
         if (code) {
             const room=rooms.get(code);
             if (room&&room.ready) {
-                const result=room.game.placeCableSegment(socket.id, data);
+                const game=room.game;
+                let result={success: false};
+
+                if (data.action==='start') {
+                    result=game.cableSystem.startLine(socket.id, data.x, data.y, data.type, data.anchorId);
+                } else if (data.action==='attach') {
+                    result=game.cableSystem.attachLine(socket.id, data.x, data.y, data.targetId);
+                } else if (data.action==='drop') {
+                    result=game.cableSystem.dropLine(socket.id, data.x, data.y);
+                } else if (data.action==='pickup') {
+                    result=game.cableSystem.pickupSpool(socket.id, data.spoolId);
+                }
+
                 if (callback) callback(result);
             }
         }
@@ -507,7 +519,16 @@ io.on('connection', (socket) => {
         }
     });
 
-    // DEBUG COMMANDS (Development Only)
+    socket.on('cableAction', (data) => {
+        const code=playerRooms.get(socket.id);
+        if (code) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                room.game.handleCableAction(socket.id, data);
+            }
+        }
+    });
+
     socket.on('debugCommand', (data) => {
         const code=playerRooms.get(socket.id);
         if (!code) return;
