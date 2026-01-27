@@ -968,32 +968,50 @@ export class Renderer {
     drawBackgrounds(myPlayer) {
         if (!myPlayer) return;
 
-        const normalizedDepth=myPlayer.y/(this.mapHeight*this.tileSize);
+        // Calculate depth relative to surface level
+        // surfaceY is set from basePosition (approx 800-1600px usually)
+        // If surfaceY is not set yet, fallback to 0 (top of map)
+        const surfaceLevel=this.surfaceY||0;
+        const totalMapHeight=this.mapHeight*this.tileSize;
+
+        // Calculate "underground depth" (0 at surface, 1 at bottom of map)
+        // We use a safe denominator (avoid divide by zero)
+        const undergroundRange=Math.max(1, totalMapHeight-surfaceLevel);
+        const relativeDepth=(myPlayer.y-surfaceLevel)/undergroundRange;
+
+        // Clamp for safety, though allowing negative (sky) is fine (maps to surface)
+        // We treat everything above surface + small buffer as "Surface Biome"
+        const normalizedDepth=Math.max(-0.1, relativeDepth);
+
         let currentBiome='surface';
         let mixBiome='surface';
         let mixAlpha=0;
 
-        // Biome triggers (Updated for 4000m Core depth)
-        if (normalizedDepth<0.102) {
+        // Biome triggers based on RELATIVE depth from surface
+        // 0.0 = Surface Level
+        // 1.0 = Bottom of Map
+
+        if (normalizedDepth<0.15) {
             currentBiome='surface';
             mixBiome='shallow_caves';
-            mixAlpha=Math.max(0, (normalizedDepth-0.08)/0.022); // Fade in next biome
-        } else if (normalizedDepth<0.277) {
+            // Start mixing in shallow caves as we go down from 0.10 to 0.15
+            mixAlpha=Math.max(0, (normalizedDepth-0.10)/0.05);
+        } else if (normalizedDepth<0.30) {
             currentBiome='shallow_caves';
             mixBiome='deep_tunnels';
-            mixAlpha=Math.max(0, (normalizedDepth-0.25)/0.027);
-        } else if (normalizedDepth<0.451) {
+            mixAlpha=Math.max(0, (normalizedDepth-0.25)/0.05);
+        } else if (normalizedDepth<0.50) {
             currentBiome='deep_tunnels';
             mixBiome='crystal_caverns';
-            mixAlpha=Math.max(0, (normalizedDepth-0.40)/0.051);
-        } else if (normalizedDepth<0.626) {
+            mixAlpha=Math.max(0, (normalizedDepth-0.45)/0.05);
+        } else if (normalizedDepth<0.70) {
             currentBiome='crystal_caverns';
             mixBiome='abyssal_depths';
-            mixAlpha=Math.max(0, (normalizedDepth-0.58)/0.046);
-        } else if (normalizedDepth<0.8) {
+            mixAlpha=Math.max(0, (normalizedDepth-0.65)/0.05);
+        } else if (normalizedDepth<0.85) {
             currentBiome='abyssal_depths';
             mixBiome='the_core';
-            mixAlpha=Math.max(0, (normalizedDepth-0.75)/0.05);
+            mixAlpha=Math.max(0, (normalizedDepth-0.80)/0.05);
         } else {
             currentBiome='the_core';
             mixBiome='the_core';
