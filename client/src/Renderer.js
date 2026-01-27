@@ -278,6 +278,17 @@ export class Renderer {
             };
         });
 
+        // NEW: Load Cable Spool Sprites
+        this.cableSprites={};
+        const cableTypes=['cable_red', 'cable_blue', 'cable_green'];
+        cableTypes.forEach(id => {
+            const img=new Image();
+            img.src=`/sprites/${id}.png`;
+            img.onload=() => {
+                this.cableSprites[id]=img;
+            };
+        });
+
         // Debug flags
         this.debugVisualizeColliders=false;
     }
@@ -2112,7 +2123,17 @@ export class Renderer {
                 screenY<-50||screenY>this.canvas.height+50) continue;
 
             this.ctx.save();
-            this.ctx.translate(item.x, item.y);
+            this.ctx.translate(screenX, screenY);
+
+            // Draw cable spool if sprite exists
+            if (this.cableSprites&&this.cableSprites[item.type]) {
+                const sprite=this.cableSprites[item.type];
+                // Draw sprite centered, slightly larger than ores
+                const size=24;
+                this.ctx.drawImage(sprite, -size/2, -size/2, size, size);
+                this.ctx.restore();
+                continue;
+            }
 
             const color=oreColors[item.type]||'#888888';
 
@@ -2606,8 +2627,11 @@ export class Renderer {
             this.drawStationUI(myPlayer, state);
         }
 
-        // Draw Quickbar at bottom center
-        this.drawQuickbar(myPlayer);
+        // minimap
+        this.drawMinimap(myPlayer, state);
+
+        // Chat
+        this.drawChat();
     }
 
     drawQuickbar(myPlayer) {
@@ -3120,9 +3144,9 @@ export class Renderer {
         for (const cable of cables) {
             // Determine color
             let color='#ffffff';
-            if (cable.type==='power') color='#ff3333'; // Red
-            else if (cable.type==='fuel') color='#33cc33'; // Green
-            else if (cable.type==='data') color='#3333cc'; // Blue
+            if (cable.type==='power'||cable.type==='cable_red') color='#ff3333'; // Red (Power)
+            else if (cable.type==='fuel'||cable.type==='cable_green') color='#33cc33'; // Green (Fuel)
+            else if (cable.type==='data'||cable.type==='cable_blue') color='#3333cc'; // Blue (Data)
 
             this.ctx.strokeStyle=color;
             this.ctx.beginPath();
@@ -3170,9 +3194,9 @@ export class Renderer {
         this.ctx.setLineDash([5, 5]);
 
         let color='#ffffff';
-        if (type==='power') color='#ff3333';
-        else if (type==='fuel') color='#33cc33';
-        else if (type==='data') color='#3333cc';
+        if (type==='power'||type==='cable_red') color='#ff3333';
+        else if (type==='fuel'||type==='cable_green') color='#33cc33';
+        else if (type==='data'||type==='cable_blue') color='#3333cc';
 
         this.ctx.strokeStyle=valid? color:'#ff0000'; // Red if invalid
 

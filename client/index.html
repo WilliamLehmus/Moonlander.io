@@ -102,10 +102,11 @@
           </label>
         </div>
         <div class="debug-actions-grid">
-          <button class="debug-btn-small" onclick="socket.emit('debugCommand', {command: 'repairShip'})">Repair
-            Ship</button>
-          <button class="debug-btn-small"
-            onclick="socket.emit('debugCommand', {command: 'addFuel', amount: 1000})">+1000 Fuel</button>
+          <button class="debug-btn-small" id="settingsRepairShip">Repair Ship</button>
+          <button class="debug-btn-small" id="settingsAddFuel">+1000 Fuel</button>
+          <button class="debug-btn-small" id="settingsSpawnRed">Red Cable (x1)</button>
+          <button class="debug-btn-small" id="settingsSpawnGreen">Green Cable (x1)</button>
+          <button class="debug-btn-small" id="settingsSpawnBlue">Blue Cable (x1)</button>
         </div>
       </div>
 
@@ -168,6 +169,7 @@
       <div class="station-tabs">
         <button class="tab-btn active" data-tab="hangar">Hangar</button>
         <button class="tab-btn" data-tab="construction">Construction</button>
+        <button class="tab-btn" data-tab="crafting">Crafting</button>
       </div>
 
       <div id="tab-hangar" class="station-tab active">
@@ -185,6 +187,14 @@
         </div>
       </div>
 
+      <div id="tab-crafting" class="station-tab hidden">
+        <h3>Item Fabrication</h3>
+        <div class="crafting-list" id="craftingList">
+          <!-- Crafting items injected here -->
+        </div>
+        <div id="craftingStatus" class="status-msg"></div>
+      </div>
+
       <button id="closeStationBtn">Close</button>
     </div>
   </div>
@@ -200,19 +210,26 @@
             <!-- Inventory slots injected via JS -->
           </div>
         </div>
-        <div class="inventory-section" id="stationInventorySection">
-          <h3>Station Storage (0/12 slots)</h3>
-          <div class="inventory-grid" id="stationInventory">
-            <!-- Station inventory slots -->
-          </div>
+      </div>
+      <div class="inventory-section" id="stationInventorySection">
+        <h3>Station Storage (0/12 slots)</h3>
+        <div class="inventory-grid" id="stationInventory">
+          <!-- Station inventory slots -->
         </div>
       </div>
-      <div class="inventory-actions">
-        <button id="transferToStation" disabled>Transfer to Station →</button>
-        <button id="transferToShip" disabled>← Transfer to Ship</button>
+      <div class="inventory-section">
+        <h3>Nearby Items</h3>
+        <div class="inventory-grid" id="nearbyInventory">
+          <!-- Dropped items injected here -->
+        </div>
       </div>
-      <button id="closeInventoryBtn">Close (Q)</button>
     </div>
+    <div class="inventory-actions">
+      <button id="transferToStation" disabled>Transfer to Station →</button>
+      <button id="transferToShip" disabled>← Transfer to Ship</button>
+    </div>
+    <button id="closeInventoryBtn">Close (Q)</button>
+  </div>
   </div>
 
   <!-- Debug Menu (Development Only) -->
@@ -244,6 +261,7 @@
     </div>
   </div>
 
+  <div id="domQuickbar" class="hidden"></div>
   <script type="module" src="/src/main.js"></script>
 </body>
 

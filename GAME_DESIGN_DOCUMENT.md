@@ -3,6 +3,10 @@
 
 ---
 
+# Development Requests 1
+- Don't open the base menu automatically when player is close to the landing pad
+
+
 ## 1. Game Overview
 
 **Moonlander.io** is a cooperative multiplayer physics-based exploration game where players pilot lunar landers into the depths of a procedurally generated moon. Starting from a shared moon base on the surface, teams of 2-8 players venture into an ever-deepening cave system to extract resources, rescue stranded companions, and uncover the mysteries buried deep within the lunar crust.

@@ -124,9 +124,6 @@ export class Input {
             case 'KeyG':
                 if (isDown) this.toggleTether();
                 break;
-            case 'KeyC':
-                if (isDown) this.toggleCableMode();
-                break;
             case 'KeyL':
                 if (this.state.toggleSpotlight!==isDown) {
                     this.state.toggleSpotlight=isDown;
@@ -160,14 +157,7 @@ export class Input {
             case 'Digit9':
                 if (isDown) {
                     const slot=parseInt(e.code.replace('Digit', ''))-1;
-                    if (this.state.cableMode) {
-                        // Switch cable type
-                        if (slot===0) {this.state.cableType='power'; window.dispatchEvent(new CustomEvent('notification', {detail: {message: 'Power Cable (Red)'}}));}
-                        else if (slot===1) {this.state.cableType='fuel'; window.dispatchEvent(new CustomEvent('notification', {detail: {message: 'Fuel Cable (Green)'}}));}
-                        else if (slot===2) {this.state.cableType='data'; window.dispatchEvent(new CustomEvent('notification', {detail: {message: 'Data Cable (Blue)'}}));}
-                    } else {
-                        this.selectQuickbarSlot(slot);
-                    }
+                    this.selectQuickbarSlot(slot);
                 }
                 break;
 
@@ -196,9 +186,14 @@ export class Input {
     }
 
     selectQuickbarSlot(index) {
-        this.socket.emit('selectQuickbar', {slot: index});
+        if (this.quickbarSelection===index) {
+            this.quickbarSelection=null;
+        } else {
+            this.quickbarSelection=index;
+        }
+        this.socket.emit('selectQuickbar', {slot: this.quickbarSelection});
         // Also dispatch a custom event for UI updates
-        window.dispatchEvent(new CustomEvent('quickbarSelect', {detail: {slot: index}}));
+        window.dispatchEvent(new CustomEvent('quickbarSelect', {detail: {slot: this.quickbarSelection}}));
     }
 
     toggleTether() {
@@ -244,16 +239,6 @@ export class Input {
         if (!this.isHoldingX||!this.exitHoldStart) return 0;
         const elapsed=Date.now()-this.exitHoldStart;
         return Math.min(1, elapsed/this.exitHoldDuration);
-    }
-
-    toggleCableMode() {
-        this.state.cableMode=!this.state.cableMode;
-        if (this.state.cableMode) {
-            this.state.cableType=this.state.cableType||'power';
-            window.dispatchEvent(new CustomEvent('notification', {detail: {message: 'Cable Mode: ON (1=Power, 2=Fuel, 3=Data)'}}));
-        } else {
-            window.dispatchEvent(new CustomEvent('notification', {detail: {message: 'Cable Mode: OFF'}}));
-        }
     }
 
     sendInput() {

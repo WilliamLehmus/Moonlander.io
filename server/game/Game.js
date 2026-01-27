@@ -1002,8 +1002,7 @@ export class Game {
         // Update cable spools
         this.cableSystem.update(dt);
 
-        // Survival pods update
-        this.updateSurvivalPods(dt);
+
 
         // Update wreckages
         this.updateWreckages(dt);
@@ -1150,7 +1149,138 @@ export class Game {
         });
     }
 
+    // Spawn a dropped item at specific coordinates
+    spawnDroppedItem(x, y, type, amount) {
+        const itemId=`drop_${this.nextDroppedItemId++}`;
+
+        // Random slight scatter
+        const dropX=x+(Math.random()-0.5)*20;
+        const dropY=y+(Math.random()-0.5)*20;
+
+        // Create physics body
+        const body=this.physics.createBox(dropX, dropY, 6, 6, 0.5);
+        if (body) {
+            // Give it a little random velocity
+            const ammo=this.physics.ammo;
+            body.setLinearVelocity(new ammo.btVector3((Math.random()-0.5)*10, (Math.random()-0.5)*10, 0));
+        }
+
+        const droppedItem={
+            id: itemId,
+            x: dropX,
+            y: dropY,
+            type: type,
+            amount: amount,
+            body: body,
+            lifetime: 300 // 5 minutes
+        };
+
+        this.droppedItems.set(itemId, droppedItem);
+
+        // Broadcast
+        this.broadcast('itemsDropped', {
+            playerId: null, // System spawn
+            items: [{type: type, amount: amount}],
+            x: dropX,
+            y: dropY
+        });
+
+        return {success: true, itemId};
+    }
+
     // Jettison cargo with physics - creates dropped items that fall
+    // Drop specific item from inventory (100% of stack)
+    dropInventoryItem(playerId, slotIndex) {
+        const player=this.players.get(playerId);
+        if (!player||player.dead) return {success: false};
+
+        if (slotIndex<0||slotIndex>=player.cargo.length) return {success: false};
+
+        const item=player.cargo[slotIndex];
+        if (!item) return {success: false};
+
+        // Remove from inventory
+        player.cargo.splice(slotIndex, 1);
+
+        // Spawn in world
+        const pos=player.getPosition();
+        const vel=player.getVelocity();
+
+        const itemId=`drop_${this.nextDroppedItemId++}`;
+        const dropX=pos.x+(Math.random()-0.5)*20;
+        const dropY=pos.y+(Math.random()-0.5)*20;
+
+        // Create physics body
+        const body=this.physics.createBox(dropX, dropY, 6, 6, 0.5);
+        if (body) {
+            const ammo=this.physics.ammo;
+            body.setLinearVelocity(new ammo.btVector3(vel.vx, vel.vy, 0));
+        }
+
+        const droppedItem={
+            id: itemId,
+            x: dropX,
+            y: dropY,
+            type: item.type,
+            amount: item.amount,
+            body: body,
+            lifetime: 300 // 5 minutes
+        };
+
+        this.droppedItems.set(itemId, droppedItem);
+
+        // Broadcast
+        this.broadcast('itemsDropped', {
+            playerId: playerId,
+            items: [{type: item.type, amount: item.amount}],
+            x: dropX,
+            y: dropY
+        });
+
+        // Loophole: If it was a cable, we should check if they were in cable mode?
+        // Actually, cable mode is just client side input state mostly.
+
+        return {success: true};
+    }
+
+    // Explicit pickup of dropped item (when clicking in UI)
+    pickupDroppedItem(playerId, itemId) {
+        const player=this.players.get(playerId);
+        if (!player||player.dead) return {success: false};
+
+        const item=this.droppedItems.get(itemId);
+        if (!item) return {success: false, reason: 'not_found'};
+
+        // Check distance
+        const dx=item.x-player.x;
+        const dy=item.y-player.y;
+        const dist=Math.sqrt(dx*dx+dy*dy);
+
+        if (dist>100) return {success: false, reason: 'too_far'}; // Generous pickup range for UI interaction
+
+        // Check capacity
+        const currentWeight=player.cargo.reduce((sum, c) => sum+c.amount, 0);
+        const maxCargo=player.maxCargoCapacity||500;
+
+        if (currentWeight+item.amount>maxCargo) return {success: false, reason: 'full'};
+
+        // Add to cargo
+        const existing=player.cargo.find(c => c.type===item.type);
+        if (existing) {
+            existing.amount+=item.amount;
+        } else {
+            player.cargo.push({type: item.type, amount: item.amount});
+        }
+
+        // Remove from world
+        if (item.body) {
+            this.physics.world.removeRigidBody(item.body);
+        }
+        this.droppedItems.delete(itemId);
+
+        return {success: true};
+    }
+
     jettisonCargoWithPhysics(playerId, percentage=0.25) {
         const player=this.players.get(playerId);
         if (!player||player.dead) return [];
@@ -1239,11 +1369,13 @@ export class Game {
                 if (speed<15) { // Moving slowly enough to collect
                     // Add to base storage
                     const oreKey=item.type.toLowerCase().replace('_ore', '');
-                    if (this.baseResources.ores[oreKey]!==undefined) {
-                        this.baseResources.ores[oreKey]+=item.amount;
+                    // Check if it's a valid resource type
+                    if (this.baseResources[oreKey]!==undefined) {
+                        this.baseResources[oreKey]+=item.amount;
+                        toRemove.push(id);
+                        console.log(`Collected dropped ${item.type} x${item.amount} at landing pad`);
                     }
-                    toRemove.push(id);
-                    console.log(`Collected dropped ${item.type} x${item.amount} at landing pad`);
+                    // Non-resource items (like cables) are left alone on the pad
                 }
             }
 
@@ -2084,7 +2216,8 @@ export class Game {
             droppedItems: this.serializeDroppedItems(), // Send jettisoned ore items
             refining: this.isRefining,
             activeBuildings: this.getActiveBuildings(), // NEW: Send only built buildings
-            cables: this.cableSystem.serialize() // Send active cables
+            cables: this.cableSystem.serialize(), // Send active cables
+            timestamp: Date.now()
         };
     }
 
@@ -2158,9 +2291,9 @@ export class Game {
 
     // Serialize dropped items for client
     serializeDroppedItems() {
-        const result=[];
+        const items=[];
         for (const [id, item] of this.droppedItems) {
-            result.push({
+            items.push({
                 id: item.id,
                 x: item.x,
                 y: item.y,
@@ -2168,7 +2301,7 @@ export class Game {
                 amount: item.amount
             });
         }
-        return result;
+        return items;
     }
 
     // Serialize buildings for client
@@ -2207,5 +2340,79 @@ export class Game {
         }
 
         return result;
+    }
+
+    craftItem(playerId, type) {
+        const player=this.players.get(playerId);
+        if (!player||player.dead) return {success: false, reason: 'dead'};
+
+        // Define recipes (must match client side display)
+        const recipes={
+            'cable_red': {copper: 10},
+            'cable_green': {iron: 10},
+            'cable_blue': {gold: 5}
+        };
+
+        const recipe=recipes[type];
+        if (!recipe) return {success: false, reason: 'invalid_item'};
+
+        // Check costs
+        for (const [res, amt] of Object.entries(recipe)) {
+            if ((this.baseResources[res]||0)<amt) {
+                return {success: false, reason: 'insufficient_resources'};
+            }
+        }
+
+        // Check capacity
+        const currentWeight=player.cargo.reduce((sum, c) => sum+c.amount, 0);
+        const maxCargo=player.maxCargoCapacity||500;
+        if (currentWeight+1>maxCargo) return {success: false, reason: 'cargo_full'};
+
+        // Deduct resources
+        for (const [res, amt] of Object.entries(recipe)) {
+            this.baseResources[res]-=amt;
+        }
+
+        // Add to cargo
+        const existing=player.cargo.find(c => c.type===type);
+        if (existing) {
+            existing.amount+=1;
+        } else {
+            player.cargo.push({type: type, amount: 1});
+        }
+
+        player.updateMass();
+        this.broadcast('resourcesUpdated', this.baseResources);
+
+        return {success: true};
+    }
+    moveInventoryItem(playerId, fromIndex, toIndex) {
+        const player=this.players.get(playerId);
+        if (!player||player.dead) return {success: false};
+
+        const cargo=player.cargo;
+        if (fromIndex<0||fromIndex>=cargo.length) return {success: false};
+
+        // If toIndex is beyond current length, just push if room?
+        // Actually, let's assume fixed slots if we want specific hotbar positions.
+        // But player.cargo is a dynamic array.
+        // We might need to pad it with nulls or just handle sparse array.
+
+        // Let's ensure toIndex is within a reasonable range (e.g. 0-19)
+        if (toIndex<0||toIndex>=20) return {success: false};
+
+        // Padding cargo up to the required slots if needed
+        while (cargo.length<=Math.max(fromIndex, toIndex)) {
+            cargo.push(null);
+        }
+
+        const temp=cargo[fromIndex];
+        cargo[fromIndex]=cargo[toIndex];
+        cargo[toIndex]=temp;
+
+        // Clean up trailing nulls maybe? Or keep them to maintain positions.
+        // If we keep them, the length shows the "active range".
+
+        return {success: true};
     }
 }

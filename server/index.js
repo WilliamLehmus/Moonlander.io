@@ -286,6 +286,18 @@ io.on('connection', (socket) => {
         }
     });
 
+    // CRAFT ITEM
+    socket.on('craftItem', (data, callback) => {
+        const code=playerRooms.get(socket.id);
+        if (code) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const result=room.game.craftItem(socket.id, data.type);
+                if (callback) callback(result);
+            }
+        }
+    });
+
     // GET ROOM LIST (for debugging/admin)
     socket.on('getRooms', (callback) => {
         const roomList=Array.from(rooms.values()).map(r => r.getInfo());
@@ -457,6 +469,44 @@ io.on('connection', (socket) => {
         }
     });
 
+    // DROP ITEM (from inventory)
+    socket.on('dropItem', (data) => {
+        const code=playerRooms.get(socket.id);
+        if (code) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                // Call game method to drop item
+                const result=room.game.dropInventoryItem(socket.id, data.slotIndex);
+                if (result.success) {
+                    console.log(`Player ${socket.id} dropped item from slot ${data.slotIndex}`);
+                }
+            }
+        }
+    });
+
+    // PICKUP ITEM (from ground)
+    socket.on('pickupItem', (data) => {
+        const code=playerRooms.get(socket.id);
+        if (code) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const result=room.game.pickupDroppedItem(socket.id, data.itemId);
+            }
+        }
+    });
+
+    // MOVE ITEM (reorder inventory)
+    socket.on('moveItem', (data, callback) => {
+        const code=playerRooms.get(socket.id);
+        if (code) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const result=room.game.moveInventoryItem(socket.id, data.fromIndex, data.toIndex);
+                if (callback) callback(result);
+            }
+        }
+    });
+
     // DEBUG COMMANDS (Development Only)
     socket.on('debugCommand', (data) => {
         const code=playerRooms.get(socket.id);
@@ -496,6 +546,13 @@ io.on('connection', (socket) => {
             case 'repairShip':
                 if (player) {
                     player.damage=0;
+                }
+                break;
+
+            case 'spawnItem':
+                if (player&&data.type) {
+                    // Spawn single item dropped above player
+                    game.spawnDroppedItem(player.x, player.y-60, data.type, data.amount||1);
                 }
                 break;
 

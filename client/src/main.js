@@ -11,6 +11,30 @@ const serverUrl=window.location.hostname==='localhost'
 
 const socket=io(serverUrl);
 
+// Handle Drop on World (outside inventory grids)
+document.addEventListener('dragover', (e) => {
+  e.preventDefault(); // Allow dropping
+});
+
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  // Check if dropping on a valid drop zone
+  // If e.target is NOT inside an inventory container, then it's a world drop
+  if (e.target.closest('.inventory-grid')) {
+    return; // Handled by standard drag drop if we had it, or ignored
+  }
+
+  try {
+    const data=JSON.parse(e.dataTransfer.getData('text/plain'));
+    if (data&&data.type==='inventory_drag'&&data.location==='ship') {
+      // Drop to world
+      socket.emit('dropItem', {slotIndex: data.index});
+    }
+  } catch (err) {
+    // Not JSON or irrelevant
+  }
+});
+
 // DOM Elements
 const lobbyEl=document.getElementById('lobby');
 const createBtn=document.getElementById('createBtn');
@@ -53,10 +77,145 @@ const closeDebugBtn=document.getElementById('closeDebugBtn');
 let debugMenuOpen=false;
 let infiniteFuelEnabled=false;
 
+// DOM Quickbar Elements
+const domQuickbarEl=document.getElementById('domQuickbar');
+let quickbarSlots=[];
+function initQuickbar() {
+  domQuickbarEl.innerHTML='';
+  quickbarSlots=[];
+  for (let i=0; i<9; i++) {
+    const slot=document.createElement('div');
+    slot.className='quickbar-slot';
+    slot.dataset.index=i;
+
+    const num=document.createElement('div');
+    num.className='slot-number';
+    num.textContent=i+1;
+    slot.appendChild(num);
+
+    // Drag and Drop
+    slot.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      slot.classList.add('drag-over');
+    });
+
+    slot.addEventListener('dragleave', () => {
+      slot.classList.remove('drag-over');
+    });
+
+    slot.addEventListener('drop', (e) => {
+      e.preventDefault();
+      slot.classList.remove('drag-over');
+      try {
+        const data=JSON.parse(e.dataTransfer.getData('text/plain'));
+        if (data&&data.type==='inventory_drag') {
+          // If from ship, reorder
+          if (data.location==='ship') {
+            socket.emit('moveItem', {fromIndex: data.index, toIndex: i});
+          } else if (data.location==='station') {
+            // Move from station to ship at specific slot?
+            // Server transferInventory doesn't support specific slot yet.
+            // We can just trigger the standard transfer which adds to first empty.
+            // But for now, let's just do reorder within ship.
+            const stationOres=gameState.baseResources?.ores||{};
+            const items=Object.entries(stationOres).filter(o => o[1]>0);
+            const item=items[data.index];
+            if (item) {
+              socket.emit('transferInventory', {from: 'station', to: 'ship', oreType: item[0].toUpperCase()+'_ORE'});
+            }
+          }
+        }
+      } catch (err) { }
+    });
+
+    slot.addEventListener('click', () => {
+      if (input) input.selectQuickbarSlot(i);
+    });
+
+    domQuickbarEl.appendChild(slot);
+    quickbarSlots.push(slot);
+  }
+}
+
+function getOreColor(type) {
+  if (typeof type==='string'&&(type.startsWith('cable_spool_')||type.startsWith('cable_'))) {
+    if (type.includes('power')||type==='cable_red') return '#ff4444';
+    if (type.includes('fuel')||type==='cable_green') return '#44ff44';
+    if (type.includes('data')||type==='cable_blue') return '#4444ff';
+    return '#888';
+  }
+
+  const colors={
+    'IRON_ORE': '#cd853f',
+    'COPPER_ORE': '#daa520',
+    'BITITE': '#4a4a4a',
+    'SILVER_ORE': '#c0c0c0',
+    'TITANIUM_ORE': '#b0c4de',
+    'GOLD_ORE': '#ffd700',
+    'PLATINUM_ORE': '#e5e4e2',
+    'DIAMOND': '#b9f2ff'
+  };
+  return colors[type]||'#888';
+}
+
+function renderQuickbar(player) {
+  if (!player) {
+    domQuickbarEl.classList.add('hidden');
+    return;
+  }
+  domQuickbarEl.classList.remove('hidden');
+
+  const cargo=player.cargo||[];
+  const selectedIndex=input? input.quickbarSelection:null;
+
+  quickbarSlots.forEach((slot, i) => {
+    // Selection state
+    if (selectedIndex===i) {
+      slot.classList.add('selected');
+    } else {
+      slot.classList.remove('selected');
+    }
+
+    // Item content
+    const item=cargo[i];
+    // Clear previous item info (leaving slot number)
+    const icon=slot.querySelector('.item-icon');
+    const amount=slot.querySelector('.item-amount');
+    if (icon) icon.remove();
+    if (amount) amount.remove();
+
+    if (item) {
+      // Draw icon
+      if (typeof item.type==='string'&&(item.type.startsWith('cable_spool_')||item.type.startsWith('cable_'))) {
+        const img=document.createElement('img');
+        img.className='item-icon';
+        let spriteName='cable_red.png';
+        if (item.type.includes('power')||item.type==='cable_red') spriteName='cable_red.png';
+        else if (item.type.includes('fuel')||item.type==='cable_green') spriteName='cable_green.png';
+        else if (item.type.includes('data')||item.type==='cable_blue') spriteName='cable_blue.png';
+        img.src='/sprites/'+spriteName;
+        slot.appendChild(img);
+      } else {
+        const div=document.createElement('div');
+        div.className='item-icon';
+        div.style.background=getOreColor(item.type);
+        div.style.borderRadius='4px';
+        slot.appendChild(div);
+      }
+
+      const amt=document.createElement('div');
+      amt.className='item-amount';
+      amt.textContent=item.amount;
+      slot.appendChild(amt);
+    }
+  });
+}
+
 // Inventory Menu Elements
 const inventoryMenuEl=document.getElementById('inventoryMenu');
 const shipInventoryEl=document.getElementById('shipInventory');
 const stationInventoryEl=document.getElementById('stationInventory');
+const nearbyInventoryEl=document.getElementById('nearbyInventory');
 const stationInventorySection=document.getElementById('stationInventorySection');
 const closeInventoryBtn=document.getElementById('closeInventoryBtn');
 const transferToStationBtn=document.getElementById('transferToStation');
@@ -143,6 +302,9 @@ async function enterGame(roomCode, host) {
     soundManager.playGameMusic();
   }
 
+  // Initialize quickbar
+  initQuickbar();
+
   // Hide lobby, show game
   lobbyEl.classList.add('hidden');
   roomInfoEl.classList.remove('hidden');
@@ -163,6 +325,9 @@ async function enterGame(roomCode, host) {
       pendingMapData=null;
     }
   }
+
+  // Initialize quickbar
+  initQuickbar();
 
   // Start game loop if not running
   if (!gameLoopRunning) {
@@ -196,6 +361,9 @@ function exitGame() {
   // Hide menu if open
   escapeMenuEl.classList.add('hidden');
   isMenuOpen=false;
+
+  // Hide quickbar
+  domQuickbarEl.classList.add('hidden');
 
   clearMessages();
 }
@@ -471,6 +639,8 @@ socket.on('chatMessage', (data) => {
 });
 
 // ============================================
+// GAME LOOP
+// ============================================
 // GAME INPUT
 // ============================================
 
@@ -686,7 +856,22 @@ function renderInventory() {
     }
   }
 
-  updateTransferButtons();
+  // Render nearby items (Dropped items)
+  nearbyInventoryEl.innerHTML='';
+  const droppedItems=gameState.droppedItems||[];
+  // Filter for items close to player? Server likely sends all dropped items, 
+  // but maybe we should filter by distance if the list is huge.
+  // For now, render all reasonable ones.
+  const myPos={x: myPlayer.x, y: myPlayer.y};
+  const nearby=droppedItems.filter(item => {
+    const dist=Math.sqrt(Math.pow(item.x-myPos.x, 2)+Math.pow(item.y-myPos.y, 2));
+    return dist<100; // Pickup range
+  });
+
+  nearby.forEach((item) => {
+    const slot=createInventorySlot(item, item.id, 'dropped');
+    nearbyInventoryEl.appendChild(slot);
+  });
 }
 
 function createInventorySlot(item, index, location) {
@@ -695,13 +880,64 @@ function createInventorySlot(item, index, location) {
   slot.dataset.index=index;
   slot.dataset.location=location;
 
+  // Make draggable if it has an item and is in ship inventory
+  if (item&&location==='ship') {
+    slot.draggable=true;
+    slot.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', JSON.stringify({
+        index: index,
+        location: location,
+        type: 'inventory_drag'
+      }));
+      slot.classList.add('dragging');
+    });
+    slot.addEventListener('dragend', (e) => {
+      slot.classList.remove('dragging');
+      // Check if dropped successfuly?
+    });
+  }
+
+  if (item&&location==='dropped') {
+    // Special styling or just normal item
+    // If it's a queued pickup, maybe dim it?
+  }
+
   if (item) {
-    // Create colored div for ore type
-    const icon=document.createElement('div');
-    icon.className='item-icon';
-    icon.style.background=getOreColor(item.type);
-    icon.style.borderRadius='4px';
-    slot.appendChild(icon);
+    slot.draggable=true;
+    slot.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', JSON.stringify({
+        type: 'inventory_drag',
+        location: location,
+        index: index,
+        item: item
+      }));
+    });
+
+    if (typeof item.type==='string'&&(item.type.startsWith('cable_spool_')||item.type.startsWith('cable_'))) {
+      const img=document.createElement('img');
+      img.className='item-icon';
+      let spriteName='cable_red.png';
+
+      // Handle old spool types
+      if (item.type.includes('power')) spriteName='cable_red.png';
+      else if (item.type.includes('fuel')) spriteName='cable_green.png';
+      else if (item.type.includes('data')) spriteName='cable_blue.png';
+      // Handle new simple types
+      else if (item.type==='cable_red') spriteName='cable_red.png';
+      else if (item.type==='cable_green') spriteName='cable_green.png';
+      else if (item.type==='cable_blue') spriteName='cable_blue.png';
+
+      img.src='/sprites/'+spriteName;
+      img.style.objectFit='contain';
+      slot.appendChild(img);
+    } else {
+      // Create colored div for ore type
+      const icon=document.createElement('div');
+      icon.className='item-icon';
+      icon.style.background=getOreColor(item.type);
+      icon.style.borderRadius='4px';
+      slot.appendChild(icon);
+    }
 
     const name=document.createElement('div');
     name.className='item-name';
@@ -714,8 +950,14 @@ function createInventorySlot(item, index, location) {
     slot.appendChild(amount);
   }
 
-  // Selection logic
+  // Selection / Pickup logic
   slot.addEventListener('click', () => {
+    if (location==='dropped') {
+      // Pickup item
+      socket.emit('pickupItem', {itemId: index}); // index is actually ID for dropped items
+      return;
+    }
+
     if (location==='ship') {
       document.querySelectorAll('#shipInventory .inventory-slot').forEach(s => s.classList.remove('selected'));
       if (item) {
@@ -724,7 +966,7 @@ function createInventorySlot(item, index, location) {
       } else {
         selectedShipSlot=null;
       }
-    } else {
+    } else if (location==='station') {
       document.querySelectorAll('#stationInventory .inventory-slot').forEach(s => s.classList.remove('selected'));
       if (item) {
         slot.classList.add('selected');
@@ -739,22 +981,11 @@ function createInventorySlot(item, index, location) {
   return slot;
 }
 
-function getOreColor(type) {
-  const colors={
-    'IRON_ORE': '#cd853f',
-    'COPPER_ORE': '#daa520',
-    'BITITE': '#4a4a4a',
-    'SILVER_ORE': '#c0c0c0',
-    'TITANIUM_ORE': '#b0c4de',
-    'GOLD_ORE': '#ffd700',
-    'PLATINUM_ORE': '#e5e4e2',
-    'DIAMOND': '#b9f2ff'
-  };
-  return colors[type]||'#888';
-}
-
 function formatOreName(type) {
-  return type.replace('_ORE', '').replace('_', ' ').toLowerCase();
+  if (typeof type==='string'&&(type.startsWith('cable_spool_')||type.startsWith('cable_'))) {
+    return type.replace('cable_spool_', '').replace('cable_', '').toUpperCase()+' CABLE';
+  }
+  return String(type).replace('_ORE', '').replace('_', ' ').toLowerCase();
 }
 
 function updateTransferButtons() {
@@ -855,6 +1086,27 @@ document.getElementById('settingsVisualizeColliders')?.addEventListener('change'
   }
 });
 
+// Settings Debug Actions
+document.getElementById('settingsRepairShip')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'repairShip'});
+});
+
+document.getElementById('settingsAddFuel')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'addFuel', amount: 1000});
+});
+
+document.getElementById('settingsSpawnRed')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'spawnItem', type: 'cable_red', amount: 1});
+});
+
+document.getElementById('settingsSpawnGreen')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'spawnItem', type: 'cable_green', amount: 1});
+});
+
+document.getElementById('settingsSpawnBlue')?.addEventListener('click', () => {
+  socket.emit('debugCommand', {command: 'spawnItem', type: 'cable_blue', amount: 1});
+});
+
 document.getElementById('debugTeleportBase')?.addEventListener('click', () => {
   socket.emit('debugCommand', {command: 'teleportBase'});
 });
@@ -868,17 +1120,33 @@ document.getElementById('debugKillPlayer')?.addEventListener('click', () => {
 });
 
 // Tab switching
-tabBtns.forEach(btn => {
+// Station Menu Tab Switching
+const stationTabBtns=document.querySelectorAll('.station-tabs .tab-btn');
+const stationTabContents=document.querySelectorAll('.station-tab');
+
+stationTabBtns.forEach(btn => {
   btn.addEventListener('click', () => {
     // Deactivate all
-    tabBtns.forEach(b => b.classList.remove('active'));
-    stationTabs.forEach(t => t.classList.add('hidden'));
+    stationTabBtns.forEach(b => b.classList.remove('active'));
+    stationTabContents.forEach(t => t.classList.add('hidden'));
 
     // Activate selected
     btn.classList.add('active');
-    const tabId=`tab-${btn.dataset.tab}`;
-    document.getElementById(tabId).classList.remove('hidden');
+    const tabName=btn.dataset.tab;
+    const tabId=`tab-${tabName}`;
+    const content=document.getElementById(tabId);
+    if (content) content.classList.remove('hidden');
+
     soundManager.playSound('menu_pop');
+
+    // Load content
+    if (tabName==='hangar') {
+      renderShipList();
+    } else if (tabName==='construction') {
+      renderBuildingList();
+    } else if (tabName==='crafting') {
+      renderCraftingList();
+    }
   });
 });
 
@@ -999,9 +1267,94 @@ window.handleUpgradeBuilding=function(key) {
   });
 };
 
-// ============================================
-// GAME LOOP
-// ============================================
+function renderCraftingList() {
+  const craftingListEl=document.getElementById('craftingList');
+  if (!craftingListEl) return;
+  craftingListEl.innerHTML='';
+
+  // Define recipes
+  // Format: { name, type, icon, cost: {resource: amount} }
+  // Resources in baseResources: iron, copper, gold, etc.
+  const recipes=[
+    {
+      name: 'Power Cable (Red)',
+      type: 'cable_red',
+      icon: '/sprites/cable_red.png',
+      cost: {copper: 10}
+    },
+    {
+      name: 'Fuel Cable (Green)',
+      type: 'cable_red', // Wait, green cable
+      type: 'cable_green',
+      icon: '/sprites/cable_green.png',
+      cost: {iron: 10}
+    },
+    {
+      name: 'Data Cable (Blue)',
+      type: 'cable_blue',
+      icon: '/sprites/cable_blue.png',
+      cost: {gold: 5}
+    }
+  ];
+
+  recipes.forEach(recipe => {
+    const card=document.createElement('div');
+    card.className='building-card'; // Reuse style
+
+    // Check affordance
+    let canAfford=true;
+    let costText=[];
+
+    // Check base resources
+    const baseRes=gameState.baseResources;
+
+    for (const [res, amt] of Object.entries(recipe.cost)) {
+      const avail=baseRes[res]||0;
+      if (avail<amt) canAfford=false;
+      // Capitalize
+      const resName=res.charAt(0).toUpperCase()+res.slice(1);
+      const color=avail>=amt? '#4f4':'#f44';
+      costText.push(`<span style="color:${color}">${amt} ${resName}</span>`);
+    }
+
+    card.innerHTML=`
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+             <div style="display:flex; align-items:center;">
+                <img src="${recipe.icon}" style="width:32px; height:32px; margin-right:10px; object-fit:contain;">
+                <h4 style="margin:0">${recipe.name}</h4>
+             </div>
+        </div>
+        <div style="margin: 10px 0; font-size: 0.9em;">
+            Cost: ${costText.join(', ')}
+        </div>
+        <button class="upgrade-btn select-btn" ${!canAfford? 'disabled':''} style="width:100%" onclick="handleCraftItem('${recipe.type}')">
+            Fabricate
+        </button>
+    `;
+
+    craftingListEl.appendChild(card);
+  });
+}
+
+window.handleCraftItem=function(itemType) {
+  socket.emit('craftItem', {type: itemType}, (response) => {
+    if (response.success) {
+      soundManager.playSound('click'); // Or a generic crafting sound
+      const status=document.getElementById('craftingStatus');
+      if (status) {
+        status.textContent='Item fabricated successfully!';
+        status.style.color='#4f4';
+        setTimeout(() => status.textContent='', 2000);
+      }
+    } else {
+      const status=document.getElementById('craftingStatus');
+      if (status) {
+        status.textContent=`Fabrication failed: ${response.reason}`;
+        status.style.color='#f44';
+      }
+    }
+  });
+};
 
 // ============================================
 // CABLE SYSTEM LOGIC
@@ -1124,11 +1477,7 @@ window.addEventListener('cableClick', (e) => {
 });
 
 // Cancel cable placement (Clear local state)
-window.addEventListener('keydown', (e) => {
-  if (e.code==='KeyC') {
-    cableStartPoint=null;
-  }
-});
+
 
 function updateCablePreview() {
   if (input&&input.state.cableMode&&cableStartPoint&&renderer) {
@@ -1177,6 +1526,9 @@ function gameLoop() {
         renderer.setMousePos(input.mouseX, input.mouseY);
         input.updateSpotlight(myPlayer.x, myPlayer.y, renderer.cameraX, renderer.cameraY);
 
+        // Update DOM Quickbar
+        renderQuickbar(myPlayer);
+
         // Update thrust sound - don't play if no fuel
         const hasFuel=myPlayer.fuel>0;
         soundManager.setThrust(input.state.up&&hasFuel, hasFuel);
@@ -1190,6 +1542,45 @@ function gameLoop() {
           soundManager.resetOutOfFuel();
         }
         lastFuel=myPlayer.fuel;
+
+        // Check for held cable item (Factorio-style build mode)
+        // input.quickbarSelection is 0-8 (index)
+        // We need to check myPlayer.cargo[index]
+        if (input.quickbarSelection!==undefined&&myPlayer.cargo) {
+          const heldItem=myPlayer.cargo[input.quickbarSelection];
+          if (heldItem&&heldItem.type&&typeof heldItem.type==='string'&&(heldItem.type.startsWith('cable_spool_')||heldItem.type.startsWith('cable_'))) {
+            // Enable cable mode
+            input.state.cableMode=true;
+            // Extract type: cable_spool_power -> power, cable_red -> red
+            // Actually usually we want 'power', 'fuel', 'data' types for the cable system logic?
+            // The CableSystem just stores the type string. 
+            // Previous code: input.state.cableType=heldItem.type.replace('cable_spool_', '');
+            // This would result in 'power', 'fuel', 'data'.
+            // Now we have 'cable_red', 'cable_blue'.
+            // Let's just use the raw type or map it?
+            // If the Cable System expects 'power', 'fuel', 'data' for functionality, we might need to map.
+            // But CableSystem.js seemed generic.
+            // Let's pass the simple name if possible, or just the type.
+            // Let's pass 'red', 'green', 'blue' or 'power', 'fuel', 'data'.
+            // User requested red/blue/green cables.
+            // Let's try to map to functionality if needed, otherwise just use suffix.
+            let cType=heldItem.type.replace('cable_spool_', '').replace('cable_', '');
+            // Map red->power, green->fuel, blue->data if we want to maintain compat?
+            // But let's just use the suffix for now.
+            input.state.cableType=cType;
+          } else {
+            // Disable cable mode if not holding cable
+            // Only disable if we are not currently dragging a line? 
+            // Factorio: You stop building if you switch item.
+            // If dragging, we might want to cancel or finish?
+            // Existing logic cancels placement if cableStartPoint=null.
+            // Let's disable mode.
+            input.state.cableMode=false;
+            if (cableStartPoint) {
+              cableStartPoint=null; // Cancel current placement
+            }
+          }
+        }
 
         // Update mining sound - Fix: only when actually mining resources
         const canMine=(myPlayer.power>=(myPlayer.miningPowerDrain||7.5)*0.1);
@@ -1218,10 +1609,7 @@ function gameLoop() {
         const isLowFuel=(myPlayer.fuel/(myPlayer.maxFuel||500))<0.25&&myPlayer.fuel>0&&!myPlayer.onPad;
         soundManager.setLowFuelWarning(isLowFuel);
 
-        // Auto-open station menu when landing on pad
-        if (myPlayer.onPad&&!wasOnPad&&!stationMenuOpen&&!isMenuOpen) {
-          openStationMenu();
-        }
+
         wasOnPad=myPlayer.onPad;
 
       } else {
