@@ -2,8 +2,8 @@
     "difficulty": {
         "fuelConsumptionMultiplier": 1.0,
         "miningSpeedMultiplier": 1.0,
-        "powerGenerationMultiplier": 2.0,
-        "powerConsumptionMultiplier": 1.0,
+        "powerGenerationMultiplier": 3.0,
+        "powerConsumptionMultiplier": 0.5,
         "lightLossDepth": 10,
         "cableMaxLength": 150
     },

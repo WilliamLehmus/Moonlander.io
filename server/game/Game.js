@@ -1468,19 +1468,26 @@ export class Game {
         }
     }
 
-    // Unload cargo from player to base
+    // Unload cargo from player to base (Instant transfer for ores)
     unloadCargo(player) {
         if (player.cargo.length===0) return;
 
         let totalUnloaded=0;
         let valueDelivered=0;
+        const nonOreCargo=[];
+
+        console.log(`Unloading cargo for player ${player.id}, items: ${player.cargo.length}`);
 
         for (const cargoItem of player.cargo) {
             const oreType=cargoItem.type;
             const amount=cargoItem.amount;
             const oreConfig=ORE_CONFIG[oreType];
 
-            if (!oreConfig) continue;
+            // If not an ore, save it for later re-assignment
+            if (!oreConfig||!oreConfig.isResource) {
+                nonOreCargo.push(cargoItem);
+                continue;
+            }
 
             // Add to base storage using proper key mapping
             const oreNameMap={
@@ -1497,6 +1504,11 @@ export class Game {
             const storageKey=oreNameMap[oreConfig.name];
             if (storageKey&&this.baseResources.hasOwnProperty(storageKey)) {
                 this.baseResources[storageKey]+=amount;
+                console.log(`Base Resources Updated: ${storageKey} += ${amount} (New Total: ${this.baseResources[storageKey]})`);
+            } else {
+                console.warn(`Could not find storage key for ore: ${oreConfig.name}`);
+                nonOreCargo.push(cargoItem);
+                continue;
             }
 
             // Calculate value
@@ -1521,15 +1533,15 @@ export class Game {
             }
         }
 
-        // Clear player cargo
-        player.cargo=[];
+        // Keep only non-ore items (like cables)
+        player.cargo=nonOreCargo;
         player.updateMass();
 
         // Update total value
         this.baseResources.totalValue+=valueDelivered;
 
         if (totalUnloaded>0) {
-            console.log(`Player ${player.id} delivered ${totalUnloaded} cargo, value: ${valueDelivered}`);
+            console.log(`Player ${player.id} delivered ${totalUnloaded} cargo successfully.`);
 
             // Broadcast cargo delivery
             this.broadcast('cargoDelivered', {
@@ -1538,6 +1550,9 @@ export class Game {
                 value: valueDelivered,
                 totalValue: this.baseResources.totalValue
             });
+
+            // Immediately broadcast resource update to all players
+            this.broadcast('resourcesUpdated', this.getClientResources());
         }
     }
 
@@ -2197,12 +2212,8 @@ export class Game {
         }
     }
 
-    getState() {
-        if (!this.ready) return {players: [], baseResources: this.baseResources, respawnCost: this.config.resources.respawnCost};
-
-        // Create client-friendly resource structure
-        // Client expects ores to be in 'ores' object for iteration
-        const clientResources={
+    getClientResources() {
+        return {
             ...this.baseResources,
             ores: {
                 iron: this.baseResources.iron,
@@ -2212,7 +2223,8 @@ export class Game {
                 titanium: this.baseResources.titanium,
                 gold: this.baseResources.gold,
                 platinum: this.baseResources.platinum,
-                diamond: this.baseResources.diamond
+                diamond: this.baseResources.diamond,
+                helium3: this.baseResources.helium3
             },
             materials: {
                 basic: this.baseResources.basic,
@@ -2221,6 +2233,12 @@ export class Game {
                 quantum: this.baseResources.quantum
             }
         };
+    }
+
+    getState() {
+        if (!this.ready) return {players: [], baseResources: this.baseResources, respawnCost: this.config.resources.respawnCost};
+
+        const clientResources=this.getClientResources();
 
         return {
             players: Array.from(this.players.values()).map(p => p.serialize()),

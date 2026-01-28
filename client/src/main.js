@@ -802,13 +802,28 @@ closeStationBtn.addEventListener('click', closeStationMenu);
 socket.on('gameState', (state) => {
   gameState=state;
   if (stationMenuOpen) {
-    const activeTab=document.querySelector('.station-tabs .tab-btn.active');
-    if (activeTab&&activeTab.dataset.tab==='overview') {
-      updateStationOverview();
+    refreshStationOverview();
+  }
+});
+
+function refreshStationOverview() {
+  const activeTab=document.querySelector('.station-tabs .tab-btn.active');
+  if (activeTab&&activeTab.dataset.tab==='overview') {
+    updateStationOverview();
+  }
+}
+
+// Event Delegation for Station Overview
+// This ensures that buttons work even if the DOM is refreshed frequently
+document.body.addEventListener('click', (e) => {
+  const depositBtn=e.target.closest('#depositAllBtn');
+  if (depositBtn) {
+    const myPlayer=gameState.players.find(p => p.id===myId);
+    if (myPlayer) {
+      socket.emit('depositAllOres');
+      soundManager.playSound('click');
+      console.log("Client: Sent depositAllOres event (delegated)");
     }
-    // Also update lists if needed, but they are usually static or event-driven
-    // renderBuildingList(); // Buildings change level
-    // renderCraftingList(); // Materials change
   }
 });
 
@@ -906,19 +921,22 @@ function renderInventory() {
   // Render nearby items (Dropped items)
   nearbyInventoryEl.innerHTML='';
   const droppedItems=gameState.droppedItems||[];
-  // Filter for items close to player? Server likely sends all dropped items, 
-  // but maybe we should filter by distance if the list is huge.
-  // For now, render all reasonable ones.
+
+  // Filter for items close to player
   const myPos={x: myPlayer.x, y: myPlayer.y};
   const nearby=droppedItems.filter(item => {
     const dist=Math.sqrt(Math.pow(item.x-myPos.x, 2)+Math.pow(item.y-myPos.y, 2));
-    return dist<100; // Pickup range
+    return dist<150; // Increased pickup range
   });
 
-  nearby.forEach((item) => {
-    const slot=createInventorySlot(item, item.id, 'dropped');
-    nearbyInventoryEl.appendChild(slot);
-  });
+  if (nearby.length===0) {
+    nearbyInventoryEl.innerHTML='<div style="color: #666; font-size: 0.8rem; padding: 10px; grid-column: span 3; text-align: center;">No items nearby</div>';
+  } else {
+    nearby.forEach((item) => {
+      const slot=createInventorySlot(item, item.id, 'dropped');
+      nearbyInventoryEl.appendChild(slot);
+    });
+  }
 }
 
 function createInventorySlot(item, index, location) {
@@ -926,6 +944,32 @@ function createInventorySlot(item, index, location) {
   slot.className='inventory-slot'+(item? '':' empty');
   slot.dataset.index=index;
   slot.dataset.location=location;
+
+  // Tooltip
+  if (item) {
+    let itemName='';
+    if (item.type.includes('cable')) {
+      itemName=item.type.replace('cable_', '').replace('_', ' ').toUpperCase()+' CABLE';
+    } else if (item.type.includes('_ORE')) {
+      itemName=item.type.replace('_ORE', '').replace('_', ' ')+' ORE';
+    } else {
+      itemName=item.type.replace('_', ' ').toUpperCase();
+    }
+    slot.setAttribute('data-tooltip', itemName);
+  }
+
+  // Click handler for pickup (only for dropped items)
+  if (item&&location==='dropped') {
+    slot.onclick=() => {
+      console.log(`Client: Attempting to pickup item ${item.id}`);
+      socket.emit('pickupItem', {itemId: item.id});
+      soundManager.playSound('click');
+    };
+
+    // Add visual cue that it is clickable
+    slot.style.border='1px dashed #4f4';
+    slot.style.cursor='pointer';
+  }
 
   // Make draggable if it has an item and is in ship inventory
   if (item&&location==='ship') {
@@ -1161,34 +1205,50 @@ document.getElementById('settingsVisualizeColliders')?.addEventListener('change'
 
 // Settings Debug Actions
 document.getElementById('settingsRepairShip')?.addEventListener('click', () => {
+  console.log("Client: Debug Command - repairShip");
+  soundManager.playSound('click');
   socket.emit('debugCommand', {command: 'repairShip'});
 });
 
 document.getElementById('settingsAddFuel')?.addEventListener('click', () => {
+  console.log("Client: Debug Command - addFuel");
+  soundManager.playSound('click');
   socket.emit('debugCommand', {command: 'addFuel', amount: 1000});
 });
 
 document.getElementById('settingsSpawnRed')?.addEventListener('click', () => {
+  console.log("Client: Debug Command - spawnItem (cable_red)");
+  soundManager.playSound('click');
   socket.emit('debugCommand', {command: 'spawnItem', type: 'cable_red', amount: 1});
 });
 
 document.getElementById('settingsSpawnGreen')?.addEventListener('click', () => {
+  console.log("Client: Debug Command - spawnItem (cable_green)");
+  soundManager.playSound('click');
   socket.emit('debugCommand', {command: 'spawnItem', type: 'cable_green', amount: 1});
 });
 
 document.getElementById('settingsSpawnBlue')?.addEventListener('click', () => {
+  console.log("Client: Debug Command - spawnItem (cable_blue)");
+  soundManager.playSound('click');
   socket.emit('debugCommand', {command: 'spawnItem', type: 'cable_blue', amount: 1});
 });
 
 document.getElementById('debugTeleportBase')?.addEventListener('click', () => {
+  console.log("Client: Debug Command - teleportBase");
+  soundManager.playSound('click');
   socket.emit('debugCommand', {command: 'teleportBase'});
 });
 
 document.getElementById('debugMaxBuildings')?.addEventListener('click', () => {
+  console.log("Client: Debug Command - maxBuildings");
+  soundManager.playSound('click');
   socket.emit('debugCommand', {command: 'maxBuildings'});
 });
 
 document.getElementById('debugKillPlayer')?.addEventListener('click', () => {
+  console.log("Client: Debug Command - killPlayer");
+  soundManager.playSound('click');
   socket.emit('debugCommand', {command: 'killPlayer'});
 });
 
@@ -1237,7 +1297,14 @@ function updateStationOverview() {
       {name: 'Helium3', key: 'helium3', type: 'HELIUM3'}
     ];
 
-    let oreHtml='';
+    let oreHtml=`
+      <div style="padding-bottom: 10px; border-bottom: 1px solid #444; margin-bottom: 5px;">
+        <button id="depositAllBtn" class="select-btn" style="background: #2a2a40; color: #4f4; border-color: #4f4;">
+            ⬇ Deposit All Ores
+        </button>
+      </div>
+    `;
+
     ores.forEach(ore => {
       const amount=baseRes.ores? (baseRes.ores[ore.key]||0):0;
       const color=renderer.getOreColor(ore.type);

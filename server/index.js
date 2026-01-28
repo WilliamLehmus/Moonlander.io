@@ -443,7 +443,7 @@ io.on('connection', (socket) => {
                 // Map tile type ID to Storage Key
                 const idToKey={
                     10: 'iron', 11: 'copper', 12: 'bitite', 13: 'silver',
-                    14: 'titanium', 15: 'gold', 16: 'platinum', 17: 'diamond'
+                    14: 'titanium', 15: 'gold', 16: 'platinum', 17: 'diamond', 18: 'helium3'
                 };
                 const storageKey=idToKey[cargo.type];
                 if (storageKey&&game.baseResources[storageKey]!==undefined) {
@@ -456,7 +456,7 @@ io.on('connection', (socket) => {
             // Transfer ore from station to ship
             const idToKey={
                 10: 'iron', 11: 'copper', 12: 'bitite', 13: 'silver',
-                14: 'titanium', 15: 'gold', 16: 'platinum', 17: 'diamond'
+                14: 'titanium', 15: 'gold', 16: 'platinum', 17: 'diamond', 18: 'helium3'
             };
             const keyToId=Object.fromEntries(Object.entries(idToKey).map(([k, v]) => [v, parseInt(k)]));
             const storageKey=data.oreType.toLowerCase();
@@ -476,6 +476,20 @@ io.on('connection', (socket) => {
                     }
                     game.baseResources[storageKey]-=transferAmount;
                     console.log(`Transferred ${transferAmount} ${storageKey} to ship`);
+                }
+            }
+        }
+    });
+
+    // DEPOSIT ALL ORES
+    socket.on('depositAllOres', () => {
+        const code=playerRooms.get(socket.id);
+        if (code) {
+            const room=rooms.get(code);
+            if (room&&room.ready) {
+                const player=room.game.players.get(socket.id);
+                if (player&&!player.dead) {
+                    room.game.unloadCargo(player);
                 }
             }
         }
@@ -539,41 +553,53 @@ io.on('connection', (socket) => {
         const game=room.game;
         const player=game.players.get(socket.id);
 
-        console.log(`DEBUG: ${socket.id} issued ${data.command}`);
+        console.log(`DEBUG: [Room ${code}] Player ${socket.id} issued ${data.command}`, data);
 
         switch (data.command) {
             case 'addFuel':
-                game.baseResources.fuel=Math.min(10000, game.baseResources.fuel+(data.amount||1000));
+                // Add to base reserves
+                game.baseResources.fuel=Math.min(game.baseResources.maxFuel, game.baseResources.fuel+(data.amount||1000));
+                // Also refuel the player ship if they issued the command
+                if (player) {
+                    player.fuel=player.maxFuel;
+                }
                 break;
 
             case 'addParts':
-                game.baseResources.spareParts+=(data.amount||100);
+                game.baseResources.spareParts=Math.min(game.baseResources.maxSpareParts, game.baseResources.spareParts+(data.amount||100));
                 break;
 
             case 'addAllOres':
                 const amount=data.amount||500;
-                for (const key of Object.keys(game.baseResources.ores)) {
-                    game.baseResources.ores[key]+=amount;
-                }
+                const ores=['iron', 'copper', 'bitite', 'silver', 'titanium', 'gold', 'platinum', 'diamond', 'helium3'];
+                ores.forEach(key => {
+                    if (game.baseResources[key]!==undefined) {
+                        game.baseResources[key]=Math.min(game.baseResources.oreCapacity, game.baseResources[key]+amount);
+                    }
+                });
                 break;
 
             case 'addAllMaterials':
                 const matAmount=data.amount||100;
-                for (const key of Object.keys(game.baseResources.materials)) {
-                    game.baseResources.materials[key]+=matAmount;
-                }
+                const mats=['basic', 'industrial', 'advanced', 'quantum'];
+                mats.forEach(key => {
+                    if (game.baseResources[key]!==undefined) game.baseResources[key]+=matAmount;
+                });
                 break;
 
             case 'repairShip':
                 if (player) {
                     player.damage=0;
+                    console.log(`DEBUG: Repaired ship for player ${socket.id}`);
                 }
                 break;
 
             case 'spawnItem':
                 if (player&&data.type) {
+                    const pos=player.getPosition();
                     // Spawn single item dropped above player
-                    game.spawnDroppedItem(player.x, player.y-60, data.type, data.amount||1);
+                    game.spawnDroppedItem(pos.x, pos.y-60, data.type, data.amount||1);
+                    console.log(`DEBUG: Spawned ${data.type} for player ${socket.id} at (${pos.x}, ${pos.y})`);
                 }
                 break;
 
@@ -585,25 +611,19 @@ io.on('connection', (socket) => {
                 }
                 break;
 
-            case 'infiniteFuel':
-                if (player) {
-                    player.infiniteFuel=data.enabled;
-                }
-                break;
-
             case 'teleportBase':
-                if (player&&game.voxelMap.landingPadPosition) {
-                    const pos=game.voxelMap.landingPadPosition;
-                    player.setPosition(pos.x, pos.y-30);
-                    player.setVelocity(0, 0);
+                if (player&&game.voxelMap.spawnPosition) {
+                    const spawn=game.voxelMap.spawnPosition;
+                    player.respawn(spawn.x, spawn.y);
                 }
                 break;
 
             case 'maxBuildings':
+                // Max out all buildings for testing
                 for (const key of Object.keys(game.buildings)) {
-                    game.buildings[key].level=5;
+                    game.buildings[key].level=4;
                 }
-                game.recalculateBuildingEffects();
+                game.applyBuildingEffects();
                 break;
 
             case 'killPlayer':
@@ -612,9 +632,15 @@ io.on('connection', (socket) => {
                 }
                 break;
 
-            default:
-                console.log(`Unknown debug command: ${data.command}`);
+            case 'infiniteFuel':
+                if (player) {
+                    player.infiniteFuel=!!data.enabled;
+                }
+                break;
         }
+
+        // Broadcast resource update if change might have occurred
+        game.broadcast('resourcesUpdated', game.getClientResources());
     });
 
     socket.on('disconnect', () => {
