@@ -4,10 +4,19 @@ import {Renderer, CABLE_ATTACH_RANGE} from './Renderer.js';
 import {Input} from './Input.js';
 import {SoundManager} from './SoundManager.js';
 
-// Determine server URL (localhost for dev, same origin for production)
-const serverUrl = import.meta.env.VITE_SERVER_URL || (window.location.hostname === 'localhost'
-  ? 'http://localhost:3010'
-  : window.location.origin);
+// Determine server URL.
+//
+// Same origin whenever the page is not served from localhost. VITE_SERVER_URL is
+// only consulted for local development, because vite.config.js sets
+// envDir:'../' and so bakes the ROOT .env into the bundle at build time -- and
+// that file sets VITE_SERVER_URL=http://localhost:3010. Reading the override
+// first meant any build made on a developer machine shipped with localhost
+// hardcoded, so every player's browser tried to reach its own machine and the
+// deployed game could never connect.
+const isLocalHost = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+const serverUrl = isLocalHost
+  ? (import.meta.env.VITE_SERVER_URL || 'http://localhost:3010')
+  : window.location.origin;
 
 const socket=io(serverUrl);
 
