@@ -210,6 +210,12 @@ export class Game {
 
         // Resolves the power / fuel / data graphs over the built buildings.
         this.networks=new NetworkSystem(this);
+
+        // Session statistics
+        this.startTime=Date.now();
+        this.totalDeaths=0;
+        this.totalOreCollected=0;
+        this.gameEnded=false;
     }
 
     // Which buildings are doing work right now, and so draw their active load
@@ -1020,9 +1026,11 @@ export class Game {
             const wasDead=player.dead;
             player.update(dt);
 
-            // Check for death from other causes (oxygen, etc)
-            if (player.dead&&!wasDead&&player.shipType==='eva') {
-                this.removePlayerVehicles(player.id);
+            if (player.dead&&!wasDead) {
+                this.totalDeaths++;
+                if (player.shipType==='eva') {
+                    this.removePlayerVehicles(player.id);
+                }
             }
         }
 
@@ -1691,6 +1699,7 @@ export class Game {
             if (oreConfig&&oreConfig.isResource) {
                 const extracted=player.addCargo(tile, oreConfig.yield);
                 if (extracted>0) {
+                    this.totalOreCollected+=extracted;
                     this.destroyTile(target.gx, target.gy, player);
                     this.broadcast('orePickup', {
                         playerId: player.id,
@@ -2222,7 +2231,9 @@ export class Game {
                     won: true,
                     reason: 'core_reached',
                     depth: 5000,
-                    time: (Date.now()-this.startTime)/1000
+                    time: (Date.now()-this.startTime)/1000,
+                    oreCollected: this.totalOreCollected||0,
+                    deaths: this.totalDeaths||0
                 });
                 this.gameEnded=true;
                 return;
@@ -2242,7 +2253,9 @@ export class Game {
             this.broadcast('gameOver', {
                 won: false,
                 reason: 'colony_lost',
-                time: (Date.now()-this.startTime)/1000
+                time: (Date.now()-this.startTime)/1000,
+                oreCollected: this.totalOreCollected||0,
+                deaths: this.totalDeaths||0
             });
             this.gameEnded=true;
         }

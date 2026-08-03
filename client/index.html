@@ -28,6 +28,8 @@
         <input type="text" id="joinCode" placeholder="Enter room code" maxlength="6" />
         <button id="joinBtn">Join Game</button>
       </div>
+
+      <button id="lobbyGuideBtn" class="guide-lobby-btn">📖 How to Play</button>
     </div>
 
     <p id="lobbyError" class="error"></p>
@@ -54,13 +56,94 @@
       <h2>Settings</h2>
 
       <div class="settings-tabs">
-        <button class="settings-tab-btn active" data-settings-tab="audio">Audio</button>
+        <button class="settings-tab-btn active" data-settings-tab="guide">Game Guide</button>
+        <button class="settings-tab-btn" data-settings-tab="audio">Audio</button>
         <button class="settings-tab-btn" data-settings-tab="graphics">Graphics</button>
         <button class="settings-tab-btn" data-settings-tab="controls">Controls</button>
         <button class="settings-tab-btn" data-settings-tab="debug" id="settingsDebugTabBtn">Debug</button>
       </div>
 
-      <div id="settings-tab-audio" class="settings-tab-content active">
+      <div id="settings-tab-guide" class="settings-tab-content active guide-content">
+        <div class="guide-scroll">
+          <div class="guide-header">
+            <h3>🌕 Moonlander.io Operations Manual</h3>
+            <p>Welcome, Pilot. Here is everything you and your crew need to survive the cavernous depths of the Moon.</p>
+          </div>
+
+          <section class="guide-section">
+            <h4>🎯 1. Ultimate Mission Goal</h4>
+            <p>Your objective is to venture <strong>5,000 meters deep</strong> into the lunar crust to reach the <strong>Moon Core</strong>. Work together as a team to mine resources, construct outposts, run power/fuel lines, and maintain radar coverage as you descend through treacherous biomes.</p>
+          </section>
+
+          <section class="guide-section">
+            <h4>🚀 2. Flight, Docking & EVA</h4>
+            <ul>
+              <li><strong>Pilot Controls:</strong> Use <span class="key-badge">W</span> (Thrust), <span class="key-badge">A</span> / <span class="key-badge">D</span> (Rotate), and <span class="key-badge">L</span> (Spotlight).</li>
+              <li><strong>Landing & Docking:</strong> Touch down gently on any powered <strong>Landing Pad</strong>. Docking immediately repairs your hull, recharges your battery, and dispenses fuel (starts with a 500-unit fuel reserve).</li>
+              <li><strong>EVA Mode (Astronaut):</strong> Hold <span class="key-badge">X</span> for 2 seconds to exit your ship. In EVA, walk around on foot, build outposts, or haul cable spools.</li>
+              <li><strong>Hitchhiking (Co-Op Rescue):</strong> An astronaut in EVA can press <span class="key-badge">E</span> to enter any teammate's lander as a passenger!</li>
+            </ul>
+          </section>
+
+          <section class="guide-section">
+            <h4>⛏️ 3. Mining & Ore Refining</h4>
+            <ul>
+              <li><strong>Mining Laser:</strong> Hold <span class="key-badge">SPACE</span> near cave walls to mine ore deposits. Higher tier ores are found deeper down.</li>
+              <li><strong>Ore Tiers:</strong> Iron & Copper (Shallow), Silver & Titanium (Deep), Gold & Platinum (Abyssal), Diamond & Helium-3 (Core). <strong>Bitite</strong> is a hydrocarbon ore found at all depths.</li>
+              <li><strong>Refining:</strong> The <strong>Habitat</strong> has a built-in starter refinery (3 units/sec, self-powering). Delivered ores automatically refine into building materials (Basic, Industrial, Advanced, Quantum).</li>
+              <li><strong>Fuel Synthesis:</strong> Bitite ore is refined into liquid lander fuel to keep your fleet flying!</li>
+            </ul>
+          </section>
+
+          <section class="guide-section">
+            <h4>🏗️ 4. Base Building & The Base Bus</h4>
+            <ul>
+              <li><strong>Landing Pad Anchor:</strong> Every base begins with a Landing Pad. Placing a pad creates a <strong>200m building radius</strong>.</li>
+              <li><strong>The Base Bus:</strong> Buildings placed on the pad deck (within 200m and ±25m elevation) are automatically wired to all 3 networks without cables!</li>
+              <li><strong>Underground Outposts:</strong> Buildings placed in deep caves or off the deck require physical cable connections to function.</li>
+            </ul>
+          </section>
+
+          <section class="guide-section">
+            <h4>🔌 5. The Three-Network Cable System</h4>
+            <p>Bases run on 3 independent networks. The color defines the function:</p>
+            <div class="network-guide-grid">
+              <div class="network-card red-net">
+                <h5>🔴 Power Cable (Red)</h5>
+                <p>Distributes electricity (kW flow & kJ buffer). Powered by Habitat (15 kW starter), Solar Arrays (10 kW, surface only), or Fuel Generators (50 kW, burns fuel).</p>
+              </div>
+              <div class="network-card green-net">
+                <h5>🟢 Fuel Pipe (Green)</h5>
+                <p>Transfers liquid fuel from refineries to Fuel Depots, Landing Pads, and Fuel Generators. A pad with no fuel line cannot refuel ships once its local tank is dry!</p>
+              </div>
+              <div class="network-card blue-net">
+                <h5>🔵 Data Cable (Blue)</h5>
+                <p>Merges radar networks across distant outposts into a unified team Data Net.</p>
+              </div>
+            </div>
+            <p class="guide-note">💡 <strong>Load Shedding:</strong> If power is deficient, the base automatically shuts off low-priority buildings (Lights → Crafting → Refinery → Antenna → Landing Pad) to protect vital systems.</p>
+          </section>
+
+          <section class="guide-section">
+            <h4>📡 6. Radar & Minimap Visibility</h4>
+            <ul>
+              <li><strong>Explored Terrain:</strong> Permanent memory shown as desaturated static on the minimap.</li>
+              <li><strong>Live Signals:</strong> Active radar blips (players, landers, hazards, dropped items) are ONLY visible inside the coverage bubble of a powered <strong>Comm Antenna</strong> (100m+) or <strong>Habitat</strong> (250m).</li>
+              <li><strong>Data Sharing:</strong> Linking antennas with 🔵 <strong>Blue Data Cables</strong> merges their radar feeds. Teammates linked to the same Data Net see each other's live blips across the entire cavern!</li>
+            </ul>
+          </section>
+
+          <section class="guide-section">
+            <h4>🤝 7. Cooperative Systems & Rescue</h4>
+            <ul>
+              <li><strong>Physics Tethers:</strong> Press <span class="key-badge">G</span> to attach a tow rope to another ship, wreckage, or stranded teammate. Tow out-of-fuel landers back to base!</li>
+              <li><strong>Inventory Sharing:</strong> Open inventory (<span class="key-badge">Q</span>) near another ship or station to transfer ores, fuel, and spare parts.</li>
+            </ul>
+          </section>
+        </div>
+      </div>
+
+      <div id="settings-tab-audio" class="settings-tab-content hidden">
         <div class="setting-group">
           <label for="masterVolume">Master Volume</label>
           <input type="range" id="masterVolume" min="0" max="100" value="100">
@@ -277,6 +360,39 @@
         </label>
       </div>
       <button id="closeDebugBtn">Close</button>
+    </div>
+  </div>
+
+  <!-- Ending / Game Over Menu -->
+  <div id="gameOverMenu" class="modal hidden">
+    <div class="modal-content game-over-content victory-theme" id="gameOverModalContent">
+      <div class="ending-badge" id="gameOverBadge">MISSION ACCOMPLISHED</div>
+      <h1 id="gameOverTitle" class="ending-title">LUNAR CORE REACHED!</h1>
+      <p id="gameOverSubtitle" class="ending-subtitle">Your team has successfully navigated 5,000m into the lunar depths!</p>
+      
+      <div class="ending-stats-grid">
+        <div class="stat-card">
+          <span class="stat-label">Time Elapsed</span>
+          <span class="stat-value" id="statEndingTime">00:00</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Final Depth</span>
+          <span class="stat-value highlight" id="statEndingDepth">5,000m</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Total Ore Mined</span>
+          <span class="stat-value" id="statEndingOre">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Team Deaths</span>
+          <span class="stat-value" id="statEndingDeaths">0</span>
+        </div>
+      </div>
+
+      <div class="ending-actions">
+        <button id="gameOverContinueBtn" class="primary-btn">Continue Exploring</button>
+        <button id="gameOverQuitBtn" class="danger">Quit to Lobby</button>
+      </div>
     </div>
   </div>
 

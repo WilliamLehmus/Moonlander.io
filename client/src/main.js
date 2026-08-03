@@ -399,6 +399,8 @@ function updatePlayerCount(count) {
 function toggleMenu() {
   isMenuOpen=!isMenuOpen;
   if (isMenuOpen) {
+    if (resumeBtn) resumeBtn.style.display='block';
+    if (quitBtn) quitBtn.style.display='block';
     escapeMenuEl.classList.remove('hidden');
     soundManager.playSound('menu_pop');
   } else {
@@ -486,6 +488,28 @@ joinCodeInput.addEventListener('input', () => {
 leaveBtn.addEventListener('click', () => {
   socket.emit('leaveRoom');
 });
+
+const lobbyGuideBtn=document.getElementById('lobbyGuideBtn');
+if (lobbyGuideBtn) {
+  lobbyGuideBtn.addEventListener('click', () => {
+    // Open escape menu switched to guide tab, hiding in-game only buttons
+    if (resumeBtn) resumeBtn.style.display='none';
+    if (quitBtn) quitBtn.style.display='none';
+
+    // Activate guide tab
+    document.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.settings-tab-content').forEach(t => t.classList.add('hidden'));
+
+    const guideTabBtn=document.querySelector('[data-settings-tab="guide"]');
+    const guideTabContent=document.getElementById('settings-tab-guide');
+    if (guideTabBtn) guideTabBtn.classList.add('active');
+    if (guideTabContent) guideTabContent.classList.remove('hidden');
+
+    escapeMenuEl.classList.remove('hidden');
+    isMenuOpen=true;
+    soundManager.playSound('menu_pop');
+  });
+}
 
 // ============================================
 // EVENT LISTENERS - MENU
@@ -664,6 +688,62 @@ socket.on('chatMessage', (data) => {
     soundManager.playNotification();
   }
 });
+
+// Game Over / Victory Ending Screen
+const gameOverMenuEl=document.getElementById('gameOverMenu');
+const gameOverModalContent=document.getElementById('gameOverModalContent');
+const gameOverBadge=document.getElementById('gameOverBadge');
+const gameOverTitle=document.getElementById('gameOverTitle');
+const gameOverSubtitle=document.getElementById('gameOverSubtitle');
+const statEndingTime=document.getElementById('statEndingTime');
+const statEndingDepth=document.getElementById('statEndingDepth');
+const statEndingOre=document.getElementById('statEndingOre');
+const statEndingDeaths=document.getElementById('statEndingDeaths');
+const gameOverContinueBtn=document.getElementById('gameOverContinueBtn');
+const gameOverQuitBtn=document.getElementById('gameOverQuitBtn');
+
+function formatDuration(seconds) {
+  const mins=Math.floor(seconds/60);
+  const secs=Math.floor(seconds%60);
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+socket.on('gameOver', (data) => {
+  if (gameOverMenuEl) {
+    if (data.won) {
+      if (gameOverModalContent) gameOverModalContent.className='modal-content game-over-content victory-theme';
+      if (gameOverBadge) gameOverBadge.textContent='MISSION ACCOMPLISHED';
+      if (gameOverTitle) gameOverTitle.textContent='LUNAR CORE REACHED!';
+      if (gameOverSubtitle) gameOverSubtitle.textContent='Your team has successfully navigated 5,000m into the lunar depths!';
+      soundManager.playSound('victory');
+    } else {
+      if (gameOverModalContent) gameOverModalContent.className='modal-content game-over-content defeat-theme';
+      if (gameOverBadge) gameOverBadge.textContent='MISSION FAILED';
+      if (gameOverTitle) gameOverTitle.textContent='COLONY LOST';
+      if (gameOverSubtitle) gameOverSubtitle.textContent='All landers were destroyed and no spare parts remain for respawn.';
+    }
+
+    if (statEndingTime) statEndingTime.textContent=formatDuration(data.time||0);
+    if (statEndingDepth) statEndingDepth.textContent=data.won? '5,000m':'Surface';
+    if (statEndingOre) statEndingOre.textContent=(data.oreCollected||0).toLocaleString();
+    if (statEndingDeaths) statEndingDeaths.textContent=data.deaths||0;
+
+    gameOverMenuEl.classList.remove('hidden');
+  }
+});
+
+if (gameOverContinueBtn) {
+  gameOverContinueBtn.addEventListener('click', () => {
+    gameOverMenuEl.classList.add('hidden');
+  });
+}
+
+if (gameOverQuitBtn) {
+  gameOverQuitBtn.addEventListener('click', () => {
+    gameOverMenuEl.classList.add('hidden');
+    socket.emit('leaveRoom');
+  });
+}
 
 // ============================================
 // GAME LOOP
