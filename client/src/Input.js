@@ -34,6 +34,8 @@ export class Input {
 
         // Cable placement mode
         this.cableMode=false;
+        // Hold-N network overlay
+        this.networkOverlay=false;
 
         window.addEventListener('keydown', (e) => this.handleKey(e, true));
         window.addEventListener('keyup', (e) => this.handleKey(e, false));
@@ -151,6 +153,11 @@ export class Input {
                 break;
             case 'KeyJ':
                 if (isDown) this.jettisonCargo(); // Drop 25% of cargo
+                break;
+            case 'KeyN':
+                // Hold N: network overlay (GDD 6.6). Purely a client-side view,
+                // so it never touches sendInput().
+                this.networkOverlay=isDown;
                 break;
             // Quickbar keys (1-9)
             case 'Digit1':

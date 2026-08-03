@@ -12,11 +12,23 @@ export class CableSystem {
 
         this.nextId=1;
         this.MAX_LENGTH=game.config?.difficulty?.buildCableMaxLength??120;
+        // 90 in the client + 40 slack for movement between click and arrival.
+        this.ATTACH_RANGE=game.config?.difficulty?.cableAttachRange??130;
     }
 
     // Any change to the laid cable invalidates the resolved network graph.
     markNetworksDirty() {
         this.game.networks?.markDirty();
+    }
+
+    // A player must physically be at a connector to hook a cable onto it.
+    // Must match CABLE_ATTACH_RANGE in the client renderer, plus slack for
+    // latency -- the client has already refused anything further out.
+    playerInRange(playerId, x, y) {
+        const player=this.game.players.get(playerId);
+        if (!player) return false;
+        const pos=player.getPosition();
+        return Math.hypot(pos.x-x, pos.y-y)<=this.ATTACH_RANGE;
     }
 
     // Player starts a new cable line from a location (usually a building/pad or existing cable end)
@@ -25,6 +37,10 @@ export class CableSystem {
         // 'cable_red'/'cable_green'/'cable_blue' from crafted items.
         const net=normalizeCableType(type);
         if (!net) return {success: false, reason: 'invalid_cable_type'};
+
+        if (!this.playerInRange(playerId, x, y)) {
+            return {success: false, reason: 'out_of_range'};
+        }
 
         this.activeLines.set(playerId, {
             type: net,
@@ -123,10 +139,14 @@ export class CableSystem {
 
     attachLine(playerId, x, y, targetId=null) {
         const line=this.activeLines.get(playerId);
-        if (!line) return {success: false};
+        if (!line) return {success: false, reason: 'no_active_line'};
 
         if (!this.canAffordSegment(playerId)) {
             return {success: false, reason: 'no_materials'};
+        }
+
+        if (!this.playerInRange(playerId, x, y)) {
+            return {success: false, reason: 'out_of_range'};
         }
 
         // Check if target is a Spool (Connect two loose ends)

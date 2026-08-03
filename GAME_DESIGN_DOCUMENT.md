@@ -387,7 +387,7 @@ All higher tier ores are refined into their primary material plus a fraction of 
 - **K / L / H**: Toggle Position Lights / Spotlight / Antenna
 - **Q / B**: Inventory / Build & Station Menu
 - **J / T**: Jettison Cargo / Transfer Mode
-- **N (hold)**: Network Overlay — show power / fuel / data graphs (§6.6)
+- **N (hold)**: Network Overlay — power / fuel / data graphs and antenna coverage (§6.6)
 
 ### B: Glossary
 - **Bitite**: Lunar hydrocarbon used for fuel synthesis.
@@ -411,12 +411,20 @@ The **server-side network logic in §6 and §7 is implemented** in `server/game/
 - **Data** nets merge over blue cable; coverage is per-antenna and requires power; each player's current data net is resolved server-side and attached to their entry in `getState()`.
 - The **Habitat** now exists at Level 1 with a position, as generator, 250m antenna and starter refinery. The **Landing Pad** also has a position for the first time, so both can act as cable endpoints.
 
-**Still outstanding — the remaining structural gap:**
+**Implemented (client, §6.6):**
+
+- **Port dots** under every building — solid = supplied, pulsing amber = connected but starved, hollow red = required and not connected, absent = not used. Drawn as an overlay, so the static sprites are untouched. Shed and unconnected buildings also get a word, not just a colour.
+- **Cable-carrying mode** dims and tints the world to the held cable's colour and highlights only ports of that network; in-range ports pulse and are named, out-of-range ports stay faint.
+- **Base Grid panel** in the station overview: supply vs demand in kW, buffer in kJ, what is currently being shed, pad fuel and colony reserve, and the data net summary.
+- **Network Overlay** on hold **N**: desaturates the world, draws antenna coverage per data net, and labels every building with its generation and draw.
+- **Run-length meter** while laying cable, showing metres used of the 120m maximum and turning red past it.
+
+**Still outstanding:**
 
 1. **Buildings are still not instances.** `Game.buildings` remains a global map of *building type → level*, with positions hardcoded in `VoxelMap.buildingPositions`. `NetworkSystem` is written against this, but every place that enumerates buildings goes through the single method `collectNodes()` — moving to multiple placed instances is a change to that one method, not to the solver. Until then there can be only one of each building, so "build a second base" is not yet possible.
 2. **Base Bus radius is 1400, not the 200m in §5.2.** The pre-placed surface row spans `baseWorldPos.x + 120..1080` and each building renders 92 units wide, so the existing base physically cannot fit inside a 200m radius. The radius is exposed as `difficulty.baseBusRadius` and should drop to 200 once buildings can be freely placed and the fixed row is retired.
-3. **Client UI for §6.6 is not built.** The server sends everything the UI needs — `gameState.networks` carries per-building `{power, fuel, data}` status plus per-net supply/demand/buffer — but port dots, the cable-carrying highlight, the Base Grid panel and the Network Overlay are not yet drawn.
-4. **Cable severance** (§6.2, optional) is not implemented.
+3. **Cable severance** (§6.2, optional) is not implemented.
+4. **Spool physics is unchanged.** `dropLine` still creates a physics box with a crude spring past `MAX_LENGTH`. The crash bugs in the spool path are fixed (items 7-8 below) but the rope simulation itself was deliberately left alone — it is not on the critical path to working cables, and rewriting it is a separate piece of work.
 
 **Bugs found and fixed during implementation:**
 
@@ -426,6 +434,10 @@ The **server-side network logic in §6 and §7 is implemented** in `server/game/
 8. `CableSystem.pickupSpool` discarded `anchorId`, so a picked-up line forgot which building it came from. Now preserved.
 9. Cable types arrived as `'power'/'fuel'/'data'` from the client but `'cable_red'/'cable_green'/'cable_blue'` from crafted items, and were compared with `===`. All types now normalise through `normalizeCableType()` at the boundary.
 10. Attaching a cable to a building left the player's line live, so runs never terminated cleanly. Attaching to a building now ends the run; attaching to bare rock still chains.
+11. **Cable targeting ignored the player entirely.** `getNearestInteractable()` matched any building within 50 units of the *mouse*, anywhere on the map. Two clicks could wire two buildings a kilometre apart, so walking a cable out never mattered and the whole mechanic was pointless. Targeting now requires the player to be within `CABLE_ATTACH_RANGE` (90) of the connector, enforced again on the server at 130 to allow for latency.
+12. **Every cable failure was silent.** The client passed no acknowledgement callback, so `no_materials`, `too_long` and `cable_type_mismatch` all looked identical: nothing happened. All failures now surface as an on-screen reason.
+13. Holding no cable and clicking did nothing with no explanation — the most common first experience. It now says what to craft and how to select it.
+14. The cursor could target buildings that do not use the held network. Green pipe no longer offers a power-only building as a target.
 **Known issues left alone (reported, not fixed):**
 
 11. `buildingCosts` for `fuel_refinery`, `solar_array` and `ship_factory` (Game.js:151-175) define **12** levels, but `canAffordUpgrade` caps at level 4 (Game.js:233). Entries 5-12 are dead. The build costs in §5.3 have been corrected to match the costs actually used at runtime rather than the old table's values: **Refinery 2 Industrial, Solar 1 Industrial, Factory 5 Industrial** (from the overrides), and **Fuel Generator 20 Basic** — the generator has *no* override, so it falls through to `generateCost(20, …)` and costs Basic, not the 20 Industrial the old table claimed. §5.4 and §6.3 are balanced around the 20 Basic figure.
@@ -454,5 +466,5 @@ The **server-side network logic in §6 and §7 is implemented** in `server/game/
 - **v1.0-1.4**: Core physics, multiplayer rooms, biomes, and UI foundations.
 
 ---
-*Document Version: 1.10*
+*Document Version: 1.11*
 *Last Updated: August 3, 2026*

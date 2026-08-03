@@ -1,3 +1,9 @@
+// How close a player must physically be to a building to hook a cable onto it.
+// Shared with main.js so the highlight, the click test and the server check all
+// agree -- previously the client let you attach to anything under the cursor,
+// anywhere on the map, which is why walking a cable out never mattered.
+export const CABLE_ATTACH_RANGE=90;
+
 // Particle class for fire/smoke/debris effects
 class Particle {
     constructor(x, y, vx, vy, type='fire') {
@@ -3285,6 +3291,213 @@ export class Renderer {
                 }
             }
         }
+
+        this.ctx.restore();
+    }
+
+    // ============================================
+    // NETWORK STATUS OVERLAY  (GDD 6.6)
+    // ============================================
+    // The building sprites are static, so every bit of network state is drawn
+    // as an overlay on top of them. Nothing here is a click target -- the dots
+    // are deliberately small and unlabelled so they read as status lights.
+    networkColour(net) {
+        if (net==='power') return '#ff4444';
+        if (net==='fuel') return '#44dd55';
+        if (net==='data') return '#4488ff';
+        return '#ffffff';
+    }
+
+    // Port dots: one per network a building can use, drawn along its base.
+    //   solid       = connected and supplied
+    //   amber ring  = connected but starved / browning out / shed
+    //   hollow red  = required, not connected
+    //   absent      = building does not use that network
+    drawNetworkStatus(state, cameraX, cameraY) {
+        const net=state.networks;
+        if (!net||!net.nodes) return;
+
+        const t=Date.now()/1000;
+        const pulse=0.55+0.45*Math.sin(t*4);
+
+        this.ctx.save();
+        for (const node of Object.values(net.nodes)) {
+            const sx=node.x-cameraX;
+            const sy=node.y-cameraY;
+            // Cheap cull: skip anything comfortably off screen.
+            if (sx<-80||sy<-80||sx>this.canvas.width+80||sy>this.canvas.height+80) continue;
+
+            const ports=['power', 'fuel', 'data'].filter(k => node[k]&&node[k]!=='na');
+            if (ports.length===0) continue;
+
+            const spacing=9;
+            const startX=sx-((ports.length-1)*spacing)/2;
+            const py=sy+16;
+
+            ports.forEach((key, i) => {
+                const status=node[key];
+                const px=startX+i*spacing;
+                const colour=this.networkColour(key);
+
+                this.ctx.beginPath();
+                this.ctx.arc(px, py, 3.2, 0, Math.PI*2);
+
+                if (status==='ok') {
+                    this.ctx.fillStyle=colour;
+                    this.ctx.fill();
+                    // Soft halo so a healthy port reads at a glance.
+                    this.ctx.strokeStyle=colour;
+                    this.ctx.globalAlpha=0.35;
+                    this.ctx.lineWidth=3;
+                    this.ctx.stroke();
+                    this.ctx.globalAlpha=1;
+                } else if (status==='unconnected') {
+                    this.ctx.strokeStyle='#ff4444';
+                    this.ctx.lineWidth=1.4;
+                    this.ctx.stroke();
+                } else {
+                    // starved / brownout / shed / blocked / isolated
+                    this.ctx.globalAlpha=pulse;
+                    this.ctx.fillStyle='#ffaa00';
+                    this.ctx.fill();
+                    this.ctx.globalAlpha=1;
+                    this.ctx.strokeStyle='#ffaa00';
+                    this.ctx.lineWidth=1.2;
+                    this.ctx.stroke();
+                }
+            });
+
+            // A shed building gets a clear word, not just a colour.
+            if (node.power==='shed'||node.power==='unconnected'||node.fuel==='blocked') {
+                const label=node.power==='shed'? 'NO POWER (SHED)'
+                    :node.power==='unconnected'? 'NOT CONNECTED'
+                        :'OUTPUT FULL';
+                this.ctx.font='9px Consolas, monospace';
+                this.ctx.textAlign='center';
+                this.ctx.globalAlpha=0.85;
+                this.ctx.fillStyle='#000';
+                const w=this.ctx.measureText(label).width;
+                this.ctx.fillRect(sx-w/2-3, py+6, w+6, 12);
+                this.ctx.globalAlpha=1;
+                this.ctx.fillStyle=node.power==='unconnected'? '#ff6666':'#ffaa00';
+                this.ctx.fillText(label, sx, py+15);
+                this.ctx.textAlign='left';
+            }
+        }
+        this.ctx.restore();
+    }
+
+    // While a cable is held: dim the world toward that cable's colour and light
+    // up only the ports it can legally attach to. Ports of the other two
+    // networks are suppressed entirely, which is what teaches colour = purpose.
+    drawCableTargeting(state, heldNet, player, cameraX, cameraY) {
+        if (!heldNet) return;
+        const net=state.networks;
+
+        const tint={power: 'rgba(255,68,68,0.10)', fuel: 'rgba(68,221,85,0.10)', data: 'rgba(68,136,255,0.10)'}[heldNet];
+        this.ctx.save();
+        this.ctx.fillStyle='rgba(0,0,0,0.28)';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.fillStyle=tint;
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        const colour=this.networkColour(heldNet);
+        const t=Date.now()/1000;
+        const pulse=0.5+0.5*Math.sin(t*5);
+
+        if (net&&net.nodes) {
+            for (const node of Object.values(net.nodes)) {
+                // A building is only a valid endpoint if it uses this network.
+                if (!node[heldNet]||node[heldNet]==='na') continue;
+
+                const sx=node.x-cameraX;
+                const sy=node.y-cameraY;
+                if (sx<-80||sy<-80||sx>this.canvas.width+80||sy>this.canvas.height+80) continue;
+
+                // In range of the player = solid; out of range = faint.
+                const inRange=player&&Math.hypot(node.x-player.x, node.y-player.y)<=CABLE_ATTACH_RANGE;
+
+                this.ctx.globalAlpha=inRange? 0.4+0.6*pulse:0.25;
+                this.ctx.strokeStyle=colour;
+                this.ctx.lineWidth=inRange? 2.5:1.5;
+                this.ctx.beginPath();
+                this.ctx.arc(sx, sy, inRange? 26+pulse*4:22, 0, Math.PI*2);
+                this.ctx.stroke();
+
+                this.ctx.globalAlpha=1;
+                this.ctx.fillStyle=colour;
+                this.ctx.beginPath();
+                this.ctx.arc(sx, sy+16, 4, 0, Math.PI*2);
+                this.ctx.fill();
+
+                if (inRange) {
+                    this.ctx.font='9px Consolas, monospace';
+                    this.ctx.textAlign='center';
+                    this.ctx.fillStyle=colour;
+                    this.ctx.fillText(node.name.toUpperCase(), sx, sy-30);
+                    this.ctx.textAlign='left';
+                }
+            }
+        }
+        this.ctx.restore();
+    }
+
+    // Hold N: desaturate the world and draw the three graphs with their numbers.
+    drawNetworkOverlay(state, cameraX, cameraY) {
+        const net=state.networks;
+        if (!net) return;
+
+        this.ctx.save();
+        this.ctx.fillStyle='rgba(0,0,0,0.55)';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Antenna coverage circles, one tint per data net.
+        (net.data||[]).forEach((dnet, i) => {
+            const hue=(200+i*60)%360;
+            for (const c of dnet.coverage) {
+                this.ctx.beginPath();
+                this.ctx.arc(c.x-cameraX, c.y-cameraY, c.r, 0, Math.PI*2);
+                this.ctx.fillStyle=`hsla(${hue}, 80%, 55%, 0.07)`;
+                this.ctx.fill();
+                this.ctx.strokeStyle=`hsla(${hue}, 80%, 65%, 0.55)`;
+                this.ctx.lineWidth=1.5;
+                this.ctx.setLineDash([6, 6]);
+                this.ctx.stroke();
+                this.ctx.setLineDash([]);
+            }
+        });
+
+        // Per-building supply/draw readout.
+        this.ctx.font='10px Consolas, monospace';
+        this.ctx.textAlign='center';
+        for (const node of Object.values(net.nodes||{})) {
+            const sx=node.x-cameraX;
+            const sy=node.y-cameraY;
+            if (sx<-120||sy<-120||sx>this.canvas.width+120||sy>this.canvas.height+120) continue;
+
+            const bits=[];
+            if (node.gen>0) bits.push(`+${node.gen.toFixed(0)}kW`);
+            if (node.draw>0) bits.push(`-${node.draw.toFixed(0)}kW`);
+            const line=`${node.name}${bits.length? '  '+bits.join(' '):''}`;
+
+            const w=this.ctx.measureText(line).width;
+            this.ctx.fillStyle='rgba(0,0,0,0.75)';
+            this.ctx.fillRect(sx-w/2-4, sy-46, w+8, 14);
+            this.ctx.fillStyle=node.power==='ok'? '#8f8':(node.power==='unconnected'? '#f88':'#fa4');
+            this.ctx.fillText(line, sx, sy-36);
+        }
+        this.ctx.textAlign='left';
+
+        // Legend.
+        const legend=[['Power Cable (Red)', '#ff4444'], ['Fuel Pipe (Green)', '#44dd55'], ['Data Cable (Blue)', '#4488ff']];
+        this.ctx.font='11px Consolas, monospace';
+        legend.forEach(([text, colour], i) => {
+            const y=this.canvas.height-70+i*18;
+            this.ctx.fillStyle=colour;
+            this.ctx.fillRect(20, y-8, 18, 3);
+            this.ctx.fillStyle='#ddd';
+            this.ctx.fillText(text, 46, y-2);
+        });
 
         this.ctx.restore();
     }

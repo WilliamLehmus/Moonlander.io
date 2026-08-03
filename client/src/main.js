@@ -1,6 +1,6 @@
 import './style.css';
 import {io} from 'socket.io-client';
-import {Renderer} from './Renderer.js';
+import {Renderer, CABLE_ATTACH_RANGE} from './Renderer.js';
 import {Input} from './Input.js';
 import {SoundManager} from './SoundManager.js';
 
@@ -1382,6 +1382,88 @@ document.getElementById('debugKillPlayer')?.addEventListener('click', () => {
 const stationTabBtns=document.querySelectorAll('.station-tabs .tab-btn');
 const stationTabContents=document.querySelectorAll('.station-tab');
 
+// ============================================
+// NETWORK STATUS UI  (GDD 6.6)
+// ============================================
+// Shared vocabulary for the three networks. Function first, colour second --
+// the name is what teaches a new player what the colour is for.
+const NET_INFO={
+  power: {label: 'Power', item: 'Power Cable (Red)', colour: '#ff4444', dim: 'rgba(255,68,68,0.35)'},
+  fuel: {label: 'Fuel', item: 'Fuel Pipe (Green)', colour: '#44dd55', dim: 'rgba(68,221,85,0.35)'},
+  data: {label: 'Data', item: 'Data Cable (Blue)', colour: '#4488ff', dim: 'rgba(68,136,255,0.35)'}
+};
+
+// Must match difficulty.buildCableMaxLength on the server (default 120).
+const CABLE_MAX_RUN=120;
+
+// Normalises every cable vocabulary the client deals with ('red', 'cable_red',
+// 'power') down to the three network keys the server uses.
+function cableNet(raw) {
+  if (!raw) return null;
+  const s=String(raw).toLowerCase();
+  if (s.includes('power')||s.includes('red')) return 'power';
+  if (s.includes('fuel')||s.includes('green')) return 'fuel';
+  if (s.includes('data')||s.includes('blue')) return 'data';
+  return null;
+}
+
+// Base Grid panel: supply vs demand, fuel on the network, and the data net.
+function renderBaseGridPanel() {
+  const net=gameState.networks;
+  if (!net||!net.totals) return '';
+
+  const t=net.totals;
+  const strained=t.demand>t.supply;
+  const shedding=(t.shed||[]).length>0;
+  const powerColour=shedding? '#ff4444':(strained? '#ffaa00':'#44dd55');
+  const loadPct=t.supply>0? Math.min(100, t.demand/t.supply*100):100;
+  const bufPct=t.bufferCapacity>0? Math.min(100, t.buffer/t.bufferCapacity*100):0;
+
+  // Fuel reachable over green pipe, plus whatever is in the pad's own tank.
+  const fuelNets=net.fuel||[];
+  const padTank=fuelNets.reduce((sum, f) => sum+(f.tanks?.landing_pad||0), 0);
+  const pool=fuelNets.reduce((sum, f) => Math.max(sum, f.pool||0), 0);
+
+  const dataNets=net.data||[];
+  const antennaCount=dataNets.reduce((n, d) => n+d.coverage.length, 0);
+  const reach=dataNets.reduce((m, d) => Math.max(m, ...d.coverage.map(c => c.r)), 0);
+
+  const shedNames=(t.shed||[]).map(id => net.nodes?.[id]?.name||id);
+
+  return `
+    <div class="status-bar-item">
+      <div class="status-bar-label">
+        <span>POWER GRID</span>
+        <span class="status-bar-val" style="color:${powerColour}">${t.demand} / ${t.supply} kW</span>
+      </div>
+      <div class="status-bar-track"><div class="status-bar-fill" style="width:${loadPct}%; background:${powerColour};"></div></div>
+      <div class="status-bar-label" style="margin-top:3px; font-size:0.7rem; opacity:0.75">
+        <span>BUFFER</span><span class="status-bar-val">${t.buffer} / ${t.bufferCapacity} kJ</span>
+      </div>
+      <div class="status-bar-track" style="height:4px"><div class="status-bar-fill" style="width:${bufPct}%; background:#0af;"></div></div>
+      ${shedding? `<div style="margin-top:4px; font-size:0.72rem; color:#ff6666">⚠ SHEDDING: ${shedNames.join(', ')}</div>`:''}
+      ${!shedding&&strained? `<div style="margin-top:4px; font-size:0.72rem; color:#ffaa00">⚠ Demand exceeds supply — running on buffer</div>`:''}
+    </div>
+    <div class="status-bar-item">
+      <div class="status-bar-label">
+        <span>FUEL NETWORK</span>
+        <span class="status-bar-val" style="color:${padTank>0? '#44dd55':'#ff4444'}">Pad ${Math.floor(padTank)}</span>
+      </div>
+      <div class="status-bar-track"><div class="status-bar-fill" style="width:${Math.min(100, padTank/500*100)}%; background:#44dd55;"></div></div>
+      <div style="margin-top:3px; font-size:0.7rem; opacity:0.75">Colony reserve ${Math.floor(pool)}${padTank<=0? ' — <span style="color:#ff6666">pad tank empty, cannot refuel</span>':''}</div>
+    </div>
+    <div class="status-bar-item">
+      <div class="status-bar-label">
+        <span>DATA NET</span>
+        <span class="status-bar-val" style="color:${antennaCount>0? '#4488ff':'#ff4444'}">${dataNets.length} net${dataNets.length===1? '':'s'}</span>
+      </div>
+      <div style="margin-top:3px; font-size:0.7rem; opacity:0.75">
+        ${antennaCount>0? `${antennaCount} antenna${antennaCount===1? '':'s'} · ${reach}m widest coverage`:'No antenna on air — minimap is static'}
+      </div>
+    </div>
+  `;
+}
+
 function updateStationOverview() {
   if (!gameState) return;
   const baseRes=gameState.baseResources||{};
@@ -1398,10 +1480,7 @@ function updateStationOverview() {
         <div class="status-bar-label"><span>SPARE PARTS</span><span class="status-bar-val">${Math.floor(baseRes.spareParts||0)} / ${baseRes.maxSpareParts||1000}</span></div>
         <div class="status-bar-track"><div class="status-bar-fill" style="width: ${Math.min(100, (baseRes.spareParts||0)/(baseRes.maxSpareParts||1000)*100)}%; background: #ccc;"></div></div>
       </div>
-      <div class="status-bar-item">
-        <div class="status-bar-label"><span>GRID POWER</span><span class="status-bar-val">${Math.floor(baseRes.power||0)} / ${baseRes.maxPower||100}</span></div>
-        <div class="status-bar-track"><div class="status-bar-fill" style="width: ${Math.min(100, (baseRes.power||0)/(baseRes.maxPower||100)*100)}%; background: #0af;"></div></div>
-      </div>
+      ${renderBaseGridPanel()}
     `;
   }
 
@@ -1720,59 +1799,97 @@ window.handleCraftItem=function(itemType) {
 // Local reference not needed as we rely on server state (gameState.cables)
 // but can keep for prediction/smoothness if needed, but omitted for simplicity.
 
-function getNearestInteractable(x, y) {
-  const interactRadius=30;
+// Finds what the cursor is over, but only if the PLAYER is close enough to
+// reach it. The cursor picks the target; the player's body decides whether it
+// is legal. Without the second test you could wire two buildings a kilometre
+// apart with two clicks and never walk the cable anywhere.
+//
+// `heldNet` filters out buildings that do not use the network being carried,
+// so green pipe simply cannot see a power-only building as a target.
+function getNearestInteractable(x, y, heldNet=null) {
+  const cursorRadius=40;
+  const me=gameState.players?.find(p => p.id===myId);
+  const inPlayerRange=(tx, ty) => me&&Math.hypot(tx-me.x, ty-me.y)<=CABLE_ATTACH_RANGE;
 
-  // Check Spools
+  // Spools first -- they sit on top of everything else.
   if (gameState.cables) {
     for (const c of gameState.cables) {
-      if (c.isSpool) {
-        const dx=x-c.x2;
-        const dy=y-c.y2;
-        if (dx*dx+dy*dy<interactRadius*interactRadius) {
-          return {type: 'spool', id: c.id, x: c.x2, y: c.y2, cableType: c.type};
-        }
-      }
+      if (!c.isSpool) continue;
+      if (Math.hypot(x-c.x2, y-c.y2)>cursorRadius) continue;
+      if (!inPlayerRange(c.x2, c.y2)) return {type: 'spool', id: c.id, x: c.x2, y: c.y2, cableType: c.type, outOfRange: true};
+      return {type: 'spool', id: c.id, x: c.x2, y: c.y2, cableType: c.type};
     }
   }
 
-  // Check Buildings
-  if (gameState.activeBuildings) {
-    for (const b of gameState.activeBuildings) {
-      const dx=x-b.x;
-      const dy=y-b.y;
-      if (dx*dx+dy*dy<50*50) {
-        return {type: 'building', id: b.id, x: b.x, y: b.y};
-      }
-    }
+  // Buildings. Prefer the network status list, which carries per-network
+  // capability; fall back to activeBuildings if it has not arrived yet.
+  const nodes=gameState.networks?.nodes;
+  const candidates=nodes
+    ? Object.values(nodes).map(n => ({id: n.id, x: n.x, y: n.y, name: n.name, node: n}))
+    : (gameState.activeBuildings||[]).map(b => ({id: b.id, x: b.x, y: b.y, name: b.id, node: null}));
+
+  let best=null;
+  let bestDist=cursorRadius;
+  for (const b of candidates) {
+    const d=Math.hypot(x-b.x, y-b.y);
+    if (d>bestDist) continue;
+    // A building that does not use the held network is not a target at all.
+    if (heldNet&&b.node&&(!b.node[heldNet]||b.node[heldNet]==='na')) continue;
+    best=b;
+    bestDist=d;
   }
 
-  // Check Helper: Base/Pad
-  if (gameState.activeBuildings&&gameState.activeBuildings.length===0&&gameState.landingPadPosition) {
-    // If no buildings found yet, allow base attach
-    // Actually activeBuildings should contain LANDING_PAD if it's considered a building. 
-    // Server Game.js: getActiveBuildings iterates 'this.buildings'. 'landing_pad' is one.
-    // So handled above.
-  }
-  // Fallback if landing pad isn't in activeBuildings for some reason
-  if (gameState.landingPadPosition) {
-    const dx=x-gameState.landingPadPosition.x;
-    const dy=y-gameState.landingPadPosition.y;
-    if (dx*dx+dy*dy<60*60) {
-      return {type: 'building', id: 'landing_pad', x: gameState.landingPadPosition.x, y: gameState.landingPadPosition.y};
-    }
+  if (best) {
+    return {
+      type: 'building',
+      id: best.id,
+      x: best.x,
+      y: best.y,
+      name: best.name,
+      outOfRange: !inPlayerRange(best.x, best.y)
+    };
   }
 
   return null;
 }
 
+// Turns a server failure code into something a player can act on. Every one of
+// these used to fail silently, which is most of why cables felt broken.
+const CABLE_ERRORS={
+  no_materials: 'Not enough Basic material — each cable run costs 1',
+  too_long: `Too far from the last anchor — runs are max ${CABLE_MAX_RUN}m`,
+  cable_type_mismatch: 'That spool is a different cable type',
+  invalid_cable_type: 'Unknown cable type',
+  out_of_range: 'Move closer to attach',
+  no_active_line: 'Start a run at a building first'
+};
+
+function cableResult(res) {
+  if (!res) return;
+  if (res.success) {
+    soundManager.playSound('ui_click');
+    return;
+  }
+  renderer.showMessage(CABLE_ERRORS[res.reason]||`Cable failed: ${res.reason||'unknown'}`);
+}
+
 window.addEventListener('cableClick', (e) => {
   if (!renderer||!myId) return;
 
+  const heldNet=cableNet(input.state.cableType);
+  if (!heldNet) {
+    renderer.showMessage('Hold a cable to build — craft one at the Crafting Station, then select it (1-9)');
+    return;
+  }
+
   const worldX=renderer.cameraX+e.detail.x;
   const worldY=renderer.cameraY+e.detail.y;
-  const cableType=input.state.cableType||'power';
-  const target=getNearestInteractable(worldX, worldY);
+  const target=getNearestInteractable(worldX, worldY, heldNet);
+
+  if (target&&target.outOfRange) {
+    renderer.showMessage(`Too far — fly closer to ${target.name||'the connector'} to attach`);
+    return;
+  }
 
   // Check if we are currently dragging a line (Server state)
   const activeLine=gameState.cables? gameState.cables.find(c => c.isPreview&&c.playerId===myId):null;
@@ -1780,38 +1897,35 @@ window.addEventListener('cableClick', (e) => {
   if (activeLine) {
     // FINISH ACTION (Attach or Drop)
     if (target) {
-      // Attach to target
-      socket.emit('cableAction', {action: 'attach', x: target.x, y: target.y, targetId: target.id});
-      soundManager.playSound('ui_click');
+      socket.emit('cableAction', {action: 'attach', x: target.x, y: target.y, targetId: target.id}, cableResult);
     } else {
-      // Check for wall attach or drop
+      // Attaching to solid rock plants a pylon and keeps the run going.
       const gridX=Math.floor(worldX/renderer.tileSize);
       const gridY=Math.floor(worldY/renderer.tileSize);
-      let isWall=false;
-      if (renderer.voxelMap&&renderer.voxelMap[gridY]&&renderer.voxelMap[gridY][gridX]>0) {
-        isWall=true;
-      }
+      const isWall=renderer.voxelMap&&renderer.voxelMap[gridY]&&renderer.voxelMap[gridY][gridX]>0;
 
-      if (isWall) {
-        socket.emit('cableAction', {action: 'attach', x: worldX, y: worldY});
-        soundManager.playSound('ui_click');
-      } else {
-        socket.emit('cableAction', {action: 'drop', x: worldX, y: worldY});
-        soundManager.playSound('ui_click');
-      }
+      socket.emit('cableAction', {
+        action: isWall? 'attach':'drop',
+        x: worldX,
+        y: worldY
+      }, cableResult);
     }
   } else {
     // START ACTION (Start or Pickup)
-    if (target) {
-      if (target.type==='spool') {
-        socket.emit('cableAction', {action: 'pickup', spoolId: target.id});
-        soundManager.playSound('ui_click');
-      } else {
-        socket.emit('cableAction', {action: 'start', x: target.x, y: target.y, type: cableType, anchorId: target.id});
-        soundManager.playSound('ui_click');
-      }
+    if (!target) {
+      renderer.showMessage('Start a run at a building connector or a dropped spool');
+      return;
+    }
+    if (target.type==='spool') {
+      socket.emit('cableAction', {action: 'pickup', spoolId: target.id}, cableResult);
     } else {
-      renderer.showMessage("Must start at Base, Connector, or Spool");
+      socket.emit('cableAction', {
+        action: 'start',
+        x: target.x,
+        y: target.y,
+        type: heldNet,
+        anchorId: target.id
+      }, cableResult);
     }
   }
 });
@@ -1819,10 +1933,12 @@ window.addEventListener('cableClick', (e) => {
 function updateCablePreview() {
   if (!input||!input.cableMode||!renderer) return;
 
+  const heldNet=cableNet(input.state.cableType);
   const worldMouseX=renderer.cameraX+input.mouseX;
   const worldMouseY=renderer.cameraY+input.mouseY;
-  const target=getNearestInteractable(worldMouseX, worldMouseY);
+  const target=getNearestInteractable(worldMouseX, worldMouseY, heldNet);
   const activeLine=gameState.cables? gameState.cables.find(c => c.isPreview&&c.playerId===myId):null;
+  const me=gameState.players?.find(p => p.id===myId);
 
   const ctx=renderer.ctx;
   ctx.save();
@@ -1833,11 +1949,35 @@ function updateCablePreview() {
   let actionText="";
   let color='#fff';
 
+  // While a run is live, show how much of it is left. This is the single most
+  // useful number when laying cable and it was never displayed.
+  if (activeLine&&me) {
+    const runLen=Math.hypot(me.x-activeLine.x1, me.y-activeLine.y1);
+    const frac=Math.min(1, runLen/CABLE_MAX_RUN);
+    const barW=140;
+    const bx=renderer.canvas.width/2-barW/2;
+    const by=renderer.canvas.height-96;
+    const overrun=runLen>CABLE_MAX_RUN;
+
+    ctx.fillStyle='rgba(0,0,0,0.55)';
+    ctx.fillRect(bx-4, by-14, barW+8, 26);
+    ctx.fillStyle='#333';
+    ctx.fillRect(bx, by, barW, 6);
+    ctx.fillStyle=overrun? '#ff4444':(frac>0.8? '#ffaa00':(NET_INFO[heldNet]?.colour||'#fff'));
+    ctx.fillRect(bx, by, barW*frac, 6);
+
+    ctx.fillStyle=overrun? '#ff6666':'#ddd';
+    ctx.fillText(
+      overrun? `RUN TOO LONG — ${Math.round(runLen)}/${CABLE_MAX_RUN}m, anchor sooner`
+        :`RUN ${Math.round(runLen)} / ${CABLE_MAX_RUN}m`,
+      bx+barW/2, by-3);
+  }
+
   if (activeLine) {
     // Dragging mode
     if (target) {
       if (target.type==='spool') {
-        if (activeLine.type!==target.cableType) {
+        if (cableNet(activeLine.type)!==cableNet(target.cableType)) {
           actionText="WRONG TYPE";
           color='#f44';
         } else {
@@ -1845,7 +1985,7 @@ function updateCablePreview() {
           color='#4f4';
         }
       } else {
-        actionText="ATTACH";
+        actionText=`ATTACH → ${target.name||''}`.trim();
         color='#4f4';
       }
 
@@ -1861,10 +2001,10 @@ function updateCablePreview() {
       const isWall=renderer.voxelMap&&renderer.voxelMap[gridY]&&renderer.voxelMap[gridY][gridX]>0;
 
       if (isWall) {
-        actionText="ATTACH (WALL)";
+        actionText="ANCHOR TO ROCK";
         color='#ff8';
       } else {
-        actionText="DROP";
+        actionText="DROP SPOOL";
         color='#aaf';
       }
     }
@@ -1875,8 +2015,8 @@ function updateCablePreview() {
         actionText="PICKUP";
         color='#4ff';
       } else {
-        actionText="START";
-        color='#4f4';
+        actionText=`START ${NET_INFO[heldNet]?.label.toUpperCase()||''} RUN`;
+        color=NET_INFO[heldNet]?.colour||'#4f4';
       }
       // Draw target highlight
       ctx.beginPath();
@@ -1886,6 +2026,13 @@ function updateCablePreview() {
     } else {
       actionText=""; // Don't show text if nothing to do
     }
+  }
+
+  // Out-of-range targets are shown, but greyed and named, so the player learns
+  // "fly closer" rather than clicking a dead target repeatedly.
+  if (target&&target.outOfRange) {
+    actionText='TOO FAR — FLY CLOSER';
+    color='#888';
   }
 
   if (actionText) {
@@ -1915,6 +2062,19 @@ function gameLoop() {
     if (gameState.cables) {
       renderer.drawCables(gameState.cables, gameState.players, renderer.cameraX, renderer.cameraY);
     }
+
+    // Network state overlays (GDD 6.6). Order matters: the cable-carrying
+    // highlight dims the world, so it goes under the port dots and the preview.
+    const myPlayerForNet=gameState.players?.find(p => p.id===myId);
+    if (input?.cableMode) {
+      renderer.drawCableTargeting(gameState, cableNet(input.state.cableType), myPlayerForNet,
+        renderer.cameraX, renderer.cameraY);
+    }
+    renderer.drawNetworkStatus(gameState, renderer.cameraX, renderer.cameraY);
+    if (input?.networkOverlay) {
+      renderer.drawNetworkOverlay(gameState, renderer.cameraX, renderer.cameraY);
+    }
+
     // Draw cable placement preview
     updateCablePreview();
 
