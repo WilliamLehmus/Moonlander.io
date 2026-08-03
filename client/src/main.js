@@ -1720,9 +1720,14 @@ function renderBuildingList() {
     const instances=b.instances||[];
     const instanceHtml=instances.length
       ? `<div style="margin:6px 0; font-size:0.72rem; color:#8b95a1">${
-          instances.map(i => `<span style="display:inline-block; margin-right:8px">
-              <span style="color:${i.powered? '#44dd55':'#ff5555'}">●</span> ${i.id} Lv${i.level}
-            </span>`).join('')
+          instances.map(i => `<div style="display:flex; align-items:center; gap:6px; margin:2px 0">
+              <span style="color:${i.powered? '#44dd55':'#ff5555'}">●</span>
+              <span style="flex:1">${i.id} Lv${i.level}${i.powered? '':' <span style="color:#ff7777">(no power)</span>'}</span>
+              <button class="upgrade-btn" style="padding:1px 6px; font-size:0.9em"
+                      onclick="handleUpgradeBuilding('${i.id}')">▲</button>
+              <button class="upgrade-btn" style="padding:1px 6px; font-size:0.9em; background:#5a2222"
+                      onclick="handleDemolishBuilding('${i.id}')" title="Demolish (50% refund)">✕</button>
+            </div>`).join('')
         }</div>`
       : '';
 
@@ -1794,6 +1799,25 @@ window.addEventListener('placementClick', (e) => {
     }
   });
 });
+
+const DEMOLISH_ERRORS={
+  cannot_demolish_habitat: 'The Habitat is the colony — it cannot be demolished',
+  last_landing_pad: 'That is your only Landing Pad — you would have nowhere to land',
+  no_such_building: 'That building no longer exists'
+};
+
+window.handleDemolishBuilding=function(instanceId) {
+  socket.emit('demolishBuilding', {instanceId}, (res) => {
+    if (res&&res.success) {
+      const parts=Object.entries(res.refund||{}).map(([m, a]) => `${a} ${m}`);
+      renderer?.showMessage(parts.length? `Demolished — recovered ${parts.join(', ')}`:'Demolished');
+      soundManager.playSound('ui_click');
+      renderBuildingList();
+    } else {
+      renderer?.showMessage(DEMOLISH_ERRORS[res?.reason]||`Cannot demolish: ${res?.reason||'unknown'}`);
+    }
+  });
+};
 
 window.handleUpgradeBuilding=function(key) {
   socket.emit('upgradeBuilding', {buildingKey: key}, (response) => {

@@ -2,7 +2,7 @@
 
 Picking-up-where-we-left-off list. Grouped by what it costs you, not by system.
 
-**Before changing anything**, run the check harnesses — 86 checks, ~20 seconds:
+**Before changing anything**, run the check harnesses — 110 checks, ~30 seconds:
 
 ```
 cd server && node tests/run-all.mjs
@@ -25,10 +25,12 @@ several bugs found so far only appeared on some seeds.
       nothing has touched yet.
       *This is the biggest remaining gap between the doc and the game.*
 
-- [ ] **You cannot remove or move a building.** No demolish, no refund, no
-      relocate. Misplace a Fuel Depot and it is there forever, drawing power.
-      Cheap to add (`Game.structures.delete` + refund a fraction) and it will be
-      the first thing anyone asks for.
+- [x] ~~**You cannot remove a building.**~~ **Done.** Demolish refunds 50% of
+      everything invested (build cost + every upgrade). The Habitat cannot be
+      demolished (it is the colony's generator, refinery and antenna) and
+      neither can your last Landing Pad. Buttons sit next to each instance in
+      the Construction tab. *Relocating* is still not possible — demolish and
+      rebuild is the workaround.
 
 - [x] ~~**Second bases have no way to get power.**~~ **Done, and it was broken
       two ways.** The Base Bus only formed around the node literally named

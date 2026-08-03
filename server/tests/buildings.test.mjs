@@ -35,14 +35,31 @@ ck('Rejects placing buried in rock (in zone, no headroom)',
    buried? g.placeBuilding('p1','ore_storage',buried.x,buried.y).reason==='blocked_by_terrain':true,
    buried? '':'no solid spot in zone this seed');
 
-const r1=g.placeBuilding('p1','fuel_depot',pad.x-150,pad.y);
+// Terrain is random per run, so find a genuinely valid on-deck spot rather
+// than assuming a fixed offset is clear.
+const findSpot=(type)=>{
+  for (const dx of [-150,150,-200,200,-250,250,-300,300,-350,350]) {
+    for (let dy=-40; dy<=40; dy+=8) {
+      if (g.canPlaceBuilding(type, pad.x+dx, pad.y+dy).ok) return {x:pad.x+dx, y:pad.y+dy};
+    }
+  }
+  return null;
+};
+const spot1=findSpot('fuel_depot');
+const r1=spot1? g.placeBuilding('p1','fuel_depot',spot1.x,spot1.y):{success:false,reason:'no spot'};
 ck('Places a valid building', r1.success, JSON.stringify(r1));
 ck('Charged materials', g.baseResources.basic===980, `basic=${g.baseResources.basic}`);
 
 console.log('\n=== A second instance of the same type ===');
 // In the build zone, but 120 units above the pad deck -- outside the +/-60 Base
 // Bus elevation band, so it is placed but NOT automatically connected.
-const r2=g.placeBuilding('p1','fuel_depot',pad.x+60,pad.y-120);
+let spot2=null;
+for (const dx of [60,-60,120,-120,180,-180]) {
+  for (const dy of [-120,-140,-160,-100,-180]) {
+    if (!spot2 && g.canPlaceBuilding('fuel_depot', pad.x+dx, pad.y+dy).ok) spot2={x:pad.x+dx,y:pad.y+dy};
+  }
+}
+const r2=spot2? g.placeBuilding('p1','fuel_depot',spot2.x,spot2.y):{success:false,reason:'no spot'};
 ck('Second depot allowed', r2.success, JSON.stringify(r2));
 ck('Gets a distinct instance id', r2.instanceId==='fuel_depot#2', r2.instanceId);
 solve();
@@ -125,6 +142,28 @@ if (site) {
 } else {
   console.log('  SKIP  no open site found this seed');
 }
+
+console.log('\n=== Demolition ===');
+const dep=g.structuresOfType('fuel_depot')[0];
+const basicBefore=g.baseResources.basic;
+const dr=g.demolishBuilding('p1', dep.id);
+ck('Demolishes a placed building', dr.success, JSON.stringify(dr));
+ck('Refunds materials', g.baseResources.basic>basicBefore,
+   `${basicBefore} -> ${g.baseResources.basic}`);
+ck('Refund is partial, not full', g.baseResources.basic-basicBefore<40,
+   `recovered ${g.baseResources.basic-basicBefore} of 40 invested`);
+ck('Structure is gone', !g.structures.has(dep.id));
+solve();
+ck('...and gone from the network too', !N.state.nodes[dep.id]);
+
+ck('Refuses to demolish the Habitat',
+   g.demolishBuilding('p1','habitat').reason==='cannot_demolish_habitat');
+for (const s of g.structuresOfType('landing_pad').slice(1)) g.structures.delete(s.id);
+g.syncBuildingLevels();
+ck('Refuses to demolish the only Landing Pad',
+   g.demolishBuilding('p1','landing_pad').reason==='last_landing_pad');
+ck('Refuses to demolish something that does not exist',
+   g.demolishBuilding('p1','fuel_depot#77').reason==='no_such_building');
 
 console.log(`\n${fails===0? 'ALL CHECKS PASSED':fails+' FAILED'}`);
 process.exit(fails===0? 0:1);

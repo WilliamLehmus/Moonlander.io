@@ -508,6 +508,71 @@ export class Game {
         return {success: true, instanceId: structure.id};
     }
 
+    // Fraction of everything invested in a building that comes back when it is
+    // demolished. Deliberately lossy so placement is still a decision.
+    get demolishRefund() {
+        return this.config?.difficulty?.demolishRefund??0.5;
+    }
+
+    // Total materials sunk into a structure: its build cost plus every upgrade.
+    investedIn(structure) {
+        const costs=this.buildingCosts[structure.type]||[];
+        const total={};
+        for (let lvl=0; lvl<structure.level&&lvl<costs.length; lvl++) {
+            for (const [mat, amount] of Object.entries(costs[lvl]||{})) {
+                total[mat]=(total[mat]||0)+amount;
+            }
+        }
+        return total;
+    }
+
+    canDemolish(instanceId) {
+        const s=this.structures.get(instanceId);
+        if (!s) return {ok: false, reason: 'no_such_building'};
+        // The Habitat is the colony: its generator, its starter refinery and its
+        // antenna. Losing it would leave a game unrecoverable.
+        if (s.type==='habitat') return {ok: false, reason: 'cannot_demolish_habitat'};
+        // Keep at least one pad, or there is nowhere to land and no build zone.
+        if (s.type==='landing_pad'&&this.structuresOfType('landing_pad').length<=1) {
+            return {ok: false, reason: 'last_landing_pad'};
+        }
+        return {ok: true};
+    }
+
+    demolishBuilding(playerId, instanceId) {
+        const player=this.players.get(playerId);
+        if (!player||player.dead) return {success: false, reason: 'dead'};
+
+        const check=this.canDemolish(instanceId);
+        if (!check.ok) return {success: false, ...check};
+
+        const structure=this.structures.get(instanceId);
+        const invested=this.investedIn(structure);
+        const refund={};
+        for (const [mat, amount] of Object.entries(invested)) {
+            const back=Math.floor(amount*this.demolishRefund);
+            if (back>0) {
+                this.baseResources[mat]=(this.baseResources[mat]||0)+back;
+                refund[mat]=back;
+            }
+        }
+
+        this.structures.delete(instanceId);
+        // Any fuel in its tank is lost with it.
+        this.networks.fuelTanks.delete(instanceId);
+        this.networks.bufferEnergy.delete(instanceId);
+        this.networks.shedNodes.delete(instanceId);
+
+        this.syncBuildingLevels();
+        this.applyBuildingEffects();
+
+        console.log(`Demolished ${instanceId}, refunded ${JSON.stringify(refund)}`);
+        this.broadcast('buildingDemolished', {instanceId, type: structure.type, refund});
+        this.broadcast('resourcesUpdated', this.baseResources);
+
+        return {success: true, refund};
+    }
+
     // Accepts an instance id or a bare type name.
     resolveStructure(target) {
         if (!target) return null;
