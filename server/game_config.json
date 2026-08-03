@@ -5,7 +5,8 @@
         "powerGenerationMultiplier": 3.0,
         "powerConsumptionMultiplier": 0.5,
         "lightLossDepth": 10,
-        "cableMaxLength": 150
+        "tetherMaxLength": 150,
+        "buildCableMaxLength": 120
     },
     "resources": {
         "respawnCost": 50,

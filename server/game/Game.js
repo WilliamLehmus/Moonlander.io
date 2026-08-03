@@ -161,30 +161,27 @@ export class Game {
         // Fix special costs manually
         // Fuel Refinery (2 Industrial base)
         this.buildingCosts.fuel_refinery=[
-            {industrial: 2}, // 0->1
-            {industrial: 2}, {industrial: 2}, // 1->3
-            {industrial: 2}, {industrial: 2}, {industrial: 2}, // 4->6
-            {advanced: 2}, {advanced: 2}, {advanced: 2}, // 7->9
-            {quantum: 2}, {quantum: 2}, {quantum: 2} // 10->12
-        ];
+            {industrial: 2},
+            {industrial: 2},
+            {industrial: 2},
+            {industrial: 2}
+        ]; // Levels cap at 4; entries 5-12 were unreachable dead data.
 
         // Solar Array (1 Industrial base)
         this.buildingCosts.solar_array=[
             {industrial: 1},
-            {industrial: 1}, {industrial: 1},
-            {industrial: 1}, {industrial: 1}, {industrial: 1},
-            {advanced: 1}, {advanced: 1}, {advanced: 1},
-            {quantum: 1}, {quantum: 1}, {quantum: 1}
-        ];
+            {industrial: 1},
+            {industrial: 1},
+            {industrial: 1}
+        ]; // Levels cap at 4; entries 5-12 were unreachable dead data.
 
         // Ship Factory (5 Industrial base, 3 per level)
         this.buildingCosts.ship_factory=[
             {industrial: 5},
-            {industrial: 3}, {industrial: 3},
-            {industrial: 3}, {industrial: 3}, {industrial: 3},
-            {advanced: 3}, {advanced: 3}, {advanced: 3},
-            {quantum: 3}, {quantum: 3}, {quantum: 3}
-        ];
+            {industrial: 3},
+            {industrial: 3},
+            {industrial: 3}
+        ]; // Levels cap at 4; entries 5-12 were unreachable dead data.
 
         // Exploration Fog of War
         // Grid of 20x20 tile chunks (160x160 world units)
@@ -329,10 +326,12 @@ export class Game {
         for (const s of this.structuresOfType(buildingKey)) {
             if (s.level<=0) continue;
             if (this.networks&&!this.networks.isPowered(s.id)) continue;
-            // Formula unchanged from before instances (base + level*perLevel) so
-            // this change does not move existing balance. See Appendix C item 12
-            // for the long-standing off-by-one in that convention.
-            total+=def.baseValue+(s.level*def.perLevel);
+            // Level 1 == baseValue, matching the GDD ("Fuel Depot stores 2000
+            // units at L1, +5000/level") and the convention NetworkSystem and
+            // getAntennaRange already use. This was base + level*perLevel, which
+            // handed Level 1 an increment it had not paid for and shifted every
+            // storage capacity one level up.
+            total+=def.baseValue+((s.level-1)*def.perLevel);
         }
         return total;
     }
@@ -2374,7 +2373,7 @@ export class Game {
             }
 
             // Calculate tension (0 when slack, 1 at max)
-            const cableLen=this.config.difficulty.cableMaxLength||150;
+            const cableLen=this.config.difficulty.tetherMaxLength||150;
             const tension=Math.max(0, (dist-cableLen)/(this.config.tether.snapLength-cableLen));
             player.tetherTension=tension;
             if (!isWreckage) other.tetherTension=tension;

@@ -46,29 +46,19 @@ several bugs found so far only appeared on some seeds.
 
 ## 2. Known-wrong numbers
 
-- [ ] **Bitite runs out at ~4,180m** but the Core is at 4,250–5,000m. The last
-      800m of the descent has no fuel source in it, so a Core run must carry its
-      return fuel through the hardest stretch. That may be a *good* difficulty
-      spike — but right now it is an accident, and GDD §10.1 still claims Bitite
-      is found at all depths. Decide: extend the band, or keep it and write it
-      up as intentional.
-
-- [ ] **`getBuildingEffect()` has an off-by-one.** It computes
-      `base + level*perLevel`, so a Level 1 building already gets one increment
-      above its base value. The comment block in `Game.js` shows the intent was
-      `base + (level-1)*perLevel` and it was never resolved. It governs storage
-      capacities. `NetworkSystem` deliberately does *not* use it — all power,
-      fuel and data scaling uses the `(level-1)` convention — so the two do not
-      have to be reconciled urgently, but they do disagree.
-
-- [ ] **`buildingCosts` has dead entries.** `fuel_refinery`, `solar_array` and
-      `ship_factory` define 12 levels; `canAffordUpgrade` caps at 4. Entries
-      5–12 are unreachable.
-
-- [ ] **`config.difficulty.cableMaxLength` is misnamed.** It only ever feeds the
-      *tether* (`Player.js`, `Game.js`). Build-cable length is the separate
-      `buildCableMaxLength`. Rename it `tetherMaxLength` next time the tether is
-      touched, before someone "fixes" the wrong one.
+- [x] ~~Bitite runs out at ~4,180m.~~ **Fixed.** Its band now runs the full
+      depth. GDD §10.1 guarantees fuel at all depths, and the cap left the last
+      ~800m before the Core with no way to refuel for the trip home.
+- [x] ~~`getBuildingEffect()` off-by-one.~~ **Fixed.** Level 1 now equals
+      `baseValue`, matching the GDD ("Fuel Depot stores 2000 at L1, +5000/level")
+      and the convention `NetworkSystem` and `getAntennaRange` already used. The
+      old formula handed Level 1 a free increment and shifted every storage
+      capacity one level up.
+- [x] ~~`buildingCosts` dead entries.~~ **Fixed.** Trimmed 12 levels to 4 for
+      refinery, solar and factory; `canAffordUpgrade` caps at 4.
+- [x] ~~`cableMaxLength` misnamed.~~ **Fixed.** Renamed `tetherMaxLength`, and
+      `buildCableMaxLength` (120) is now explicit in the config rather than a
+      hardcoded fallback.
 
 ## 3. Batch 5 bugs (still open, from the top of the GDD)
 

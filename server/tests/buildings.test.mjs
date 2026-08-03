@@ -112,7 +112,9 @@ ck('Both are network nodes', !!N.state.nodes['fuel_depot']&&!!N.state.nodes['fue
 console.log('\n=== Capacity is gated on network connectivity ===');
 const oneDepot=g.baseResources.maxFuel;
 ck('Off-deck depot reads as unconnected', !N.isPowered('fuel_depot#2'), N.state.nodes['fuel_depot#2']?.power);
-ck('Unconnected depot adds NO capacity', oneDepot===2000+7000, `maxFuel=${oneDepot}`);
+// Level 1 == baseValue (2000), on top of the 2000 the colony has without any
+// depot at all. The second, unconnected depot contributes nothing.
+ck('Unconnected depot adds NO capacity', oneDepot===2000+2000, `maxFuel=${oneDepot}`);
 
 // Run power cable from the pad up to it, in legal-length runs.
 g.baseResources.basic=500;

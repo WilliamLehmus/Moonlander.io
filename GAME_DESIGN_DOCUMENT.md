@@ -355,7 +355,7 @@ Depth comes from `VoxelMap.getDepthMeters()`: the surface is **0m** and the bott
 | Diamond | 900 - 1200 | 4430 - 5000m | Core only |
 | Helium-3 | 800 - 1200 | 3940 - 5000m | Abyssal → Core |
 
-Note that **Bitite stops at ~4180m**, so the deepest 800m of the descent has no fuel source in it. §10.1's claim that Bitite is found at all depths is not true of the current bands — a run to the Core has to carry its return fuel through the last stretch. That is a reasonable difficulty spike, but it is currently an accident rather than a decision.
+Bitite now runs the **full depth** (band 100–1200 tiles). It previously stopped at ~4180m, leaving the last 800m before the Core with no fuel source — a Core run had to carry its return fuel through the hardest stretch. §10.1 guarantees fuel availability at all depths, so the band was extended to match rather than the other way round.
 
 ---
 

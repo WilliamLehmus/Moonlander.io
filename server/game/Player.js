@@ -118,7 +118,7 @@ export class Player {
         // Tether system
         this.tetheredTo=null;
         this.tetherLength=0;
-        this.maxTetherLength=this.config.difficulty?.cableMaxLength||150;
+        this.maxTetherLength=this.config.difficulty?.tetherMaxLength||150;
         this.tetherTension=0;
         this.tetherBroken=false;
 

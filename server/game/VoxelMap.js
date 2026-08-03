@@ -547,7 +547,10 @@ export class VoxelMap {
         const oreConfigs=[
             {type: TileTypes.IRON_ORE, minDepth: 10, maxDepth: 400, rarity: 0.015, clusterSize: 8},
             {type: TileTypes.COPPER_ORE, minDepth: 50, maxDepth: 250, rarity: 0.018, clusterSize: 7},
-            {type: TileTypes.BITITE, minDepth: 100, maxDepth: 850, rarity: 0.009, clusterSize: 6},
+            // Bitite runs the full depth on purpose: it is the only fuel ore, and GDD 10.1
+            // guarantees fuel availability at all depths. Capping it at 850 left the last
+            // ~800m before the Core with no way to refuel for the trip home.
+            {type: TileTypes.BITITE, minDepth: 100, maxDepth: 1200, rarity: 0.009, clusterSize: 6},
             {type: TileTypes.SILVER_ORE, minDepth: 200, maxDepth: 500, rarity: 0.010, clusterSize: 5},
             {type: TileTypes.TITANIUM_ORE, minDepth: 400, maxDepth: 700, rarity: 0.006, clusterSize: 5},
             {type: TileTypes.GOLD_ORE, minDepth: 600, maxDepth: 850, rarity: 0.004, clusterSize: 4},
