@@ -219,6 +219,10 @@ export class Game {
         // Depth-triggered transmissions (why anyone is digging down here).
         this.story=new Story(this);
 
+        // Placed building instances. Populated by initStructures() once terrain
+        // generation has produced positions.
+        this.structures=new Map();
+
         // Session statistics
         this.startTime=Date.now();
         this.totalDeaths=0;
@@ -243,20 +247,94 @@ export class Game {
         };
     }
 
-    // Get the effective value for a building stat
+    // ---- Placed structures ------------------------------------------------
+    // `this.structures` is the source of truth: every building that physically
+    // exists, with its own level and position. `this.buildings` survives as the
+    // per-type definition table, and its `level` field is kept in sync as the
+    // highest level among that type's instances so older call sites still work.
+    //
+    // The first instance of a type is given the bare type name as its id
+    // ('landing_pad'), later ones get 'landing_pad#2'. That keeps every existing
+    // id -- network node ids, shed ordering, isPowered('landing_pad') -- valid.
+    makeStructureId(type) {
+        if (!this.structures.has(type)) return type;
+        let n=2;
+        while (this.structures.has(`${type}#${n}`)) n++;
+        return `${type}#${n}`;
+    }
+
+    addStructure(type, x, y, level=1) {
+        const def=this.buildings[type];
+        if (!def) return null;
+        const id=this.makeStructureId(type);
+        const structure={id, type, level, x, y};
+        this.structures.set(id, structure);
+        this.syncBuildingLevels();
+        return structure;
+    }
+
+    // Mirror instance levels back onto the type table.
+    syncBuildingLevels() {
+        for (const [key, def] of Object.entries(this.buildings)) {
+            let best=0;
+            for (const s of this.structures.values()) {
+                if (s.type===key&&s.level>best) best=s.level;
+            }
+            def.level=best;
+        }
+        this.networks?.markDirty();
+    }
+
+    structuresOfType(type) {
+        return Array.from(this.structures.values()).filter(s => s.type===type);
+    }
+
+    // Seed the starting base from the map's authored building positions. Called
+    // once after terrain generation, when positions exist.
+    initStructures() {
+        // Snapshot the authored starting levels FIRST. addStructure() calls
+        // syncBuildingLevels(), which recomputes every type's level from the
+        // instances that exist so far -- so reading def.level inside the loop
+        // would see types zeroed out before their turn came up, and only the
+        // first building would ever be created.
+        const startingLevels={};
+        for (const [key, def] of Object.entries(this.buildings)) {
+            startingLevels[key]=def.level;
+        }
+
+        this.structures.clear();
+        for (const pos of this.voxelMap.buildingPositions||[]) {
+            if (!this.buildings[pos.id]) continue;
+            // Only types that start built become instances; the rest are placed
+            // by the player later.
+            const level=startingLevels[pos.id]||0;
+            if (level>0) this.addStructure(pos.id, pos.x, pos.y, level);
+        }
+        this.syncBuildingLevels();
+    }
+
+    // Total effect of a building type, summed over every instance that is
+    // actually connected and powered. Capacity sums across instances -- building
+    // a second depot really does add storage -- and the cost of doing so is the
+    // extra power draw each instance puts on the grid.
+    //
+    // Gating on the network matters: without it a Fuel Depot cabled to nothing
+    // would still raise global storage, which would make the whole network
+    // system cosmetic for capacities.
     getBuildingEffect(buildingKey) {
-        const building=this.buildings[buildingKey];
-        if (!building) return 0;
-        // Effect = Base + (Level * PerLevel)
-        // If level 0 (not built), effect is 0 usually, but check logic
-        if (building.level===0) return 0;
-        return building.baseValue+(building.level*building.perLevel); // Note: Level 1 is base.
-        // Wait, GDD says "Build Cost (Lvl 0)". 
-        // Usually Level 1 = Built. Level 0 = Not built.
-        // If Level 1, effect should be BaseValue? 
-        // "Upgrade Per Level (1-12)".
-        // Let's assume Level 1 = BaseValue. Level 2 = Base + 1*PerLevel.
-        // So formula: Base + (Level-1)*PerLevel.
+        const def=this.buildings[buildingKey];
+        if (!def) return 0;
+
+        let total=0;
+        for (const s of this.structuresOfType(buildingKey)) {
+            if (s.level<=0) continue;
+            if (this.networks&&!this.networks.isPowered(s.id)) continue;
+            // Formula unchanged from before instances (base + level*perLevel) so
+            // this change does not move existing balance. See Appendix C item 12
+            // for the long-standing off-by-one in that convention.
+            total+=def.baseValue+(s.level*def.perLevel);
+        }
+        return total;
     }
 
     // Largest coverage bubble currently on the air, used by the minimap as a
@@ -271,13 +349,18 @@ export class Game {
     }
 
     canAffordUpgrade(buildingKey) {
-        const building=this.buildings[buildingKey];
-        if (!building||building.level>=4) return false;
+        // Resolves to the instance that upgradeBuilding() would actually pick, so
+        // the UI's enabled/disabled state matches what the button will do.
+        const structure=this.resolveStructure(buildingKey);
+        if (!structure) return false;
 
-        const costs=this.buildingCosts[buildingKey];
-        if (!costs||building.level>=costs.length) return false;
+        const building=this.buildings[structure.type];
+        if (!building||structure.level>=4) return false;
 
-        const levelCost=costs[building.level]; // Cost for NEXT level
+        const costs=this.buildingCosts[structure.type];
+        if (!costs||structure.level>=costs.length) return false;
+
+        const levelCost=costs[structure.level]; // Cost for NEXT level
         const materialMap={
             basic: 'basic',
             industrial: 'industrial',
@@ -295,44 +378,143 @@ export class Game {
     }
 
     // Upgrade a building
-    upgradeBuilding(buildingKey) {
-        if (!this.canAffordUpgrade(buildingKey)) return false;
+    // Upgrades one placed instance. `target` may be an instance id
+    // ('fuel_depot#2') or a bare type, in which case the lowest-level instance
+    // of that type is upgraded so repeated clicks level a base evenly.
+    upgradeBuilding(target) {
+        const structure=this.resolveStructure(target);
+        if (!structure) return false;
 
-        const building=this.buildings[buildingKey];
-        const costs=this.buildingCosts[buildingKey];
-        const levelCost=costs[building.level]; // Cost to get to next level
+        const def=this.buildings[structure.type];
+        const costs=this.buildingCosts[structure.type];
+        if (!def||!costs) return false;
+        if (structure.level>=4||structure.level>=costs.length) return false;
 
-        const materialMap={
-            basic: 'basic',
-            industrial: 'industrial',
-            advanced: 'advanced',
-            quantum: 'quantum'
-        };
+        const levelCost=costs[structure.level]; // Cost to get to next level
+        const materials=['basic', 'industrial', 'advanced', 'quantum'];
 
-        // Deduct materials
         for (const [matType, amount] of Object.entries(levelCost)) {
-            const key=materialMap[matType];
-            this.baseResources[key]-=amount;
+            if (!materials.includes(matType)||this.baseResources[matType]<amount) return false;
+        }
+        for (const [matType, amount] of Object.entries(levelCost)) {
+            this.baseResources[matType]-=amount;
         }
 
-        // Increase level
-        building.level++;
-
-        // Apply effects to base resources
+        structure.level++;
+        this.syncBuildingLevels();
         this.applyBuildingEffects();
 
-        console.log(`Upgraded ${building.name} to level ${building.level}`);
+        console.log(`Upgraded ${def.name} (${structure.id}) to level ${structure.level}`);
 
-        // Broadcast the upgrade
         this.broadcast('buildingUpgraded', {
-            building: buildingKey,
-            newLevel: building.level,
-            name: building.name
+            building: structure.type,
+            instanceId: structure.id,
+            newLevel: structure.level,
+            name: def.name
         });
-
         this.broadcast('resourcesUpdated', this.baseResources);
 
         return true;
+    }
+
+    // ---- Placing new buildings -------------------------------------------
+    // Radius of the buildable zone a Landing Pad projects (GDD 5.2).
+    //
+    // 400, not the 200 originally specced. Building sprites render 92 units wide
+    // and need ~100 units of spacing, and the deck band is only +/-60 tall, so a
+    // 200 radius leaves room for roughly three buildings once the pad and
+    // Habitat have taken their places -- not enough for a working base out of
+    // eleven building types. At 400 a base fits about seven.
+    get buildRadius() {
+        return this.config?.difficulty?.buildRadius??400;
+    }
+
+    // Minimum spacing between buildings. Sprites render 92 units wide, so
+    // anything closer overlaps visibly.
+    get buildSpacing() {
+        return this.config?.difficulty?.buildSpacing??100;
+    }
+
+    // Can `type` be placed at (x,y)? Returns {ok} or {ok:false, reason}.
+    canPlaceBuilding(type, x, y) {
+        const def=this.buildings[type];
+        if (!def) return {ok: false, reason: 'unknown_building'};
+
+        const costs=this.buildingCosts[type];
+        if (!costs) return {ok: false, reason: 'unknown_building'};
+        const cost=costs[0];
+        for (const [mat, amount] of Object.entries(cost)) {
+            if ((this.baseResources[mat]||0)<amount) {
+                return {ok: false, reason: 'insufficient_materials', required: cost};
+            }
+        }
+
+        // Build zone is checked before terrain: for a click far off in the rock
+        // both are true, and "outside the build zone" is the more useful reason.
+        // The Landing Pad is the anchor -- it establishes a new base and so is
+        // the one building that does not need to be inside an existing zone.
+        if (type!=='landing_pad') {
+            const pads=this.structuresOfType('landing_pad');
+            const inZone=pads.some(p => Math.hypot(p.x-x, p.y-y)<=this.buildRadius);
+            if (!inZone) return {ok: false, reason: 'outside_build_zone'};
+        }
+
+        // A building's anchor sits ON the ground, so the anchor tile itself is
+        // solid by definition -- testing it would reject even the authored
+        // starting positions. What matters is headroom: the space the building
+        // actually occupies, above the anchor, must be clear.
+        const headroom=this.voxelMap.tileSize*2;
+        if (this.voxelMap.isSolidAtWorld(x, y-headroom)) {
+            return {ok: false, reason: 'blocked_by_terrain'};
+        }
+
+        // Spacing.
+        for (const s of this.structures.values()) {
+            if (Math.hypot(s.x-x, s.y-y)<this.buildSpacing) {
+                return {ok: false, reason: 'too_close_to_building'};
+            }
+        }
+
+        return {ok: true};
+    }
+
+    // Place a new building instance, paying from base materials.
+    placeBuilding(playerId, type, x, y) {
+        const player=this.players.get(playerId);
+        if (!player||player.dead) return {success: false, reason: 'dead'};
+
+        const check=this.canPlaceBuilding(type, x, y);
+        if (!check.ok) return {success: false, ...check};
+
+        const cost=this.buildingCosts[type][0];
+        for (const [mat, amount] of Object.entries(cost)) {
+            this.baseResources[mat]-=amount;
+        }
+
+        const structure=this.addStructure(type, x, y, 1);
+        this.applyBuildingEffects();
+
+        console.log(`Placed ${type} as ${structure.id} at (${Math.round(x)}, ${Math.round(y)})`);
+
+        this.broadcast('buildingPlaced', {
+            instanceId: structure.id,
+            type,
+            x: structure.x,
+            y: structure.y,
+            name: this.buildings[type].name
+        });
+        this.broadcast('resourcesUpdated', this.baseResources);
+
+        return {success: true, instanceId: structure.id};
+    }
+
+    // Accepts an instance id or a bare type name.
+    resolveStructure(target) {
+        if (!target) return null;
+        if (this.structures.has(target)) return this.structures.get(target);
+        const ofType=this.structuresOfType(target);
+        if (ofType.length===0) return null;
+        return ofType.reduce((lowest, s) => s.level<lowest.level? s:lowest, ofType[0]);
     }
 
     craftMaterial(tier, amount=1) {
@@ -453,8 +635,10 @@ export class Game {
         this.voxelMap.createAllCollisionBodies();
         console.log('Game init: collision bodies created');
 
-        // Building positions only exist after generation, so the network graph and
-        // the landing pad's starting fuel are seeded here rather than in the ctor.
+        // Building positions only exist after generation, so the starting
+        // structures, the network graph and the landing pad's starting fuel are
+        // all seeded here rather than in the constructor.
+        this.initStructures();
         this.networks.markDirty();
         this.networks.seedStartingTanks();
         this.networks.solve(0.1, this.getBuildingActivity());
@@ -2321,6 +2505,11 @@ export class Game {
             }),
             totalDepth: this.voxelMap.TOTAL_DEPTH_METERS,
             coreDepth: Math.round(this.voxelMap.TOTAL_DEPTH_METERS*CORE_WIN_DEPTH_FRACTION),
+            // Placement rules, so the ghost preview draws the same zones the
+            // server validates against rather than its own guesses.
+            buildRadius: this.buildRadius,
+            buildSpacing: this.buildSpacing,
+            baseBusBand: this.networks.baseBusElevationBand,
             baseResources: clientResources,
             buildings: this.serializeBuildings(),
             respawnCost: this.config.resources.respawnCost,
@@ -2340,19 +2529,13 @@ export class Game {
         };
     }
 
+    // Every placed building, for rendering and cable targeting. `id` is the
+    // instance id; `type` is what sprite to draw.
     getActiveBuildings() {
         const active=[];
-        for (const [key, building] of Object.entries(this.buildings)) {
-            if (building.level>0) {
-                const pos=this.voxelMap.getBuildingLocation(key);
-                if (pos) {
-                    active.push({
-                        id: key,
-                        x: pos.x,
-                        y: pos.y
-                    });
-                }
-            }
+        for (const s of this.structures.values()) {
+            if (s.level<=0) continue;
+            active.push({id: s.id, type: s.type, x: s.x, y: s.y, level: s.level});
         }
         return active;
     }
@@ -2433,7 +2616,15 @@ export class Game {
                 maxLevel: 4,
                 canUpgrade: this.canAffordUpgrade(key),
                 currentEffect: this.getBuildingEffect(key),
-                nextCost: building.level<4? this.buildingCosts[key][building.level]:null
+                nextCost: building.level<4? this.buildingCosts[key][building.level]:null,
+                // How many of this type physically exist, and where.
+                instances: this.structuresOfType(key).map(s => ({
+                    id: s.id,
+                    level: s.level,
+                    x: s.x,
+                    y: s.y,
+                    powered: this.networks? this.networks.isPowered(s.id):true
+                }))
             };
         }
         return result;

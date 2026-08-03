@@ -864,6 +864,12 @@ window.addEventListener('keydown', (e) => {
   if (isChatOpen) return;
 
   if (e.key==='Escape') {
+    // Cancel an armed building placement before falling through to the menu,
+    // so ESC means "back out of what I am doing" rather than opening a modal.
+    if (placementType) {
+      cancelPlacement();
+      return;
+    }
     toggleMenu();
     return;
   }
@@ -1710,16 +1716,32 @@ function renderBuildingList() {
       costHtml=`<div class="building-cost" style="margin-top:5px; font-size:0.8rem">Max Level Reached</div>`;
     }
 
+    // Buildings are placed instances now, so a type can exist several times.
+    const instances=b.instances||[];
+    const instanceHtml=instances.length
+      ? `<div style="margin:6px 0; font-size:0.72rem; color:#8b95a1">${
+          instances.map(i => `<span style="display:inline-block; margin-right:8px">
+              <span style="color:${i.powered? '#44dd55':'#ff5555'}">●</span> ${i.id} Lv${i.level}
+            </span>`).join('')
+        }</div>`
+      : '';
+
     card.innerHTML=`
         <div class="building-header" style="display:flex; justify-content:space-between; align-items:center">
-            <h4 style="margin:0">${b.name} <span class="level-badge" style="background:#444; padding:2px 5px; border-radius:3px; font-size:0.7em">Lv ${b.level}</span></h4>
+            <h4 style="margin:0">${b.name} <span class="level-badge" style="background:#444; padding:2px 5px; border-radius:3px; font-size:0.7em">${instances.length? `x${instances.length}`:'not built'}</span></h4>
             ${!isBuilt? '<span class="new-badge" style="background:#f90; color:#000; padding:2px 5px; border-radius:3px; font-size:0.7em; font-weight:bold">NEW</span>':''}
         </div>
         <p class="building-desc" style="font-size: 0.8rem; color: #aaa; margin: 5px 0;">Effect: ${b.currentEffect||'None'} ${!isMax? '-> Increase':''}</p>
+        ${instanceHtml}
         ${costHtml}
-        <button class="upgrade-btn select-btn" ${!b.canUpgrade||isMax? 'disabled':''} style="width:100%; margin-top:8px" onclick="handleUpgradeBuilding('${key}')">
-            ${!isBuilt? 'Construct':(isMax? 'Max Level':'Upgrade')}
-        </button>
+        <div style="display:flex; gap:6px; margin-top:8px">
+          <button class="upgrade-btn select-btn" style="flex:1" onclick="handlePlaceBuilding('${key}')">
+              Build New
+          </button>
+          <button class="upgrade-btn select-btn" ${!b.canUpgrade||isMax||!isBuilt? 'disabled':''} style="flex:1" onclick="handleUpgradeBuilding('${key}')">
+              ${isMax? 'Max Level':'Upgrade'}
+          </button>
+        </div>
     `;
 
     buildingListEl.appendChild(card);
@@ -1727,6 +1749,52 @@ function renderBuildingList() {
 }
 
 // Make it global so HTML onclick works
+// ---- Building placement mode -------------------------------------------
+// "Build New" arms a ghost; the next world click places it. Escape cancels.
+let placementType=null;
+
+const PLACE_ERRORS={
+  outside_build_zone: 'Outside the build zone — must be within range of a Landing Pad',
+  too_close_to_building: 'Too close to another building',
+  blocked_by_terrain: 'No headroom — that spot is inside rock',
+  insufficient_materials: 'Not enough materials',
+  unknown_building: 'Unknown building type'
+};
+
+window.handlePlaceBuilding=function(type) {
+  placementType=type;
+  if (input) input.placementMode=true;
+  // Get out of the menu so the player can see where they are putting it.
+  if (stationMenuEl) stationMenuEl.classList.add('hidden');
+  const name=gameState.buildings?.[type]?.name||type;
+  renderer?.showMessage(`Placing ${name} — click a spot inside the build zone (ESC to cancel)`);
+};
+
+function cancelPlacement() {
+  if (!placementType) return;
+  placementType=null;
+  if (input) input.placementMode=false;
+  renderer?.showMessage('Placement cancelled');
+}
+
+window.addEventListener('placementClick', (e) => {
+  if (!placementType||!renderer) return;
+  const worldX=renderer.cameraX+e.detail.x;
+  const worldY=renderer.cameraY+e.detail.y;
+
+  socket.emit('placeBuilding', {type: placementType, x: worldX, y: worldY}, (res) => {
+    if (res&&res.success) {
+      soundManager.playSound('ui_click');
+      renderer.showMessage(`${gameState.buildings?.[placementType]?.name||placementType} constructed`);
+      placementType=null;
+      if (input) input.placementMode=false;
+    } else {
+      // Stay armed so the player can just click somewhere better.
+      renderer.showMessage(PLACE_ERRORS[res?.reason]||`Cannot build here: ${res?.reason||'unknown'}`);
+    }
+  });
+});
+
 window.handleUpgradeBuilding=function(key) {
   socket.emit('upgradeBuilding', {buildingKey: key}, (response) => {
     if (response.success) {
@@ -2113,6 +2181,13 @@ function gameLoop() {
 
     // Draw cable placement preview
     updateCablePreview();
+
+    // Building placement ghost.
+    if (placementType) {
+      renderer.drawPlacementPreview(gameState, placementType,
+        renderer.cameraX+input.mouseX, renderer.cameraY+input.mouseY,
+        renderer.cameraX, renderer.cameraY);
+    }
 
     // Story transmissions sit above everything else.
     updateStoryOverlay();

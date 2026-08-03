@@ -302,6 +302,17 @@ io.on('connection', (socket) => {
         }
     });
 
+    // PLACE BUILDING
+    socket.on('placeBuilding', (data, callback) => {
+        const code = playerRooms.get(socket.id);
+        if (!code) return;
+        const room = rooms.get(code);
+        if (room && room.ready) {
+            const result = room.game.placeBuilding(socket.id, data.type, data.x, data.y);
+            if (callback) callback(result);
+        }
+    });
+
     // CRAFT ITEM
     socket.on('craftItem', (data, callback) => {
         const code = playerRooms.get(socket.id);
@@ -617,10 +628,17 @@ io.on('connection', (socket) => {
                 break;
 
             case 'maxBuildings':
-                // Max out all buildings for testing
-                for (const key of Object.keys(game.buildings)) {
-                    game.buildings[key].level = 4;
+                // Place one of every building type at its authored position and
+                // max it out. Writing game.buildings[key].level directly no
+                // longer works: instances in game.structures are the source of
+                // truth and syncBuildingLevels() would overwrite it immediately.
+                for (const pos of game.voxelMap.buildingPositions || []) {
+                    if (!game.buildings[pos.id]) continue;
+                    const existing = game.structuresOfType(pos.id)[0];
+                    if (existing) existing.level = 4;
+                    else game.addStructure(pos.id, pos.x, pos.y, 4);
                 }
+                game.syncBuildingLevels();
                 game.applyBuildingEffects();
                 break;
 

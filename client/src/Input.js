@@ -277,6 +277,13 @@ export class Input {
 
     // Handle mouse click for placement
     handleMouseClick(e) {
+        // Building placement takes precedence over cable laying.
+        if (this.placementMode) {
+            window.dispatchEvent(new CustomEvent('placementClick', {
+                detail: {x: this.mouseX, y: this.mouseY}
+            }));
+            return;
+        }
         if (!this.cableMode) return;
 
         // Convert screen click to world coordinates?

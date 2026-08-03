@@ -141,12 +141,21 @@ export class NetworkSystem {
     constructor(game) {
         this.game=game;
 
-        // Tunables. baseBusRadius is deliberately large enough to cover the
-        // pre-placed surface row (buildings sit at +120..+1080 from base centre
-        // and render 92 units wide, so they cannot fit inside the 200m build
-        // radius the GDD specifies for player-placed buildings).
+        // Tunables. baseBusRadius now matches the Landing Pad's build radius
+        // (GDD 5.2): anything you can place around a pad is on its bus, and
+        // anything further away needs cable.
+        //
+        // It was temporarily 1400 to cover the authored nine-building surface
+        // row. That row is no longer instantiated at startup -- only the Landing
+        // Pad and Habitat are -- so the wide radius had become actively wrong:
+        // it auto-connected a second base 1200 units away that should have
+        // needed a cable run.
+        // Read the radius off Game rather than re-deriving it from config, so
+        // there is exactly one default. (These briefly disagreed -- Game
+        // defaulted to 400 and NetworkSystem to 200 -- which silently left every
+        // building past 200 units off the bus.)
         const diff=game.config?.difficulty||{};
-        this.baseBusRadius=diff.baseBusRadius??1400;
+        this.baseBusRadius=diff.baseBusRadius??game.buildRadius;
         this.baseBusElevationBand=diff.baseBusElevationBand??60;
         this.solarZeroDepth=diff.solarZeroDepth??60;
         this.fuelThroughput=diff.fuelThroughput??20; // units/second per run
@@ -178,22 +187,23 @@ export class NetworkSystem {
 
     // ---------------------------------------------------------------- nodes
 
-    // The single point where building instances are enumerated.
+    // The single point where building instances are enumerated. Now reads
+    // Game.structures, so multiple instances of a type each become their own
+    // node with their own position, level and connection state.
     collectNodes() {
         const nodes=new Map();
-        for (const [key, building] of Object.entries(this.game.buildings)) {
-            if (!building||building.level<=0) continue;
-            const spec=BUILDING_NETWORK_SPEC[key];
+        for (const s of this.game.structures.values()) {
+            if (!s||s.level<=0) continue;
+            const spec=BUILDING_NETWORK_SPEC[s.type];
             if (!spec) continue;
-            const pos=this.game.voxelMap.getBuildingLocation(key);
-            if (!pos) continue; // No position -> cannot be a network node.
-            nodes.set(key, {
-                id: key,
-                key,
-                name: building.name,
-                level: building.level,
-                x: pos.x,
-                y: pos.y,
+            const def=this.game.buildings[s.type];
+            nodes.set(s.id, {
+                id: s.id,
+                key: s.type,
+                name: def? def.name:s.type,
+                level: s.level,
+                x: s.x,
+                y: s.y,
                 spec
             });
         }
@@ -376,6 +386,17 @@ export class NetworkSystem {
         return this.state;
     }
 
+    // Drawing entries sorted lowest shed priority first. Types absent from
+    // SHED_ORDER sort first (shed earliest); the self-powered Habitat is skipped
+    // by the caller and so never appears.
+    byShedPriority(drawing) {
+        const rank=node => {
+            const i=SHED_ORDER.indexOf(node.key);
+            return i===-1? -1:i;
+        };
+        return drawing.slice().sort((a, b) => rank(a.node)-rank(b.node));
+    }
+
     solvePower(topology, activity, status, dt) {
         const groups=this.componentsFor(NET_POWER, topology);
         const results=[];
@@ -444,10 +465,14 @@ export class NetworkSystem {
 
                 if (bufferEnergy<=0) {
                     bufferEnergy=0;
-                    for (const key of SHED_ORDER) {
+                    // Walk instances lowest-priority-first. Matching is on the
+                    // building TYPE, not the node id, so a base with three
+                    // Placeable Lights sheds all three before the Crafting
+                    // Station rather than only the one whose id happens to
+                    // equal the type name.
+                    for (const entry of this.byShedPriority(drawing)) {
                         if (demand<=supply) break;
-                        const entry=drawing.find(e => e.node.id===key&&!this.shedNodes.has(e.node.id));
-                        if (!entry) continue;
+                        if (this.shedNodes.has(entry.node.id)) continue;
                         if (entry.node.spec.power.selfPowered) continue;
                         this.shedNodes.add(entry.node.id);
                         demand-=entry.draw;
@@ -459,13 +484,13 @@ export class NetworkSystem {
                 // Restore shed buildings highest-priority-first, but only with a
                 // healthy buffer and real headroom, so the grid cannot flicker.
                 if (bufferCapacity>0&&bufferEnergy>=bufferCapacity*RESTORE_BUFFER_FRACTION) {
-                    for (let i=SHED_ORDER.length-1; i>=0; i--) {
-                        const key=SHED_ORDER[i];
-                        if (!this.shedNodes.has(key)) continue;
-                        const entry=drawing.find(e => e.node.id===key);
-                        if (!entry) {this.shedNodes.delete(key); continue;}
+                    // Highest priority first: the Landing Pad comes back before
+                    // the lights do.
+                    const ordered=this.byShedPriority(drawing).reverse();
+                    for (const entry of ordered) {
+                        if (!this.shedNodes.has(entry.node.id)) continue;
                         if (demand+entry.draw<=supply) {
-                            this.shedNodes.delete(key);
+                            this.shedNodes.delete(entry.node.id);
                             demand+=entry.draw;
                         }
                     }
@@ -632,6 +657,17 @@ export class NetworkSystem {
         return s.power==='ok'||s.power==='brownout';
     }
 
+    // Instance ids of a building type. The first instance of a type is named
+    // after the type itself, so 'landing_pad' resolves whether it is used as a
+    // type name or an instance id.
+    nodeIdsOfType(type) {
+        const ids=[];
+        for (const [id, node] of Object.entries(this.state.nodes)) {
+            if (node.key===type||id===type) ids.push(id);
+        }
+        return ids;
+    }
+
     // Fuel a landing pad can actually dispense right now.
     padFuelAvailable(nodeId='landing_pad') {
         return this.fuelTanks.get(nodeId)||0;
@@ -649,6 +685,12 @@ export class NetworkSystem {
         const s=this.state.nodes[nodeId];
         if (!s) return true;  // No refinery built -> baseline refining is unaffected.
         return !s.outputBlocked;
+    }
+
+    // Fuel across every landing pad tank, and drawing from the nearest one that
+    // has any. With one pad this behaves exactly as before.
+    totalPadFuel(type='landing_pad') {
+        return this.nodeIdsOfType(type).reduce((sum, id) => sum+(this.fuelTanks.get(id)||0), 0);
     }
 
     // Total ore-processing throughput, in units/second, from every powered

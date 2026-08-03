@@ -1102,7 +1102,7 @@ export class Renderer {
             const buildingScale=baseScale*0.5;
 
             state.activeBuildings.forEach(b => {
-                const sprite=this.buildingSprites[b.id];
+                const sprite=this.buildingSprites[b.type||b.id]; // id is now instance-scoped (e.g. 'fuel_depot#2')
                 if (sprite) {
                     const w=sprite.width*buildingScale;
                     const h=sprite.height*buildingScale;
@@ -1551,7 +1551,7 @@ export class Renderer {
             const buildingScale=baseScale*0.5; // 50% scale
 
             state.activeBuildings.forEach(b => {
-                const sprite=this.buildingSprites[b.id];
+                const sprite=this.buildingSprites[b.type||b.id]; // id is now instance-scoped (e.g. 'fuel_depot#2')
                 if (sprite) {
                     const w=sprite.width*buildingScale;
                     const h=sprite.height*buildingScale;
@@ -2683,6 +2683,96 @@ export class Renderer {
 
         // Chat
         this.drawChat();
+    }
+
+    // Ghost preview while placing a building: shows every Landing Pad's build
+    // zone, the deck band that gets free connection, and whether this spot is
+    // legal. The rules are re-checked on the server; this only has to explain
+    // them well enough that the player is not guessing.
+    drawPlacementPreview(state, type, mouseWorldX, mouseWorldY, cameraX, cameraY) {
+        if (!type) return;
+        const nodes=state.networks?.nodes||{};
+        const pads=Object.values(nodes).filter(n => n.key==='landing_pad');
+        const radius=state.buildRadius||400;
+        const band=state.baseBusBand||60;
+        const spacing=state.buildSpacing||100;
+
+        this.ctx.save();
+
+        // Build zones.
+        for (const p of pads) {
+            const sx=p.x-cameraX;
+            const sy=p.y-cameraY;
+            this.ctx.beginPath();
+            this.ctx.arc(sx, sy, radius, 0, Math.PI*2);
+            this.ctx.fillStyle='rgba(68,136,255,0.05)';
+            this.ctx.fill();
+            this.ctx.strokeStyle='rgba(68,136,255,0.45)';
+            this.ctx.lineWidth=1.5;
+            this.ctx.setLineDash([8, 6]);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+
+            // The deck band: inside this, buildings wire up for free.
+            this.ctx.fillStyle='rgba(68,221,85,0.06)';
+            this.ctx.fillRect(sx-radius, sy-band, radius*2, band*2);
+        }
+
+        const isPad=type==='landing_pad';
+        let valid=isPad||pads.some(p => Math.hypot(p.x-mouseWorldX, p.y-mouseWorldY)<=radius);
+        let why=valid? '':'OUTSIDE BUILD ZONE';
+
+        // Spacing against everything already placed.
+        if (valid) {
+            for (const n of Object.values(nodes)) {
+                if (Math.hypot(n.x-mouseWorldX, n.y-mouseWorldY)<spacing) {
+                    valid=false;
+                    why='TOO CLOSE';
+                    break;
+                }
+            }
+        }
+
+        const mx=mouseWorldX-cameraX;
+        const my=mouseWorldY-cameraY;
+        const colour=valid? '#44dd55':'#ff4444';
+
+        // Footprint.
+        const w=92, h=92;
+        this.ctx.globalAlpha=0.35;
+        this.ctx.fillStyle=colour;
+        this.ctx.fillRect(mx-w/2, my-h, w, h);
+        this.ctx.globalAlpha=1;
+        this.ctx.strokeStyle=colour;
+        this.ctx.lineWidth=2;
+        this.ctx.strokeRect(mx-w/2, my-h, w, h);
+
+        // Spacing ring, so overlaps are obvious before clicking.
+        this.ctx.globalAlpha=0.5;
+        this.ctx.beginPath();
+        this.ctx.arc(mx, my, spacing, 0, Math.PI*2);
+        this.ctx.setLineDash([4, 4]);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+        this.ctx.globalAlpha=1;
+
+        // Whether it would come up connected for free.
+        const onDeck=pads.some(p => Math.abs(p.y-mouseWorldY)<=band&&
+            Math.hypot(p.x-mouseWorldX, p.y-mouseWorldY)<=radius);
+        const note=valid
+            ? (onDeck? 'CONNECTED AUTOMATICALLY':'NEEDS CABLE — off the pad deck')
+            : why;
+
+        this.ctx.font='11px Consolas, monospace';
+        this.ctx.textAlign='center';
+        const tw=this.ctx.measureText(note).width;
+        this.ctx.fillStyle='rgba(0,0,0,0.75)';
+        this.ctx.fillRect(mx-tw/2-6, my+8, tw+12, 16);
+        this.ctx.fillStyle=valid? (onDeck? '#44dd55':'#ffb347'):'#ff6666';
+        this.ctx.fillText(note, mx, my+20);
+        this.ctx.textAlign='left';
+
+        this.ctx.restore();
     }
 
     // Incoming transmission panel for depth-triggered story beats. Slides in from

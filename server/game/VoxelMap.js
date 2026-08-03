@@ -824,6 +824,16 @@ export class VoxelMap {
         };
     }
 
+    // Is the tile at this world position solid rock? BASE and PAD tiles count as
+    // open, so buildings can sit on the existing base platform. Out of bounds is
+    // treated as solid so nothing can be placed off the edge of the map.
+    isSolidAtWorld(wx, wy) {
+        const g=this.worldToGrid(wx, wy);
+        if (g.x<0||g.y<0||g.x>=this.width||g.y>=this.height) return true;
+        const tile=this.tiles[g.y][g.x];
+        return tile!==TileTypes.EMPTY&&tile!==TileTypes.BASE&&tile!==TileTypes.PAD;
+    }
+
     gridToWorld(gx, gy) {
         return {
             x: gx*this.tileSize+this.tileSize/2,
@@ -1036,10 +1046,9 @@ export class VoxelMap {
         };
     }
 
-    getBuildingLocation(id) {
-        if (!this.buildingPositions) return null;
-        return this.buildingPositions.find(p => p.id===id);
-    }
+    // (A second, identical getBuildingLocation() used to live here and shadowed
+    // the one above. Removed -- the definition next to the depth helpers is the
+    // only one now.)
 
     getSpawnPosition() {
         if (this.spawnPosition) {

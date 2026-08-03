@@ -31,16 +31,16 @@ Reach **The Core** — 4,700m down, inside the Core biome — and the endgame fi
 Depth has a single authoritative scale: `VoxelMap.getDepthMeters()`, where the surface is 0m and the bottom of the map is 5,000m. The surface is read from the landing pad, not hardcoded — it moves with the seed (measured 1468, 1500 and 1548 across three seeds).
 
 ### The Story
-A B-movie framing for why anyone flies a lander four kilometres into a moon, delivered as **depth-triggered transmissions** (`server/game/Story.js`) that fire once per game for the whole team, keyed to the deepest point the expedition has reached.
+A B-movie framing for why anyone flies a lander four kilometres into a moon, delivered as **depth-triggered transmissions** (`server/game/Story.js`) that fire once per game for the whole team, keyed to the deepest point the expedition has reached. Beats fire on the **biome boundaries**, so a transmission lands as the world visibly changes around you.
 
 | Depth | From | Beat |
 |-------|------|------|
-| 0m | Tranquility Deep Mining Consortium | Your quota is Helium-3. Ignore the seismic readings below 4,000m. |
-| 510m | Automated Survey | The shallow tunnels are not natural. They branch like something was looking for a way *up*. |
-| 1,385m | Dr. Voss, Geology | The seismic pattern repeats every 11 hours. It is counting. Downward. |
-| 2,255m | Dr. Voss | The Bitite lattice is grown, not formed. It is a recording, and it is very old. |
-| 3,130m | Consortium Board | Quota suspended. New objective: establish contact. Dr. Voss is no longer with the Consortium. |
-| 4,000m | Unknown origin | WE BUILT THE TUNNELS. WE SEEDED THE ORE. COME THE REST OF THE WAY. |
+| 0m | Tranquility Deep Mining Consortium | Your quota is Helium-3. Ignore the seismic readings below 4,250m. |
+| 750m | Automated Survey | The shallow tunnels are not natural. They branch like something was looking for a way *up*. |
+| 1,500m | Dr. Voss, Geology | The seismic pattern repeats every 11 hours. It is counting. Downward. |
+| 2,500m | Dr. Voss | The Bitite lattice is grown, not formed. It is a recording, and it is very old. |
+| 3,500m | Consortium Board | Quota suspended. New objective: establish contact. Dr. Voss is no longer with the Consortium. |
+| 4,250m | Unknown origin | WE BUILT THE TUNNELS. WE SEEDED THE ORE. COME THE REST OF THE WAY. |
 | Core | The Core | The chamber is warm. The walls are not rock. Something enormous turns over, and is glad. |
 
 The ore you have been mining all game was placed there to bring you down. That is the joke, and the mining loop is the setup.
@@ -118,9 +118,11 @@ Total throughput is the **sum of every powered refiner**, so a base with both ru
 ### 5.2 Building Anywhere
 Players can build bases anywhere in the cave system if they carry the required construction materials.
 
-1. **The Anchor (Landing Pad)**: To start a new base, a **Landing Pad** must be placed first.
-2. **Building Radius**: The Landing Pad generates a **200m radius** building zone. This radius is visually highlighted when the building menu is open. *(Nothing can be placed outside a Landing Pad's zone.)*
-3. **The Base Bus**: Buildings placed on the pad **deck** — inside the 200m radius *and* within **±25m of the Landing Pad's own elevation** — are automatically wired to the pad on all three networks (power, fuel, data). This is the "free" surface base and requires no cables.
+1. **The Anchor (Landing Pad)**: To start a new base, a **Landing Pad** must be placed first. It is the one building that can be placed outside every existing zone — that is what founding a base means. A new pad starts with **no generator**, so a remote base is dark until the player brings it power.
+2. **Building Radius**: The Landing Pad generates a **400m radius** building zone, shown as a dashed circle while placing. *(Nothing except another Landing Pad can be placed outside a zone.)*
+
+   400m rather than the 200m originally specced: building sprites render 92 units wide and need ~100 units of spacing, so a 200m zone had room for roughly three buildings once the pad and Habitat had taken their places — not a base, out of eleven building types. At 400m a base fits about seven.
+3. **The Base Bus**: Buildings placed on the pad **deck** — inside the build radius *and* within **±60m of the Landing Pad's own elevation** — are automatically wired to the pad on all three networks (power, fuel, data). This is the "free" surface base and requires no cables. The deck band is shaded green while placing.
 4. **Everything else needs cable**: A building placed **below the deck** (underground, in a cave) or **above it** (a cliff shelf, a tower) is inside the build zone but *not* on the bus. It is inert until the player physically runs the cables it needs. This is the core of the base-building game: the bus gets you started, cables get you everywhere else.
 5. **Power Requirement**: Every building except the generators (Habitat, Solar Array, Fuel Generator) requires power to function. A Landing Pad with no power will not provide repair/refuel/charge services to landed ships.
 
@@ -322,16 +324,37 @@ Buildings on the connected network render as **red rectangles** on the minimap f
 ## 8. Procedural Cave Generation
 
 ### 8.1 Biomes & Depth (5000m Total)
+
+Depth comes from `VoxelMap.getDepthMeters()`: the surface is **0m** and the bottom of the map is **5000m**. The **Scaling** column is normalized depth, which is what the renderer actually switches biomes on.
+
 | Biome | Depth Range | Scaling | Hazards | Resources |
 |-------|-------------|---------|---------|-----------|
-| **Surface** | 0 - 510m | 0-0.102 | Meteor Showers | None |
-| **Shallow Caves** | 510 - 1385m | 0.1-0.27 | Loose Rocks falling down | Iron, Copper |
-| **Deep Tunnels** | 1385 - 2255m | 0.27-0.45| Flammable Gas Pockets | Silver, Titanium |
-| **Crystal Caverns**| 2255 - 3130m | 0.45-0.62| Falling Stalactites | Gold, Bitite |
-| **Abyssal Depths** | 3130 - 4000m | 0.62-0.8 | Lava, Extreme Heat* | Platinum |
-| **The Core** | 4000 - 5000m | 0.8-1.0 | Radiation*, Static | Diamond, Helium-3 |
+| **Surface** | 0 - 750m | 0 - 0.15 | Meteor Showers | Iron (from 50m) |
+| **Shallow Caves** | 750 - 1500m | 0.15 - 0.30 | Loose Rocks falling down | Iron, Copper |
+| **Deep Tunnels** | 1500 - 2500m | 0.30 - 0.50 | Flammable Gas Pockets | Silver, Titanium |
+| **Crystal Caverns**| 2500 - 3500m | 0.50 - 0.70 | Falling Stalactites | Gold, Titanium, Bitite |
+| **Abyssal Depths** | 3500 - 4250m | 0.70 - 0.85 | Lava, Extreme Heat* | Platinum, Gold, Helium-3 |
+| **The Core** | 4250 - 5000m | 0.85 - 1.0 | Radiation*, Static | Diamond, Helium-3, Platinum |
 
 *\*Requires specific ship shielding upgrades to survive.*
+
+**Win line**: 4700m (normalized 0.94), inside The Core.
+
+**Ore bands** are authored in *tile* depth below the local surface, not metres — `VoxelMap.generateOres()`. Converted to the scale above, with ~1016 tiles of playable depth:
+
+| Ore | Tile band | ≈ Depth | Biomes reached |
+|-----|-----------|---------|----------------|
+| Iron | 10 - 400 | 50 - 1970m | Surface → Deep Tunnels |
+| Copper | 50 - 250 | 250 - 1230m | Surface → Shallow |
+| Bitite | 100 - 850 | 490 - 4180m | Surface → Abyssal |
+| Silver | 200 - 500 | 980 - 2460m | Shallow → Deep Tunnels |
+| Titanium | 400 - 700 | 1970 - 3450m | Deep Tunnels → Crystal |
+| Gold | 600 - 850 | 2950 - 4180m | Crystal → Abyssal |
+| Platinum | 600 - 1000 | 2950 - 4920m | Crystal → Core |
+| Diamond | 900 - 1200 | 4430 - 5000m | Core only |
+| Helium-3 | 800 - 1200 | 3940 - 5000m | Abyssal → Core |
+
+Note that **Bitite stops at ~4180m**, so the deepest 800m of the descent has no fuel source in it. §10.1's claim that Bitite is found at all depths is not true of the current bands — a run to the Core has to carry its return fuel through the last stretch. That is a reasonable difficulty spike, but it is currently an accident rather than a decision.
 
 ---
 
@@ -438,9 +461,10 @@ The **server-side network logic in §6 and §7 is implemented** in `server/game/
 
 **Still outstanding:**
 
-1. **Buildings are still not instances.** `Game.buildings` remains a global map of *building type → level*, with positions hardcoded in `VoxelMap.buildingPositions`. `NetworkSystem` is written against this, but every place that enumerates buildings goes through the single method `collectNodes()` — moving to multiple placed instances is a change to that one method, not to the solver. Until then there can be only one of each building, so "build a second base" is not yet possible.
-2. **Base Bus radius is 1400, not the 200m in §5.2.** The pre-placed surface row spans `baseWorldPos.x + 120..1080` and each building renders 92 units wide, so the existing base physically cannot fit inside a 200m radius. The radius is exposed as `difficulty.baseBusRadius` and should drop to 200 once buildings can be freely placed and the fixed row is retired.
+1. ~~Buildings are not instances.~~ **Done.** `Game.structures` is now the source of truth: every building is a placed instance with its own id, level and position. `Game.buildings` survives as the per-type definition table, with its `level` kept in sync as the highest level among that type's instances so older call sites still work. The first instance of a type keeps the bare type name as its id (`landing_pad`), later ones get `landing_pad#2`, which preserved every existing network node id. The claim that `collectNodes()` was the only enumeration point held up — the migration touched 4 call sites.
+2. ~~Base Bus radius is 1400.~~ **Done.** It now follows the Landing Pad build radius. The wide radius had become actively wrong once placement worked: it auto-connected a second base 1200 units away that should have needed a cable run.
 3. **Cable severance** (§6.2, optional) is not implemented.
+4. **Buildings are not hauled.** GDD 5.2 says buildings occupy 2x2 cargo slots and must be flown to the site. They are currently placed from the build menu, paying from base materials. The placement, zone and connectivity rules are all real; only the hauling loop is missing.
 4. **Spool physics is unchanged.** `dropLine` still creates a physics box with a crude spring past `MAX_LENGTH`. The crash bugs in the spool path are fixed (items 7-8 below) but the rope simulation itself was deliberately left alone — it is not on the critical path to working cables, and rewriting it is a separate piece of work.
 
 **Bugs found and fixed during implementation:**
@@ -483,5 +507,5 @@ The **server-side network logic in §6 and §7 is implemented** in `server/game/
 - **v1.0-1.4**: Core physics, multiplayer rooms, biomes, and UI foundations.
 
 ---
-*Document Version: 1.11*
+*Document Version: 1.12*
 *Last Updated: August 3, 2026*

@@ -18,12 +18,12 @@ export const STORY_BEATS=[
         lines: [
             'Congratulations on your assignment to Lunar Extraction Site 7.',
             'Your quota is Helium-3. Your contract is nine months. Your lander is insured; you are not.',
-            'Ignore any seismic readings from below 4,000m. They are equipment error.'
+            'Ignore any seismic readings from below 4,250m. They are equipment error.'
         ]
     },
     {
         id: 'shallow',
-        depth: 510,
+        depth: 750,
         from: 'SITE 7 // AUTOMATED SURVEY',
         title: 'SOMETHING IN THE ROCK',
         lines: [
@@ -34,7 +34,7 @@ export const STORY_BEATS=[
     },
     {
         id: 'deep',
-        depth: 1385,
+        depth: 1500,
         from: 'DR. VOSS // GEOLOGY (UNAUTHORISED CHANNEL)',
         title: 'IT IS NOT EQUIPMENT ERROR',
         lines: [
@@ -45,7 +45,7 @@ export const STORY_BEATS=[
     },
     {
         id: 'crystal',
-        depth: 2255,
+        depth: 2500,
         from: 'DR. VOSS // GEOLOGY',
         title: 'THE CRYSTALS ARE A RECORDING',
         lines: [
@@ -56,7 +56,7 @@ export const STORY_BEATS=[
     },
     {
         id: 'abyss',
-        depth: 3130,
+        depth: 3500,
         from: 'CONSORTIUM BOARD // PRIORITY OVERRIDE',
         title: 'CONTRACT AMENDED',
         lines: [
@@ -67,7 +67,7 @@ export const STORY_BEATS=[
     },
     {
         id: 'core_approach',
-        depth: 4000,
+        depth: 4250,
         from: '— — — UNKNOWN ORIGIN — — —',
         title: 'THE COUNT REACHES ZERO',
         lines: [
