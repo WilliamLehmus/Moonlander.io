@@ -13,6 +13,29 @@ integration breakage, not just unit slips. Terrain is randomly seeded per run,
 so run them **two or three times** after touching map generation or placement —
 several bugs found so far only appeared on some seeds.
 
+## Deployment
+
+Live at **https://moonlanderio-production.up.railway.app** (Railway project
+`Moonlander.io`). Deploy with:
+
+```
+railway up -y --detach -m "<what changed>"
+```
+
+`railway up` returning only means the build was *queued*. Poll
+`railway deployment list --json` until the newest deployment reads `SUCCESS`
+before believing it shipped.
+
+Two deploy-specific traps already hit and fixed, worth not re-introducing:
+- **Node version.** Nixpacks defaults to Node 18; Vite 7 needs 20.19+. Pinned
+  via `engines.node` and `.nvmrc`. The failure shows up as
+  `crypto.hash is not a function`, which looks like a CSS bug and is not.
+- **Baked localhost.** `vite.config.js` sets `envDir:'../'`, so the build reads
+  the root `.env` — which sets `VITE_SERVER_URL=http://localhost:3010`. The
+  client now only honours that override when actually served from localhost;
+  otherwise it uses `window.location.origin`. Get this wrong and every player's
+  browser tries to reach its own machine.
+
 ---
 
 ## 1. Finish the base-building loop
