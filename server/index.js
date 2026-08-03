@@ -313,6 +313,17 @@ io.on('connection', (socket) => {
         }
     });
 
+    // CRAFT BUILDING KIT
+    socket.on('craftBuildingKit', (data, callback) => {
+        const code = playerRooms.get(socket.id);
+        if (!code) return;
+        const room = rooms.get(code);
+        if (room && room.ready) {
+            const result = room.game.craftBuildingKit(socket.id, data.type);
+            if (callback) callback(result);
+        }
+    });
+
     // DEMOLISH BUILDING
     socket.on('demolishBuilding', (data, callback) => {
         const code = playerRooms.get(socket.id);

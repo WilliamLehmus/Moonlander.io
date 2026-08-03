@@ -4,6 +4,18 @@ const ck=(l,c,d='')=>{if(!c)fails++;console.log(`${c?'  PASS':'  FAIL'}  ${l}${d
 
 const g=new Game(); await g.init();
 g.addPlayer('p1','Builder');
+
+// Buildings are hauled now: crafted into a kit at a base, carried in the hold,
+// and consumed on placement. These tests exercise placement rules, not the
+// logistics, so auto-issue the kit rather than rewriting every call site.
+const _rawPlace=g.placeBuilding.bind(g);
+g.placeBuilding=(pid, type, x, y)=>{
+    const pl=g.players.get(pid);
+    if (pl&&g.buildings[type]&&g.findKit(pl, type)===-1) {
+        pl.cargo.push({type: g.kitTypeFor(type), amount: 1});
+    }
+    return _rawPlace(pid, type, x, y);
+};
 const N=g.networks;
 const pad=g.voxelMap.getBuildingLocation('landing_pad');
 const solve=()=>{N.markDirty();N.solve(0.1,g.getBuildingActivity());g.applyBuildingEffects();};
@@ -48,7 +60,39 @@ const findSpot=(type)=>{
 const spot1=findSpot('fuel_depot');
 const r1=spot1? g.placeBuilding('p1','fuel_depot',spot1.x,spot1.y):{success:false,reason:'no spot'};
 ck('Places a valid building', r1.success, JSON.stringify(r1));
-ck('Charged materials', g.baseResources.basic===980, `basic=${g.baseResources.basic}`);
+ck('Placement itself charges nothing (the kit was already paid for)',
+   g.baseResources.basic===1000, `basic=${g.baseResources.basic}`);
+
+console.log('\n=== Hauling: craft a kit, carry it, spend it ===');
+// These checks use the REAL placeBuilding, not the auto-kit wrapper above.
+const player=g.players.get('p1');
+player.cargo.length=0;
+player.onPad=true;
+g.baseResources.basic=1000;
+
+const spotH=findSpot('parts_warehouse');
+ck('Cannot place without a kit in the hold',
+   spotH? _rawPlace('p1','parts_warehouse',spotH.x,spotH.y).reason==='no_kit':true);
+
+const craft=g.craftBuildingKit('p1','parts_warehouse');
+ck('Crafting a kit succeeds at a base', craft.success, JSON.stringify(craft));
+ck('Crafting charges materials', g.baseResources.basic===980, `basic=${g.baseResources.basic}`);
+ck('The kit lands in the hold', player.cargo.some(c=>c.type==='kit_parts_warehouse'));
+ck('A kit takes ONE cargo slot', player.cargo.length===1, `${player.cargo.length} slots used`);
+
+const placed=spotH? _rawPlace('p1','parts_warehouse',spotH.x,spotH.y):{success:false};
+ck('Now it places', placed.success, JSON.stringify(placed));
+ck('Placing consumed the kit', !player.cargo.some(c=>c.type==='kit_parts_warehouse'));
+ck('...and did not charge again', g.baseResources.basic===980, `basic=${g.baseResources.basic}`);
+
+player.onPad=false;
+ck('Cannot craft a kit away from a base',
+   g.craftBuildingKit('p1','ore_storage').reason==='must_be_at_base');
+player.onPad=true;
+g.baseResources.basic=0;
+ck('Cannot craft a kit you cannot afford',
+   g.craftBuildingKit('p1','ore_storage').reason==='insufficient_materials');
+g.baseResources.basic=1000;
 
 console.log('\n=== A second instance of the same type ===');
 // In the build zone, but 120 units above the pad deck -- outside the +/-60 Base

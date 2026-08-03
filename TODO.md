@@ -2,7 +2,7 @@
 
 Picking-up-where-we-left-off list. Grouped by what it costs you, not by system.
 
-**Before changing anything**, run the check harnesses — 110 checks, ~30 seconds:
+**Before changing anything**, run the check harnesses — 121 checks, ~30 seconds:
 
 ```
 cd server && node tests/run-all.mjs
@@ -17,13 +17,16 @@ several bugs found so far only appeared on some seeds.
 
 ## 1. Finish the base-building loop
 
-- [ ] **Buildings are not hauled.** GDD §5.2 says a building occupies 2x2 cargo
-      slots and has to be flown to the site. Right now you place it from the
-      build menu and it is paid for out of base materials. The placement, zone,
-      spacing, terrain and connectivity rules are all real and tested — only the
-      hauling loop is missing. Needs `craftItem` + cargo/inventory work, which
-      nothing has touched yet.
-      *This is the biggest remaining gap between the doc and the game.*
+- [x] ~~**Buildings are not hauled.**~~ **Done.** A building is crafted at a
+      base into a *kit*, carried in the hold, and consumed where it is placed.
+      Crafting pays the materials; placing costs nothing further.
+
+      **Decision recorded:** a kit takes **1 cargo slot**, not the 2x2 in GDD
+      §5.2. Cargo is a flat array with no 2D packing, and a Scout has 3 slots —
+      at 2x2 no building could be carried until a Cargo Hauler (50 Industrial,
+      below 1385m), which would gate the first Comm Antenna behind the depths
+      its minimap exists to help you reach. Revisit only if a real 2D grid is
+      ever built.
 
 - [x] ~~**You cannot remove a building.**~~ **Done.** Demolish refunds 50% of
       everything invested (build cost + every upgrade). The Habitat cannot be

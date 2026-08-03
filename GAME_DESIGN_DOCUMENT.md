@@ -147,7 +147,8 @@ Buildings have 4 upgrade levels (Level 1 to Level 4). The **Needs** column lists
 Parenthesised networks — **(F)**, **(D)** — are *optional*: the building runs without them but is limited (a Landing Pad with no fuel line still repairs and recharges, it just cannot refuel; an Antenna with no data line still gives its owner coverage, it just does not share).
 
 **Building Notes:**
-- **Inventory Size**: Most buildings take up **2x2 slots** in a cargo grid; a player must physically haul them to the site.
+- **Hauling**: a building is crafted at a base into a **kit**, carried in the ship's hold, and consumed where it is placed. Crafting is where the materials are paid; placing costs nothing further. This is what makes founding a remote base a logistics problem rather than a menu click.
+- **Inventory Size**: a kit takes **one cargo slot**, not the 2x2 originally specced. Cargo is a flat array with no 2D packing, and a Scout has only 3 slots — at 2x2 no building could be carried at all until a Cargo Hauler (50 Industrial, found below 1385m), which would gate the first Comm Antenna behind the depths its own minimap exists to help you reach. Footprint is a per-building concept that can return if a real 2D grid is ever built.
 - **Cargo Hauler**: with 6 slots, the Cargo Hauler can carry one 2x2 building plus 2 spare slots — it is the intended vehicle for founding remote bases.
 
 ### 5.4 The Starting Base

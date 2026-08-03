@@ -13,6 +13,18 @@ const ck=(l, c, d='')=>{if (!c) fails++; console.log(`${c? '  PASS':'  FAIL'}  $
 
 const g=new Game(); await g.init();
 g.addPlayer('p1', 'Pioneer');
+
+// Buildings are hauled now: crafted into a kit at a base, carried in the hold,
+// and consumed on placement. These tests exercise placement rules, not the
+// logistics, so auto-issue the kit rather than rewriting every call site.
+const _rawPlace=g.placeBuilding.bind(g);
+g.placeBuilding=(pid, type, x, y)=>{
+    const pl=g.players.get(pid);
+    if (pl&&g.buildings[type]&&g.findKit(pl, type)===-1) {
+        pl.cargo.push({type: g.kitTypeFor(type), amount: 1});
+    }
+    return _rawPlace(pid, type, x, y);
+};
 const N=g.networks, vm=g.voxelMap;
 const solve=()=>{N.markDirty(); N.solve(0.1, g.getBuildingActivity()); g.applyBuildingEffects();};
 g.baseResources.basic=99999; g.baseResources.industrial=99999;
@@ -47,8 +59,16 @@ for (let a=0; a<360; a+=5) {
 ck('There is buildable ground around the new pad', spots.length>0, `${spots.length} spots`);
 if (!spots.length) {console.log('\nSKIPPED'); process.exit(0);}
 
-const gen=g.placeBuilding('p1', 'fuel_generator', spots[0].x, spots[0].y);
+// Put the generator ON THE PAD DECK (within the Base Bus elevation band) so it
+// wires up without cable. Spots are scanned by angle, so spots[0] can easily be
+// steeply above or below the pad if the rock beside it is solid -- and that
+// would correctly need a cable run, which is not what this test is about.
+const deckSpot=spots.find(s => Math.abs(s.y-site.y)<=N.baseBusElevationBand)||spots[0];
+const gen=g.placeBuilding('p1', 'fuel_generator', deckSpot.x, deckSpot.y);
 ck('Fuel Generator placed', gen.success, JSON.stringify(gen));
+ck('...on the pad deck, so no cable is needed',
+    Math.abs(deckSpot.y-site.y)<=N.baseBusElevationBand,
+    `dy=${Math.round(Math.abs(deckSpot.y-site.y))}`);
 solve();
 
 console.log('\n=== The remote base starts dark ===');
@@ -61,7 +81,7 @@ ck('Remote pad is unpowered', !N.isPowered(site.id), N.state.nodes[site.id]?.pow
 
 console.log('\n=== Hand-filling bootstraps it (GDD 6.3) ===');
 const p=g.players.get('p1');
-p.x=spots[0].x; p.y=spots[0].y;
+p.x=deckSpot.x; p.y=deckSpot.y;
 p.fuel=400;
 p.inputs.transferFuel=true;
 ck('Pilot standing at the generator sees it as a fill target',

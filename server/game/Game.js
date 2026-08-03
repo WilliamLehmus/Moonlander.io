@@ -440,14 +440,9 @@ export class Game {
         const def=this.buildings[type];
         if (!def) return {ok: false, reason: 'unknown_building'};
 
-        const costs=this.buildingCosts[type];
-        if (!costs) return {ok: false, reason: 'unknown_building'};
-        const cost=costs[0];
-        for (const [mat, amount] of Object.entries(cost)) {
-            if ((this.baseResources[mat]||0)<amount) {
-                return {ok: false, reason: 'insufficient_materials', required: cost};
-            }
-        }
+        if (!this.buildingCosts[type]) return {ok: false, reason: 'unknown_building'};
+        // No material check here: a kit is paid for when it is crafted, and
+        // placement consumes the kit. Charging in both places would double-bill.
 
         // Build zone is checked before terrain: for a click far off in the rock
         // both are true, and "outside the build zone" is the more useful reason.
@@ -478,18 +473,79 @@ export class Game {
         return {ok: true};
     }
 
-    // Place a new building instance, paying from base materials.
+    // ---- Building kits ----------------------------------------------------
+    // A building is crafted at a base into a KIT, carried in the ship's hold,
+    // and consumed where it is placed (GDD 5.2). That is what makes founding a
+    // remote base a logistics problem rather than a menu click.
+    //
+    // A kit takes ONE cargo slot, not the 2x2 the GDD originally specced. Cargo
+    // is a flat array with no 2D packing, and a Scout has 3 slots -- at 2x2 no
+    // building could be carried at all until a Cargo Hauler (50 Industrial,
+    // found below 1385m), which would gate the first Comm Antenna behind the
+    // depths that the antenna's minimap exists to help you reach.
+    kitTypeFor(buildingType) {return `kit_${buildingType}`;}
+
+    buildingTypeForKit(kitType) {
+        if (typeof kitType!=='string'||!kitType.startsWith('kit_')) return null;
+        const type=kitType.slice(4);
+        return this.buildings[type]? type:null;
+    }
+
+    // Craft a kit at a base, paying materials. buildingCosts is the single
+    // owner of building prices -- craftItem()'s recipe table covers cables and
+    // lights only, and must not grow a second price for the same thing.
+    craftBuildingKit(playerId, type) {
+        const player=this.players.get(playerId);
+        if (!player||player.dead) return {success: false, reason: 'dead'};
+        if (!player.onPad) return {success: false, reason: 'must_be_at_base'};
+
+        const costs=this.buildingCosts[type];
+        if (!this.buildings[type]||!costs) return {success: false, reason: 'unknown_building'};
+
+        const cost=costs[0];
+        for (const [mat, amount] of Object.entries(cost)) {
+            if ((this.baseResources[mat]||0)<amount) {
+                return {success: false, reason: 'insufficient_materials', required: cost};
+            }
+        }
+        if (player.cargo.length>=player.cargoCapacity) {
+            return {success: false, reason: 'no_cargo_space'};
+        }
+
+        for (const [mat, amount] of Object.entries(cost)) {
+            this.baseResources[mat]-=amount;
+        }
+        player.cargo.push({type: this.kitTypeFor(type), amount: 1});
+        player.updateMass();
+        this.broadcast('resourcesUpdated', this.baseResources);
+
+        return {success: true, kit: this.kitTypeFor(type)};
+    }
+
+    // Index of a kit for `type` in the player's hold, or -1.
+    findKit(player, type) {
+        const kit=this.kitTypeFor(type);
+        return player.cargo.findIndex(c => c.type===kit&&c.amount>0);
+    }
+
+    // Place a new building instance, consuming a carried kit.
     placeBuilding(playerId, type, x, y) {
         const player=this.players.get(playerId);
         if (!player||player.dead) return {success: false, reason: 'dead'};
 
+        // The kit must be in the hold. Materials were already paid at craft
+        // time, so placement charges nothing -- exactly one of the two steps
+        // may take payment.
+        const kitIndex=this.findKit(player, type);
+        if (kitIndex===-1) return {success: false, reason: 'no_kit'};
+
         const check=this.canPlaceBuilding(type, x, y);
         if (!check.ok) return {success: false, ...check};
 
-        const cost=this.buildingCosts[type][0];
-        for (const [mat, amount] of Object.entries(cost)) {
-            this.baseResources[mat]-=amount;
-        }
+        const slot=player.cargo[kitIndex];
+        slot.amount-=1;
+        if (slot.amount<=0) player.cargo.splice(kitIndex, 1);
+        player.updateMass();
 
         const structure=this.addStructure(type, x, y, 1);
         this.applyBuildingEffects();

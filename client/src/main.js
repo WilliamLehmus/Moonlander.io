@@ -138,6 +138,9 @@ function initQuickbar() {
 }
 
 function getOreColor(type) {
+  // Building kits are carried cargo like anything else -- give them their own
+  // colour so a hold with a kit in it is readable at a glance.
+  if (typeof type==='string'&&type.startsWith('kit_')) return '#7aa7d9';
   if (typeof type==='string'&&(type.startsWith('cable_spool_')||type.startsWith('cable_'))) {
     if (type.includes('power')||type==='cable_red') return '#ff4444';
     if (type.includes('fuel')||type==='cable_green') return '#44ff44';
@@ -1261,6 +1264,9 @@ function createInventorySlot(item, index, location) {
 }
 
 function formatOreName(type) {
+  if (typeof type==='string'&&type.startsWith('kit_')) {
+    return type.slice(4).replace(/_/g, ' ').toUpperCase()+' KIT';
+  }
   if (typeof type==='string'&&(type.startsWith('cable_spool_')||type.startsWith('cable_'))) {
     return type.replace('cable_spool_', '').replace('cable_', '').toUpperCase()+' CABLE';
   }
@@ -1740,8 +1746,11 @@ function renderBuildingList() {
         ${instanceHtml}
         ${costHtml}
         <div style="display:flex; gap:6px; margin-top:8px">
+          <button class="upgrade-btn select-btn" style="flex:1" onclick="handleCraftKit('${key}')">
+              Craft Kit
+          </button>
           <button class="upgrade-btn select-btn" style="flex:1" onclick="handlePlaceBuilding('${key}')">
-              Build New
+              Place
           </button>
           <button class="upgrade-btn select-btn" ${!b.canUpgrade||isMax||!isBuilt? 'disabled':''} style="flex:1" onclick="handleUpgradeBuilding('${key}')">
               ${isMax? 'Max Level':'Upgrade'}
@@ -1763,7 +1772,25 @@ const PLACE_ERRORS={
   too_close_to_building: 'Too close to another building',
   blocked_by_terrain: 'No headroom — that spot is inside rock',
   insufficient_materials: 'Not enough materials',
-  unknown_building: 'Unknown building type'
+  unknown_building: 'Unknown building type',
+  no_kit: 'No kit in the hold — craft one at a base and fly it here',
+  must_be_at_base: 'Land at a base to craft a kit',
+  no_cargo_space: 'No free cargo slot for the kit'
+};
+
+// Buildings are hauled: crafted into a kit at a base, flown to the site, and
+// spent there. Crafting is where the materials are paid.
+window.handleCraftKit=function(type) {
+  socket.emit('craftBuildingKit', {type}, (res) => {
+    const name=gameState.buildings?.[type]?.name||type;
+    if (res&&res.success) {
+      soundManager.playSound('ui_click');
+      renderer?.showMessage(`${name} kit loaded into the hold — fly it to the site and press Place`);
+      renderBuildingList();
+    } else {
+      renderer?.showMessage(PLACE_ERRORS[res?.reason]||`Cannot craft kit: ${res?.reason||'unknown'}`);
+    }
+  });
 };
 
 window.handlePlaceBuilding=function(type) {
