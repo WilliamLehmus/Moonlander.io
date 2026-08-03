@@ -3,6 +3,7 @@ import {Player} from './Player.js';
 import {PhysicsWorld} from './PhysicsWorld.js';
 import {CableSystem} from './CableSystem.js';
 import {NetworkSystem} from './NetworkSystem.js';
+import {Story, CORE_REVEAL} from './Story.js';
 import {readFileSync} from 'fs';
 import {join, dirname} from 'path';
 import {fileURLToPath} from 'url';
@@ -25,6 +26,10 @@ const GAS_FORCE=80;
 const STALACTITE_FALL_CHANCE=0.2;
 const MAX_HEIGHT_CEILING=100; // Players cannot fly higher than this (y coordinate, starts at 0 at top edge)
 const GAS_POCKET_CHANCE=0.15; // 15% chance of gas pocket at depth
+
+// Fraction of total map depth at which the Core Chamber sits and the endgame
+// fires. 0.94 puts it inside the Core biome and just above the solid map floor.
+const CORE_WIN_DEPTH_FRACTION=0.94;
 
 // Ore values and mining yields
 // Values increase significantly with depth/rarity
@@ -210,6 +215,9 @@ export class Game {
 
         // Resolves the power / fuel / data graphs over the built buildings.
         this.networks=new NetworkSystem(this);
+
+        // Depth-triggered transmissions (why anyone is digging down here).
+        this.story=new Story(this);
 
         // Session statistics
         this.startTime=Date.now();
@@ -1041,6 +1049,7 @@ export class Game {
         this.updateExploration();
 
         // Check conditions
+        this.story.update();
         this.checkWinCondition();
         this.checkLoseCondition();
     }
@@ -2220,20 +2229,29 @@ export class Game {
     }
 
     checkWinCondition() {
-        // Win: Reach 5000 meters depth
-        const SURFACE_Y=1200; // Approx
-        const WIN_DEPTH=5000;
-        const TARGET_Y=SURFACE_Y+WIN_DEPTH;
+        // Without this guard the victory broadcast re-fires every tick at 60Hz
+        // for as long as anyone stands past the win line. checkLoseCondition()
+        // already had it; this one set gameEnded but never read it.
+        if (this.gameEnded) return;
+
+        // Win: reach the Core Chamber at the bottom of the map. Depth comes from
+        // VoxelMap's authoritative scale rather than a hardcoded surface Y --
+        // the old constant (1200) sat ~270m above the real surface, so the game
+        // was won at 4732m in the Crystal Caverns while claiming 5000m.
+        const TARGET_DEPTH=this.voxelMap.TOTAL_DEPTH_METERS*CORE_WIN_DEPTH_FRACTION;
 
         for (const player of this.players.values()) {
-            if (!player.dead&&player.y>TARGET_Y) {
+            if (!player.dead&&this.voxelMap.getDepthMeters(player.y)>=TARGET_DEPTH) {
                 this.broadcast('gameOver', {
                     won: true,
                     reason: 'core_reached',
-                    depth: 5000,
+                    // Real measured depth, not a constant. The client used to be
+                    // told 5000 regardless of where the player actually was.
+                    depth: Math.round(this.voxelMap.getDepthMeters(player.y)),
                     time: (Date.now()-this.startTime)/1000,
                     oreCollected: this.totalOreCollected||0,
-                    deaths: this.totalDeaths||0
+                    deaths: this.totalDeaths||0,
+                    reveal: CORE_REVEAL
                 });
                 this.gameEnded=true;
                 return;
@@ -2296,8 +2314,13 @@ export class Game {
             players: Array.from(this.players.values()).map(p => {
                 const s=p.serialize();
                 s.dataNet=this.networks.dataNetAt(p.x, p.y);
+                // Authoritative depth, so the HUD and the victory screen can
+                // never disagree with the win condition about how deep you are.
+                s.depth=Math.round(this.voxelMap.getDepthMeters(p.y));
                 return s;
             }),
+            totalDepth: this.voxelMap.TOTAL_DEPTH_METERS,
+            coreDepth: Math.round(this.voxelMap.TOTAL_DEPTH_METERS*CORE_WIN_DEPTH_FRACTION),
             baseResources: clientResources,
             buildings: this.serializeBuildings(),
             respawnCost: this.config.resources.respawnCost,

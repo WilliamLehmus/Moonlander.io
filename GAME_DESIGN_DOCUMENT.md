@@ -26,10 +26,27 @@ Bugs:
 ---
 
 ### Game win condition
-Reach the core at 5000 meters depth. Show a victory screen with the amount of ore collected and the time taken to reach the core and the number of deaths. 
+Reach **The Core** — 4,700m down, inside the Core biome — and the endgame fires. The victory screen shows the real measured depth, ore collected, time taken and deaths.
+
+Depth has a single authoritative scale: `VoxelMap.getDepthMeters()`, where the surface is 0m and the bottom of the map is 5,000m. The surface is read from the landing pad, not hardcoded — it moves with the seed (measured 1468, 1500 and 1548 across three seeds).
+
+### The Story
+A B-movie framing for why anyone flies a lander four kilometres into a moon, delivered as **depth-triggered transmissions** (`server/game/Story.js`) that fire once per game for the whole team, keyed to the deepest point the expedition has reached.
+
+| Depth | From | Beat |
+|-------|------|------|
+| 0m | Tranquility Deep Mining Consortium | Your quota is Helium-3. Ignore the seismic readings below 4,000m. |
+| 510m | Automated Survey | The shallow tunnels are not natural. They branch like something was looking for a way *up*. |
+| 1,385m | Dr. Voss, Geology | The seismic pattern repeats every 11 hours. It is counting. Downward. |
+| 2,255m | Dr. Voss | The Bitite lattice is grown, not formed. It is a recording, and it is very old. |
+| 3,130m | Consortium Board | Quota suspended. New objective: establish contact. Dr. Voss is no longer with the Consortium. |
+| 4,000m | Unknown origin | WE BUILT THE TUNNELS. WE SEEDED THE ORE. COME THE REST OF THE WAY. |
+| Core | The Core | The chamber is warm. The walls are not rock. Something enormous turns over, and is glad. |
+
+The ore you have been mining all game was placed there to bring you down. That is the joke, and the mining loop is the setup.
 
 ### Game lose condition
-No alive player and no resources left to spawn a new lander. Show a game over screen with the amount of ore collected and the time taken to reach the core and the number of deaths.
+No alive player and no resources left to spawn a new lander. Show a game over screen with the amount of ore collected and the time taken and the number of deaths.
 
 ---
 

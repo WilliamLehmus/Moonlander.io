@@ -747,6 +747,31 @@ export class VoxelMap {
         console.log(`Moon base created: pad at (${this.landingPadPosition.x}, ${this.landingPadPosition.y}), base at (${this.basePosition.x}, ${this.basePosition.y})`);
     }
 
+    // ---- Authoritative depth scale -------------------------------------
+    // Surface is 0m, the bottom of the playable map is TOTAL_DEPTH_METERS.
+    // Everything that talks about depth -- the HUD, biomes, the win condition --
+    // must go through here. Depth was previously derived from a hardcoded
+    // SURFACE_Y=1200 in Game.js, but the real surface moves with the seed
+    // (measured 1468, 1500 and 1548 across seeds), so anything hardcoded is wrong
+    // by a few hundred metres in a direction that changes every game.
+    get TOTAL_DEPTH_METERS() {return 5000;}
+
+    getSurfaceY() {
+        return this.landingPadPosition? this.landingPadPosition.y:0;
+    }
+
+    // World Y -> normalized 0 (surface) .. 1 (bottom of map).
+    getNormalizedDepth(worldY) {
+        const surfaceY=this.getSurfaceY();
+        const range=Math.max(1, this.height*this.tileSize-surfaceY);
+        return (worldY-surfaceY)/range;
+    }
+
+    // World Y -> depth in metres below the surface. Negative above ground.
+    getDepthMeters(worldY) {
+        return this.getNormalizedDepth(worldY)*this.TOTAL_DEPTH_METERS;
+    }
+
     getBuildingLocation(id) {
         if (!this.buildingPositions) return null;
         return this.buildingPositions.find(b => b.id===id);

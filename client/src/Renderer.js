@@ -2664,10 +2664,15 @@ export class Renderer {
         this.ctx.fillText(`BASE OXYGEN: ${Math.floor(state.baseResources?.oxygen||0)}`, this.canvas.width-20, 50+topOffset);
         this.ctx.fillText(`BASE SPARE PARTS: ${Math.floor(spareParts)}`, this.canvas.width-20, 70+topOffset);
 
-        // Player count
+        // Player count. Was drawn at the same y as BASE SPARE PARTS above, so
+        // the two strings rendered on top of each other.
         const aliveCount=state?.aliveCount||0;
         const totalCount=state?.players?.length||0;
-        this.ctx.fillText(`PLAYERS: ${aliveCount}/${totalCount} alive`, this.canvas.width-20, 70+topOffset);
+        this.ctx.fillText(`PLAYERS: ${aliveCount}/${totalCount} alive`, this.canvas.width-20, 90+topOffset);
+
+        // DEPTH -- the whole point of the game is to reach the core, and until
+        // now there was no way to see how far down you were.
+        this.drawDepthGauge(myPlayer, state, topOffset);
         // Draw Station UI if landed
         // if (myPlayer.onPad) {
         //     this.drawStationUI(myPlayer, state);
@@ -2678,6 +2683,116 @@ export class Renderer {
 
         // Chat
         this.drawChat();
+    }
+
+    // Incoming transmission panel for depth-triggered story beats. Slides in from
+    // the left, holds, then fades. Deliberately styled like comms traffic rather
+    // than a cutscene, so it never takes control away from the player.
+    drawStoryBeat(beat, age, hold) {
+        const slideIn=Math.min(1, age/380);
+        const fadeOut=age>hold-900? Math.max(0, (hold-age)/900):1;
+        const alpha=Math.min(slideIn, fadeOut);
+        if (alpha<=0) return;
+
+        const ctx=this.ctx;
+        const w=Math.min(520, this.canvas.width-60);
+        const lineH=17;
+        const h=54+beat.lines.length*lineH;
+        const x=24-(1-slideIn)*40;
+        const y=this.canvas.height/2-h/2;
+
+        ctx.save();
+        ctx.globalAlpha=alpha;
+
+        ctx.fillStyle='rgba(4,8,14,0.90)';
+        ctx.fillRect(x, y, w, h);
+        // Amber for Consortium traffic, red once the unknown starts talking.
+        const accent=beat.from&&beat.from.includes('—')? '#ff5544':'#ffb347';
+        ctx.fillStyle=accent;
+        ctx.fillRect(x, y, 3, h);
+
+        ctx.textAlign='left';
+        ctx.font='10px Consolas, monospace';
+        ctx.fillStyle=accent;
+        ctx.fillText(`▸ INCOMING TRANSMISSION · ${beat.depth}m`, x+14, y+18);
+
+        ctx.font='bold 13px Consolas, monospace';
+        ctx.fillStyle='#fff';
+        ctx.fillText(beat.title, x+14, y+37);
+
+        ctx.font='9px Consolas, monospace';
+        ctx.fillStyle='#7d8794';
+        ctx.fillText(beat.from, x+14, y+49);
+
+        ctx.font='12px Consolas, monospace';
+        beat.lines.forEach((line, i) => {
+            // Reveal line by line so it reads as it arrives.
+            if (age<520+i*420) return;
+            ctx.fillStyle='#cdd6e0';
+            ctx.fillText(line, x+14, y+70+i*lineH);
+        });
+
+        ctx.restore();
+    }
+
+    // Depth readout plus a vertical gauge showing progress toward the Core.
+    // Depth is sent by the server so the HUD, the win condition and the victory
+    // screen can never disagree.
+    drawDepthGauge(myPlayer, state, topOffset=0) {
+        if (!myPlayer) return;
+        const depth=myPlayer.depth;
+        if (depth===undefined) return;
+
+        const total=state?.totalDepth||5000;
+        const core=state?.coreDepth||Math.round(total*0.94);
+        const shown=Math.max(0, depth);
+
+        const x=this.canvas.width-20;
+        const y=120+topOffset;
+
+        // Biome tint deepens as you descend, so the number feels like a place.
+        const frac=Math.min(1, shown/total);
+        const hue=200-140*frac;
+
+        this.ctx.save();
+        this.ctx.textAlign='right';
+        this.ctx.font='bold 18px monospace';
+        this.ctx.fillStyle=`hsl(${hue}, 75%, 62%)`;
+        this.ctx.fillText(`${shown.toLocaleString()} m`, x, y);
+        this.ctx.font='11px monospace';
+        this.ctx.fillStyle='#888';
+        this.ctx.fillText('DEPTH', x, y+14);
+
+        // Vertical progress bar toward the core.
+        const gh=110;
+        const gw=6;
+        const gx=x-58;
+        const gy=y-14;
+        this.ctx.fillStyle='rgba(255,255,255,0.10)';
+        this.ctx.fillRect(gx, gy, gw, gh);
+        this.ctx.fillStyle=`hsl(${hue}, 75%, 55%)`;
+        this.ctx.fillRect(gx, gy, gw, gh*frac);
+
+        // Core marker.
+        const cy=gy+gh*Math.min(1, core/total);
+        this.ctx.strokeStyle='#ffcc44';
+        this.ctx.lineWidth=1.5;
+        this.ctx.beginPath();
+        this.ctx.moveTo(gx-3, cy);
+        this.ctx.lineTo(gx+gw+3, cy);
+        this.ctx.stroke();
+
+        // Distance still to go, once you are actually underground.
+        if (shown>50&&shown<core) {
+            this.ctx.font='10px monospace';
+            this.ctx.fillStyle='#ffcc44';
+            this.ctx.fillText(`CORE −${(core-shown).toLocaleString()}m`, x, y+30);
+        } else if (shown>=core) {
+            this.ctx.font='bold 10px monospace';
+            this.ctx.fillStyle='#ffcc44';
+            this.ctx.fillText('◆ THE CORE', x, y+30);
+        }
+        this.ctx.restore();
     }
 
     drawQuickbar(myPlayer) {

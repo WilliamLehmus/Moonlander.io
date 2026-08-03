@@ -725,13 +725,48 @@ function formatDuration(seconds) {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
+// Depth-triggered story transmissions. Queued so two beats crossed in quick
+// succession do not overwrite each other.
+const storyQueue=[];
+let activeStoryBeat=null;
+
+socket.on('storyBeat', (beat) => {
+  storyQueue.push(beat);
+  soundManager.playSound('message_notification_short');
+});
+
+function updateStoryOverlay() {
+  if (!renderer) return;
+  const now=Date.now();
+
+  if (!activeStoryBeat&&storyQueue.length>0) {
+    activeStoryBeat={...storyQueue.shift(), shownAt: now};
+  }
+  if (!activeStoryBeat) return;
+
+  // Long enough to read three lines, then it fades out on its own.
+  const HOLD=11000;
+  const age=now-activeStoryBeat.shownAt;
+  if (age>HOLD) {activeStoryBeat=null; return;}
+
+  renderer.drawStoryBeat(activeStoryBeat, age, HOLD);
+}
+
 socket.on('gameOver', (data) => {
   if (gameOverMenuEl) {
     if (data.won) {
       if (gameOverModalContent) gameOverModalContent.className='modal-content game-over-content victory-theme';
       if (gameOverBadge) gameOverBadge.textContent='MISSION ACCOMPLISHED';
       if (gameOverTitle) gameOverTitle.textContent='LUNAR CORE REACHED!';
-      if (gameOverSubtitle) gameOverSubtitle.textContent='Your team has successfully navigated 5,000m into the lunar depths!';
+      const reached=(data.depth||0).toLocaleString();
+      const reveal=data.reveal;
+      if (gameOverSubtitle) {
+        gameOverSubtitle.innerHTML=reveal
+          ? `<span style="color:#ff5544; font-size:0.8em; letter-spacing:1px">${reveal.from}</span><br>`+
+            reveal.lines.map(l => `<span style="display:block; margin-top:6px">${l}</span>`).join('')+
+            `<span style="display:block; margin-top:10px; opacity:0.6; font-size:0.85em">${reached}m beneath the Sea of Tranquility.</span>`
+          : `You reached ${reached}m beneath the Sea of Tranquility.`;
+      }
       soundManager.playSound('victory');
     } else {
       if (gameOverModalContent) gameOverModalContent.className='modal-content game-over-content defeat-theme';
@@ -741,7 +776,8 @@ socket.on('gameOver', (data) => {
     }
 
     if (statEndingTime) statEndingTime.textContent=formatDuration(data.time||0);
-    if (statEndingDepth) statEndingDepth.textContent=data.won? '5,000m':'Surface';
+    // Real measured depth from the server, not a hardcoded string.
+    if (statEndingDepth) statEndingDepth.textContent=`${(data.depth||0).toLocaleString()}m`;
     if (statEndingOre) statEndingOre.textContent=(data.oreCollected||0).toLocaleString();
     if (statEndingDeaths) statEndingDeaths.textContent=data.deaths||0;
 
@@ -2077,6 +2113,9 @@ function gameLoop() {
 
     // Draw cable placement preview
     updateCablePreview();
+
+    // Story transmissions sit above everything else.
+    updateStoryOverlay();
 
 
     if (input) {
