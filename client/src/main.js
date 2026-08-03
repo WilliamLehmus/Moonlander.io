@@ -539,6 +539,23 @@ resumeBtn.addEventListener('click', () => {
   toggleMenu();
 });
 
+const closeGuideBtn=document.getElementById('closeGuideBtn');
+const closeGuideBottomBtn=document.getElementById('closeGuideBottomBtn');
+
+function closeGuideMenu() {
+  escapeMenuEl.classList.add('hidden');
+  isMenuOpen=false;
+  soundManager.playSound('menu_pop');
+}
+
+if (closeGuideBtn) {
+  closeGuideBtn.addEventListener('click', closeGuideMenu);
+}
+
+if (closeGuideBottomBtn) {
+  closeGuideBottomBtn.addEventListener('click', closeGuideMenu);
+}
+
 quitBtn.addEventListener('click', () => {
   socket.emit('leaveRoom');
 });
@@ -797,6 +814,14 @@ function closeChat() {
 
 // Handle respawn key press
 window.addEventListener('keydown', (e) => {
+  // Allow Escape to close menu anytime it's open (even from lobby)
+  if (e.key==='Escape'&&isMenuOpen) {
+    escapeMenuEl.classList.add('hidden');
+    isMenuOpen=false;
+    soundManager.playSound('menu_pop');
+    return;
+  }
+
   if (!currentRoom) return;
 
   // Don't process game keys while chat is open
