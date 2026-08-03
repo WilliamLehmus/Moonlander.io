@@ -772,6 +772,10 @@ export class Game {
     addPlayer(id, nickname) {
         const spawnPos=this.voxelMap.getSpawnPosition();
         const player=new Player(id, this.physics, spawnPos.x, spawnPos.y, this.config, nickname);
+        // Seed the cached position so anything reading player.x/player.y before
+        // the first physics step sees the spawn point rather than undefined.
+        player.x=spawnPos.x;
+        player.y=spawnPos.y;
         this.players.set(id, player);
         return player;
     }
@@ -918,10 +922,25 @@ export class Game {
 
     removePlayer(id) {
         const player=this.players.get(id);
-        if (player) {
-            player.destroy(); // method to remove body from world
-            this.players.delete(id);
+        if (!player) return;
+
+        // Detach anything tethered to them before the body goes away. The tether
+        // loop is defensive about missing partners, but leaving the other player
+        // pointing at a destroyed body for a frame is not worth the risk.
+        if (player.tetheredTo) this.detachTether(player);
+        for (const other of this.players.values()) {
+            if (other!==player&&other.tetheredTo===id) this.detachTether(other);
         }
+        for (const wreck of this.wreckages.values()) {
+            if (wreck.tetheredTo===id) wreck.tetheredTo=null;
+        }
+
+        // A half-laid cable run belongs to the player holding it. Dropping the
+        // connection drops the run; segments already anchored stay built.
+        this.cableSystem.activeLines.delete(id);
+
+        player.destroy(); // method to remove body from world
+        this.players.delete(id);
     }
 
     respawnPlayer(id) {
@@ -1147,6 +1166,26 @@ export class Game {
 
         // Step Physics (Ammo handles positions)
         this.physics.step(dt);
+
+        // Cache each player's position onto the player object.
+        //
+        // Position lives in the Ammo body and is read via getPosition(); Player
+        // never assigned this.x/this.y at all. But eleven call sites across
+        // Game, Story and CableSystem read player.x/player.y directly, so they
+        // were all silently working on `undefined`:
+        //   - story beats compared NaN depths and never fired
+        //   - checkWinCondition compared NaN and could never trigger
+        //   - hand-filling never found a target
+        //   - cable preview lines were drawn to NaN coordinates
+        //   - dropped-item pickup never matched
+        //   - per-player data net was always null, so the minimap never lit
+        // Syncing here, immediately after the step and before any consumer,
+        // fixes all of them at once.
+        for (const player of this.players.values()) {
+            const pos=player.getPosition();
+            player.x=pos.x;
+            player.y=pos.y;
+        }
 
         // Check for collisions (velocity changed significantly)
         for (const [id, player] of this.players) {

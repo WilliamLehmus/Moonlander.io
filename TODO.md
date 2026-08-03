@@ -2,7 +2,7 @@
 
 Picking-up-where-we-left-off list. Grouped by what it costs you, not by system.
 
-**Before changing anything**, run the check harnesses — 121 checks, ~30 seconds:
+**Before changing anything**, run the check harnesses — 162 checks, ~30 seconds:
 
 ```
 cd server && node tests/run-all.mjs
@@ -93,11 +93,16 @@ several bugs found so far only appeared on some seeds.
 - [ ] **Cable severance** (GDD §6.2, marked optional). Falling rock cutting a
       run would give cables real stakes. Nothing implemented.
 
-- [ ] **Multiplayer is untested for all of this.** Every system built recently
-      (networks, placement, story beats) is server-authoritative and broadcasts
-      to the room, but I only ever exercised it with one simulated player. Story
-      beats in particular are keyed to the *team's* deepest point and have never
-      been watched with two clients connected.
+- [x] ~~**Multiplayer is untested.**~~ **Done, and it found a severe bug.**
+      `Player` never assigned `this.x`/`this.y` — position lived only in the
+      Ammo body — yet eleven call sites read them directly. Story beats never
+      fired, the game could not be won, hand-filling found nothing, cable
+      previews drew to NaN, dropped items could not be picked up and the
+      minimap never lit. Every unit test set those fields by hand, so the whole
+      suite passed while the real game was broken. Covered now by
+      `tests/multiplayer.test.mjs` (41 checks, deliberately does NOT set them)
+      and `tests/integration-2clients.mjs` (two real socket clients against a
+      real server; run it separately, it boots on port 3097).
 
 ## 5. Content
 
