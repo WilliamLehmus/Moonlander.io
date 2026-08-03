@@ -3209,22 +3209,38 @@ export class Renderer {
 
     // Spawn floating text for ore pickup
     spawnOrePickupText(oreName, amount, x, y, color='#fff') {
+        const LIFE=1.2;
         this.floatingTexts.push({
             text: `+${amount} ${oreName}`,
             x,
             y,
             color,
-            life: 1.2, // Reduced from 2.0s
+            life: LIFE,
+            // Absolute deadline as well as the countdown. The countdown alone
+            // decays by frame delta, so a single skipped, stalled or
+            // non-finite frame could leave a pickup message on screen
+            // indefinitely -- which is why "+3 Iron" sometimes stuck around.
+            expiresAt: performance.now()+LIFE*1000,
             vy: -60 // Faster upward float
         });
+
+        // Never let the list grow without bound if frames are being dropped.
+        if (this.floatingTexts.length>40) this.floatingTexts.splice(0, this.floatingTexts.length-40);
     }
 
     // Update and draw floating texts
     updateFloatingTexts(dt) {
+        // Guard against a garbage delta (first frame, tab restored from
+        // background, clock skew). Without this, ft.life can go NaN and the
+        // filter below keeps the entry forever.
+        const step=Number.isFinite(dt)? Math.min(Math.max(dt, 0), 0.25):0;
+        const now=performance.now();
+
         this.floatingTexts=this.floatingTexts.filter(ft => {
-            ft.life-=dt;
-            ft.y+=ft.vy*dt;
-            return ft.life>0;
+            ft.life-=step;
+            ft.y+=ft.vy*step;
+            // Either condition retires it; the deadline is the backstop.
+            return ft.life>0&&(!ft.expiresAt||now<ft.expiresAt);
         });
     }
 

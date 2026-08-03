@@ -107,5 +107,34 @@ N.fuelTanks.set(gen.instanceId, 0);
 solve();
 ck('Empty tank cuts the power back off', !N.isPowered(site.id), N.state.nodes[site.id]?.power);
 
+
+console.log('\n=== The remote pad works as a real base ===');
+// Landing pads are placeable, so docking must recognise them. It used to test
+// only the home pad's carved bounds, which left every player-built pad inert:
+// no station menu, no kit crafting, no refuel, no repair.
+N.fuelTanks.set(gen.instanceId, 100);
+solve();
+const padStruct=g.structures.get(site.id);
+ck('Docking detects the remote pad', g.landingPadAt(padStruct.x, padStruct.y)===site.id,
+    String(g.landingPadAt(padStruct.x, padStruct.y)));
+ck('Home pad still detected', g.landingPadAt(
+    g.structures.get('landing_pad').x, g.structures.get('landing_pad').y)==='landing_pad');
+ck('Open ground is not a pad', !g.landingPadAt(padStruct.x+900, padStruct.y));
+
+// Standing on it should give base services.
+p.x=padStruct.x; p.y=padStruct.y;
+p.onPad=true; p.padId=site.id;
+g.baseResources.basic=1000;
+const kit=g.craftBuildingKit('p1', 'ore_storage');
+ck('Can craft kits at the remote base', kit.success, JSON.stringify(kit));
+
+// Refuelling draws from THIS pad's tank, not the home pad's.
+N.fuelTanks.set('landing_pad', 500);
+N.fuelTanks.set(site.id, 40);
+const took=N.consumePadFuel(30, site.id);
+ck('Refuel draws from the remote pad tank', took===30, `${took}`);
+ck('Home pad tank untouched', N.padFuelAvailable('landing_pad')===500,
+    `${N.padFuelAvailable('landing_pad')}`);
+
 console.log(`\n${fails===0? 'ALL CHECKS PASSED':fails+' FAILED'}`);
 process.exit(fails===0? 0:1);

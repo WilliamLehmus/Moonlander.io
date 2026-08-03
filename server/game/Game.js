@@ -227,21 +227,43 @@ export class Game {
         this.gameEnded=false;
     }
 
+    // Instance id of the landing pad a position is standing on, or null.
+    //
+    // The authored home pad has proper bounds carved into the terrain; pads the
+    // player places are a position plus a footprint. Both count -- a remote base
+    // is only a base if you can actually dock at it.
+    landingPadAt(worldX, worldY) {
+        // Home pad: use its real carved bounds.
+        if (this.voxelMap.isOnLandingPad(worldX, worldY)) {
+            const home=this.structuresOfType('landing_pad')[0];
+            if (home) return home.id;
+        }
+        // Placed pads: a box around the pad position, sized like the home deck.
+        const halfW=this.config?.difficulty?.padDockHalfWidth??70;
+        const above=this.config?.difficulty?.padDockAbove??70;
+        const below=this.config?.difficulty?.padDockBelow??20;
+        for (const s of this.structuresOfType('landing_pad')) {
+            if (Math.abs(worldX-s.x)<=halfW&&worldY>=s.y-above&&worldY<=s.y+below) return s.id;
+        }
+        return null;
+    }
+
     // Which buildings are doing work right now, and so draw their active load
     // rather than their idle load (GDD 6.3).
     getBuildingActivity() {
         let anyoneOnPad=false;
+        const activity={fuel_refinery: !!this.isRefining};
         for (const player of this.players.values()) {
-            if (!player.dead&&player.landed) {anyoneOnPad=true; break;}
+            if (player.dead||!player.landed) continue;
+            anyoneOnPad=true;
+            // Mark the specific pad being used, so a remote pad draws its
+            // active load rather than idling while a ship sits on it.
+            if (player.padId) activity[player.padId]=true;
         }
-        return {
-            // The pad draws its full load while servicing a ship.
-            landing_pad: anyoneOnPad,
-            // The Factory and Crafting Station are only reachable from the pad.
-            ship_factory: anyoneOnPad,
-            crafting_station: anyoneOnPad,
-            fuel_refinery: !!this.isRefining
-        };
+        // The Factory and Crafting Station are only reachable from a pad.
+        activity.ship_factory=anyoneOnPad;
+        activity.crafting_station=anyoneOnPad;
+        return activity;
     }
 
     // ---- Placed structures ------------------------------------------------
@@ -747,7 +769,11 @@ export class Game {
 
         // Generate voxel terrain
         console.log('Game init: generating terrain...');
-        this.voxelMap.generate(Math.random());
+        // Record the seed so a map is reproducible and can be shared. Terrain
+        // was already per-game (each Room builds its own Game), but the seed was
+        // thrown away, so a good map could never be recovered.
+        this.seed=Math.floor(Math.random()*1e9);
+        this.voxelMap.generate(this.seed);
         console.log('Game init: terrain generated');
 
         this.voxelMap.setPhysicsWorld(this.physics);
@@ -1270,24 +1296,30 @@ export class Game {
             const vel=player.getVelocity();
             const speed=Math.sqrt(vel.vx*vel.vx+vel.vy*vel.vy);
 
-            // Check if player is on landing pad and moving slowly (landed)
-            const isOnPad=this.voxelMap.isOnLandingPad(pos.x, pos.y);
+            // Which landing pad, if any, is this player standing on? Landing
+            // pads are placeable now, so this can no longer be the home pad's
+            // bounds alone -- doing that left every player-built pad inert:
+            // no station menu, no kit crafting, no refuel, no repair.
+            const padId=this.landingPadAt(pos.x, pos.y);
+            const isOnPad=!!padId;
             const isLanded=isOnPad&&speed<15;
 
             player.landed=isLanded;
             player.onPad=isOnPad;
+            player.padId=padId;
 
             // A pad with no power provides no services at all (GDD 5.2).
-            const padPowered=this.networks.isPowered('landing_pad');
+            const padPowered=padId? this.networks.isPowered(padId):false;
             player.padPowered=padPowered;
-            player.padFuel=this.networks.padFuelAvailable('landing_pad');
+            player.padFuel=padId? this.networks.padFuelAvailable(padId):0;
 
             if (isLanded&&padPowered) {
-                // Refuel from the pad's own tank. The tank refills over the green
-                // network; a pad with no fuel line runs dry and cannot refuel.
+                // Refuel from THIS pad's tank -- not the home pad's. The tank
+                // refills over the green network; a pad with no fuel line runs
+                // dry and cannot refuel.
                 if (player.fuel<player.maxFuel) {
                     const fuelNeeded=Math.min(this.config.resources.refuelRate*dt, player.maxFuel-player.fuel);
-                    const fuelAvailable=this.networks.consumePadFuel(fuelNeeded, 'landing_pad');
+                    const fuelAvailable=this.networks.consumePadFuel(fuelNeeded, padId);
                     if (fuelAvailable>0) player.fuel+=fuelAvailable;
                 }
 
@@ -2690,6 +2722,7 @@ export class Game {
                 s.depth=Math.round(this.voxelMap.getDepthMeters(p.y));
                 return s;
             }),
+            seed: this.seed,
             totalDepth: this.voxelMap.TOTAL_DEPTH_METERS,
             coreDepth: Math.round(this.voxelMap.TOTAL_DEPTH_METERS*CORE_WIN_DEPTH_FRACTION),
             // Placement rules, so the ghost preview draws the same zones the

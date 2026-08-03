@@ -2,7 +2,7 @@
 
 Picking-up-where-we-left-off list. Grouped by what it costs you, not by system.
 
-**Before changing anything**, run the check harnesses — 162 checks, ~30 seconds:
+**Before changing anything**, run the check harnesses — 168 checks, ~30 seconds:
 
 ```
 cd server && node tests/run-all.mjs
@@ -60,16 +60,30 @@ several bugs found so far only appeared on some seeds.
       `buildCableMaxLength` (120) is now explicit in the config rather than a
       hardcoded fallback.
 
-## 3. Batch 5 bugs (still open, from the top of the GDD)
+## 3. Batch 5 bugs (from the top of the GDD)
 
-- [ ] Mining success message ("3 iron") sometimes lingers and is never removed.
-- [ ] Base menu opens automatically when the player gets near the landing pad —
-      it should not.
-- [ ] Moonlander landing legs clip into the ground.
-- [ ] Moonlander teleports to (0,0) when the player exits to EVA.
-- [ ] Station menu access is unreliable when docked on a landing pad.
-- [ ] Map persistence: confirm per-game seed-based generation actually holds.
+- [x] ~~Mining message lingers.~~ **Fixed.** Floating text decayed purely by
+      frame delta, so one skipped, stalled or non-finite frame could leave
+      "+3 Iron" up forever. Entries now carry an absolute expiry as a backstop,
+      the delta is clamped, and the list is capped.
+- [x] ~~Base menu opens automatically near the pad.~~ **Already gone** — the
+      only remaining `openStationMenu()` call is the B key.
+- [x] ~~Moonlander teleports to (0,0) on EVA exit.~~ **Already fixed** and now
+      verified: exiting at (1234,1500) leaves the pilot within 2 units and
+      parks the ship exactly where it was.
+- [x] ~~Station menu unreliable when docked.~~ **Fixed, and it was worse than
+      reported.** Docking tested only the *home* pad's carved bounds, so every
+      player-built landing pad was inert: no station menu, no kit crafting, no
+      refuel, no repair. Refuelling was also hardcoded to the home pad's tank.
+      Docking now resolves whichever pad you are on, and services use it.
+- [x] ~~Map persistence / seed-based generation.~~ **Confirmed and improved.**
+      Terrain was already per-game (each Room builds its own Game; two rooms
+      verified to differ), but the seed was discarded. It is now recorded on the
+      Game and sent in state, so a map can be identified and shared.
+- [ ] Moonlander landing legs clip into the ground. *(Untouched — collision
+      shape work.)*
 - [ ] Sync all light emissions (including thruster flames) in multiplayer.
+      *(Untouched.)*
 
 ## 4. Deferred on purpose
 
