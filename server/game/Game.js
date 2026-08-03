@@ -2,6 +2,7 @@ import {VoxelMap, TileTypes} from './VoxelMap.js';
 import {Player} from './Player.js';
 import {PhysicsWorld} from './PhysicsWorld.js';
 import {CableSystem} from './CableSystem.js';
+import {NetworkSystem} from './NetworkSystem.js';
 import {readFileSync} from 'fs';
 import {join, dirname} from 'path';
 import {fileURLToPath} from 'url';
@@ -50,6 +51,9 @@ export class Game {
         this.physics=new PhysicsWorld();
         this.cableSystem=new CableSystem(this);
         this.lastTime=Date.now();
+        // Assigned after config load, below -- NetworkSystem reads difficulty tunables.
+        this.networks=null;
+        this.networkAccum=0;
         this.ready=false;
         this.io=null; // Socket.io instance for broadcasting
 
@@ -116,7 +120,10 @@ export class Game {
             communications_antenna: {level: 0, name: 'Comms Antenna', effect: 'antennaRange', baseValue: 100, perLevel: 100, powerCost: 5, powerScale: 2},
             ship_factory: {level: 0, name: 'Ship Factory', effect: 'shipTypes', baseValue: 0, perLevel: 1, powerCost: 20, powerScale: 10},
             crafting_station: {level: 0, name: 'Crafting Station', effect: 'crafting', baseValue: 0, perLevel: 1, powerCost: 10, powerScale: 5},
-            habitat: {level: 0, name: 'Habitat', effect: 'utility', baseValue: 0, perLevel: 0, powerCost: 2, powerScale: 1}
+
+            // Starts built alongside the Landing Pad: the Habitat is the colony's
+            // generator, its 50m antenna, and its starter refinery (GDD 5.4).
+            habitat: {level: 1, name: 'Habitat', effect: 'utility', baseValue: 0, perLevel: 0, powerCost: 2, powerScale: 1}
         };
 
         // Building upgrade costs (materials required per level)
@@ -200,6 +207,26 @@ export class Game {
             {advanced: 5},   // Level 3
             {quantum: 5}     // Level 4
         ];
+
+        // Resolves the power / fuel / data graphs over the built buildings.
+        this.networks=new NetworkSystem(this);
+    }
+
+    // Which buildings are doing work right now, and so draw their active load
+    // rather than their idle load (GDD 6.3).
+    getBuildingActivity() {
+        let anyoneOnPad=false;
+        for (const player of this.players.values()) {
+            if (!player.dead&&player.landed) {anyoneOnPad=true; break;}
+        }
+        return {
+            // The pad draws its full load while servicing a ship.
+            landing_pad: anyoneOnPad,
+            // The Factory and Crafting Station are only reachable from the pad.
+            ship_factory: anyoneOnPad,
+            crafting_station: anyoneOnPad,
+            fuel_refinery: !!this.isRefining
+        };
     }
 
     // Get the effective value for a building stat
@@ -218,14 +245,15 @@ export class Game {
         // So formula: Base + (Level-1)*PerLevel.
     }
 
+    // Largest coverage bubble currently on the air, used by the minimap as a
+    // fallback radius. Real per-antenna coverage is in networks.serialize().data,
+    // and per-player signal is resolved in getState().
     getAntennaRange() {
-        // GDD: 100m + 100m/level.
-        const building=this.buildings.communications_antenna;
-        if (!building||building.level===0) return 100; // Base range for landing pad alone? Or 0?
-        // GDD says "Any antenna built provides...". So if not built, maybe just visual?
-        // But landing pad is the anchor. Let's give minimal 50m (Habitat) if no antenna.
-        if (building.level===0) return 50;
-        return building.baseValue+(building.level-1)*building.perLevel;
+        let best=0;
+        for (const net of this.networks.state.dataNets) {
+            for (const c of net.coverage) best=Math.max(best, c.r);
+        }
+        return best;
     }
 
     canAffordUpgrade(buildingKey) {
@@ -372,10 +400,12 @@ export class Game {
         this.baseResources.maxFuel=baseFuel+this.getBuildingEffect('fuel_depot');
         this.baseResources.maxSpareParts=baseParts+this.getBuildingEffect('parts_warehouse');
 
-        // Power generation from solar
-        this.baseResources.powerGeneration=10+this.getBuildingEffect('solar_array');
+        // Power generation and consumption are no longer derived here -- they are
+        // resolved per-network by NetworkSystem from what is actually built and
+        // connected. See processStationResources() for where the totals land.
 
-        // Fuel generator provides extra power from fuel (handled in processStationResources)
+        // Building levels changed, so the network graph must be rebuilt.
+        this.networks?.markDirty();
     }
 
     setIO(io, roomCode=null) {
@@ -408,6 +438,13 @@ export class Game {
         console.log('Game init: creating collision bodies...');
         this.voxelMap.createAllCollisionBodies();
         console.log('Game init: collision bodies created');
+
+        // Building positions only exist after generation, so the network graph and
+        // the landing pad's starting fuel are seeded here rather than in the ctor.
+        this.networks.markDirty();
+        this.networks.seedStartingTanks();
+        this.networks.solve(0.1, this.getBuildingActivity());
+        console.log(`Game init: networks resolved (${this.networks.state.totals.supply} kW supply)`);
 
         this.ready=true;
         console.log('Game init: complete');
@@ -637,25 +674,10 @@ export class Game {
         }
     }
 
-    handleCableAction(playerId, data) {
-        const player=this.players.get(playerId);
-        if (!player||player.dead) return;
-
-        switch (data.action) {
-            case 'start':
-                this.cableSystem.startLine(playerId, data.x, data.y, data.type, data.anchorId);
-                break;
-            case 'attach':
-                this.cableSystem.attachLine(playerId, data.x, data.y, data.targetId);
-                break;
-            case 'drop':
-                this.cableSystem.dropLine(playerId, data.x, data.y);
-                break;
-            case 'pickup':
-                this.cableSystem.pickupSpool(playerId, data.spoolId);
-                break;
-        }
-    }
+    // Removed: handleCableAction() was a second, duplicate entry point into
+    // CableSystem. index.js registered listeners for both it and the direct
+    // cableSystem calls, so every cable action was applied twice. Socket
+    // handling now goes through the single 'cableAction' listener in index.js.
 
     // Try to board nearby vehicle when in EVA mode
     tryBoardVehicle(player) {
@@ -898,17 +920,18 @@ export class Game {
             player.landed=isLanded;
             player.onPad=isOnPad;
 
-            if (isLanded) {
-                // Auto-refuel if base has fuel (use player's maxFuel)
-                if (player.fuel<player.maxFuel&&this.baseResources.fuel>0) {
-                    const fuelNeeded=Math.min(this.config.resources.refuelRate*dt, player.maxFuel-player.fuel);
-                    const fuelCost=fuelNeeded*this.config.resources.refuelCostPerUnit;
-                    const fuelAvailable=Math.min(fuelNeeded, this.baseResources.fuel/this.config.resources.refuelCostPerUnit);
+            // A pad with no power provides no services at all (GDD 5.2).
+            const padPowered=this.networks.isPowered('landing_pad');
+            player.padPowered=padPowered;
+            player.padFuel=this.networks.padFuelAvailable('landing_pad');
 
-                    if (fuelAvailable>0) {
-                        player.fuel+=fuelAvailable;
-                        this.baseResources.fuel-=fuelAvailable*this.config.resources.refuelCostPerUnit;
-                    }
+            if (isLanded&&padPowered) {
+                // Refuel from the pad's own tank. The tank refills over the green
+                // network; a pad with no fuel line runs dry and cannot refuel.
+                if (player.fuel<player.maxFuel) {
+                    const fuelNeeded=Math.min(this.config.resources.refuelRate*dt, player.maxFuel-player.fuel);
+                    const fuelAvailable=this.networks.consumePadFuel(fuelNeeded, 'landing_pad');
+                    if (fuelAvailable>0) player.fuel+=fuelAvailable;
                 }
 
                 // Auto-repair if base has spare parts
@@ -973,7 +996,15 @@ export class Game {
         // Update cable spools
         this.cableSystem.update(dt);
 
-
+        // Resolve the power / fuel / data networks. This is graph work over every
+        // building, so it runs at 10Hz rather than every frame; the accumulated dt
+        // is passed through so energy and fuel integrate correctly regardless.
+        this.networkAccum+=dt;
+        if (this.networkAccum>=0.1) {
+            this.networks.solve(this.networkAccum, this.getBuildingActivity());
+            this.baseResources.fuel=Math.max(0, this.baseResources.fuel-this.networks.burnGeneratorFuel(this.networkAccum));
+            this.networkAccum=0;
+        }
 
         // Update wreckages
         this.updateWreckages(dt);
@@ -2110,11 +2141,10 @@ export class Game {
     // Process station resources over time
     processStationResources(dt) {
         let isRefining=false;
-        // Process ores into building materials automatically
-        const refineryLevel=this.buildings.fuel_refinery.level;
-        const baseRate=this.baseResources.processingRate*dt;
-        const rateMult=1+(refineryLevel*0.5); // 50% increase per level
-        const PROCESSING_SPEED=baseRate*rateMult;
+        // Throughput is the sum of every powered refiner: the Habitat's small
+        // built-in refinery (always available, since the Habitat powers itself)
+        // plus a Fuel Refinery if one is built and currently has power.
+        const PROCESSING_SPEED=this.networks.refiningRate()*dt;
 
         // Refining logic:
         const refineOres=(type, outputKey, bonuses) => {
@@ -2139,8 +2169,9 @@ export class Game {
             }
         };
 
-        // Bitite to Fuel
-        if (this.baseResources.bitite>0&&this.baseResources.fuel<this.baseResources.maxFuel) {
+        // Bitite to Fuel. Stalls when no powered refiner has anywhere to put the
+        // fuel it makes -- no depot on its green network and every pad tank full.
+        if (this.baseResources.bitite>0&&this.baseResources.fuel<this.baseResources.maxFuel&&this.networks.canRefineFuel()) {
             const amount=Math.min(PROCESSING_SPEED, this.baseResources.bitite);
             const yieldAmt=this.config.ores.bitite.yield;
             this.baseResources.bitite-=amount;
@@ -2166,9 +2197,14 @@ export class Game {
 
         this.isRefining=isRefining;
 
-        // Update power generation (base + solar)
-        const powerDelta=(this.baseResources.powerGeneration-this.baseResources.powerConsumption)*dt;
-        this.baseResources.power=Math.max(0, Math.min(this.baseResources.maxPower, this.baseResources.power+powerDelta));
+        // Power is resolved per-network by NetworkSystem (flow in kW, with a
+        // buffer in kJ). These aggregate fields are kept in sync purely so the
+        // existing HUD keeps working: `power`/`maxPower` are the grid buffer.
+        const totals=this.networks.state.totals;
+        this.baseResources.powerGeneration=totals.supply;
+        this.baseResources.powerConsumption=totals.demand;
+        this.baseResources.power=totals.buffer;
+        this.baseResources.maxPower=Math.max(1, totals.bufferCapacity);
 
         // Update oxygen generation
         this.baseResources.oxygen=Math.min(this.baseResources.maxOxygen, this.baseResources.oxygen+1.5*dt);
@@ -2241,7 +2277,14 @@ export class Game {
         const clientResources=this.getClientResources();
 
         return {
-            players: Array.from(this.players.values()).map(p => p.serialize()),
+            // Each player carries the Data Net they are currently standing in.
+            // Two players on different nets cannot see each other's live blip,
+            // which is resolved here rather than trusted to the client (GDD 7.3).
+            players: Array.from(this.players.values()).map(p => {
+                const s=p.serialize();
+                s.dataNet=this.networks.dataNetAt(p.x, p.y);
+                return s;
+            }),
             baseResources: clientResources,
             buildings: this.serializeBuildings(),
             respawnCost: this.config.resources.respawnCost,
@@ -2256,6 +2299,7 @@ export class Game {
             refining: this.isRefining,
             activeBuildings: this.getActiveBuildings(), // NEW: Send only built buildings
             cables: this.cableSystem.serialize(), // Send active cables
+            networks: this.networks.serialize(),  // Power/fuel/data status per building
             timestamp: Date.now()
         };
     }

@@ -709,7 +709,13 @@ export class VoxelMap {
         };
 
         // NEW: Store positions for all buildings
+        // The Landing Pad and Habitat are the starting base (GDD 5.4). Both need
+        // a position here or they cannot act as network nodes or cable endpoints:
+        // getBuildingLocation() is what makes a building addressable at all.
+        // The Habitat sits on the moonbase sprite, which is what it renders as.
         this.buildingPositions=[
+            {id: 'landing_pad', x: padWorldPos.x, y: padWorldPos.y},
+            {id: 'habitat', x: baseWorldPos.x, y: baseWorldPos.y},
             {id: 'ore_storage', x: baseWorldPos.x+120, y: baseWorldPos.y},
             {id: 'fuel_depot', x: baseWorldPos.x+240, y: baseWorldPos.y},
             {id: 'parts_warehouse', x: baseWorldPos.x+360, y: baseWorldPos.y},
