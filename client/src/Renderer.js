@@ -2993,6 +2993,19 @@ export class Renderer {
         this.ctx.lineTo(gx+gw+3, cy);
         this.ctx.stroke();
 
+        // Bearing to the Core once it is close enough to aim at. The chamber is
+        // a specific place, so a depth number alone is not enough to find it.
+        const cp=state?.corePosition;
+        if (cp&&shown>total*0.6) {
+            const dx=cp.x-myPlayer.x;
+            const dy=cp.y-myPlayer.y;
+            const dist=Math.round(Math.hypot(dx, dy));
+            this.ctx.font='10px monospace';
+            this.ctx.fillStyle='#ffcc44';
+            const arrow=Math.abs(dx)<120? '↓':(dx>0? '→':'←');
+            this.ctx.fillText(`CORE ${arrow} ${dist}m`, x, y+44);
+        }
+
         // Distance still to go, once you are actually underground.
         if (shown>50&&shown<core) {
             this.ctx.font='10px monospace';

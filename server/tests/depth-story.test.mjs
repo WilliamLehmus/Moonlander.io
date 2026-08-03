@@ -36,11 +36,18 @@ for (let i=0;i<20;i++) g.story.update();
 ck('Going back up does not re-fire', beats.length===before);
 
 console.log('\n=== Win condition ===');
+// Reaching the Core is a PLACE now, not a depth line: you have to be inside
+// the chamber. Being at the right depth on the far side of the map is not it.
+const core=vm.corePosition;
+p.x=core.x+4000; p.y=core.y;
+g.checkWinCondition();
+ck('Right depth but nowhere near the chamber does not win', overs.length===0);
+
 setDepth(4600);
 g.checkWinCondition();
 ck('No win above the core line', overs.length===0);
 
-setDepth(4750);
+p.x=core.x; p.y=core.y;
 g.checkWinCondition();
 ck('Win fires at the core', overs.length===1, JSON.stringify(overs[0]?.reason));
 ck('Reports REAL depth, not a constant', overs[0]?.depth>=4700&&overs[0]?.depth<=5000, `${overs[0]?.depth}m`);
@@ -48,6 +55,10 @@ ck('Carries the core reveal', !!overs[0]?.reveal?.lines?.length);
 
 const n=vm.getNormalizedDepth(p.y);
 ck('Win happens in the Core biome (n>=0.85)', n>=0.85, `n=${n.toFixed(3)}`);
+ck('The chamber itself is in the Core biome',
+   vm.getNormalizedDepth(core.y)>=0.85, `n=${vm.getNormalizedDepth(core.y).toFixed(3)}`);
+ck('The chamber is open space, not sealed rock',
+   !vm.isSolidAtWorld(core.x, core.y));
 
 for (let i=0;i<100;i++) g.checkWinCondition();
 ck('gameOver broadcasts exactly ONCE (was 60/sec)', overs.length===1, `${overs.length} broadcasts`);

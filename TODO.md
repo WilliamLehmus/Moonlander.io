@@ -2,7 +2,7 @@
 
 Picking-up-where-we-left-off list. Grouped by what it costs you, not by system.
 
-**Before changing anything**, run the check harnesses — 168 checks, ~30 seconds:
+**Before changing anything**, run the check harnesses — 171 checks, ~30 seconds:
 
 ```
 cd server && node tests/run-all.mjs
@@ -124,12 +124,17 @@ several bugs found so far only appeared on some seeds.
 
 ## 5. Content
 
-- [ ] **The story stops at the Core reveal.** Six transmissions + a victory
-      screen. There is no Core *chamber* — the win fires on crossing 4,700m in
-      open cave, not on arriving somewhere built. A carved chamber with the
-      monolith in it would make arrival feel like arrival. (Reachability is
-      already proven: flood fill shows connected open space down to 4,975m, so
-      no approach shaft is needed.)
+- [x] ~~**No Core chamber — the win fires in open cave.**~~ **Fixed.** A real
+      chamber is now carved deep in the Core biome and the win fires on
+      *arriving inside it*, not on crossing a depth line. Verified across eight
+      seeds: the chamber lands at n=0.93–0.98 with **zero** terrain vandalism.
+
+      Worth knowing: the first attempt forced the chamber to be reachable by
+      flight, which cut 900–2400 tile corridors across the map. That was solving
+      a non-problem — on about a third of seeds the natural caves stop shallow,
+      because **mining through rock is how you get down**. It now sites the
+      chamber on cave floor when the caves reach that deep, bridges only short
+      gaps (<45 tiles), and otherwise leaves the last stretch to the drill.
 
 - [ ] Story text is all in `server/game/Story.js`, deliberately in one place and
       easy to rewrite. Tone is B-movie corporate sci-fi; change it freely.

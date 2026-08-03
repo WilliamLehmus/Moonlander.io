@@ -141,9 +141,16 @@ export class VoxelMap {
         console.log('Decorating terrain...');
         this.decorateTerrain(surfaceHeights, random);
 
-        // 6. Create Moon Base & Landing Pad
+        // 6. Create Moon Base & Landing Pad (establishes the spawn).
         console.log('Creating moon base...');
         this.createMoonBase(surfaceHeights);
+
+        // 7. Carve the Core Chamber -- the place the whole descent is aimed at.
+        //    Done last, because siting it on ground the caves already reach is
+        //    what keeps it from needing a long artificial tunnel.
+        console.log('Carving core chamber...');
+        this.createCoreChamber(random);
+        this.ensureCoreReachable();
 
         console.log(`VoxelMap generated: ${this.width}x${this.height} tiles`);
     }
@@ -773,6 +780,173 @@ export class VoxelMap {
     // World Y -> depth in metres below the surface. Negative above ground.
     getDepthMeters(worldY) {
         return this.getNormalizedDepth(worldY)*this.TOTAL_DEPTH_METERS;
+    }
+
+    // Carve the Core Chamber near the bottom of the map, plus a shaft up to the
+    // nearest open cave so arriving is a journey rather than a mining marathon.
+    //
+    // The win used to fire on crossing a depth line in ordinary cave, which made
+    // "reach the Core" a number rather than a place. This gives the ending
+    // somewhere to happen.
+    createCoreChamber(random) {
+        // Prefer to site the chamber on cave floor the player can already fly
+        // to, deep in the Core biome. Carving it into whatever tile sits at the
+        // map's centre meant that on some seeds the nearest reachable space was
+        // ~280 tiles away, and connecting it cut a corridor most of the way
+        // across the map. Placing it where the caves already go makes the
+        // chamber feel discovered instead of bulldozed.
+        const target=this.findDeepReachableSite();
+        const cx=target? target.x:Math.floor(this.width/2);
+        const cy=target? target.y:Math.floor(this.height*0.94);
+
+        const rx=Math.floor(this.width*0.10); // ~40 tiles across
+        const ry=14;
+
+        for (let y=cy-ry; y<=cy+ry; y++) {
+            for (let x=cx-rx; x<=cx+rx; x++) {
+                if (x<=1||y<=1||x>=this.width-2||y>=this.height-2) continue;
+                // Ellipse, roughened slightly so it does not read as a machine part.
+                const nx=(x-cx)/rx;
+                const ny=(y-cy)/ry;
+                const edge=nx*nx+ny*ny;
+                if (edge<=1-(random? random.next()*0.12:0)) this.tiles[y][x]=TileTypes.EMPTY;
+            }
+        }
+
+        this.corePosition={
+            x: cx*this.tileSize+this.tileSize/2,
+            y: cy*this.tileSize+this.tileSize/2
+        };
+        this.coreChamber={cx, cy, rx, ry};
+        console.log(`Core chamber carved at (${this.corePosition.x}, ${this.corePosition.y})`);
+    }
+
+    // Flood fill of everything the player can fly to from the spawn.
+    reachableFromSpawn() {
+        const W=this.width, H=this.height;
+        const reachable=new Uint8Array(W*H);
+        if (!this.spawnPosition) return reachable;
+        const sx=Math.floor(this.spawnPosition.x/this.tileSize);
+        const sy=Math.floor(this.spawnPosition.y/this.tileSize);
+        if (sx<0||sy<0||sx>=W||sy>=H) return reachable;
+
+        const stack=[[sx, sy]];
+        reachable[sy*W+sx]=1;
+        while (stack.length) {
+            const [x, y]=stack.pop();
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nx=x+dx, ny=y+dy;
+                if (nx<0||ny<0||nx>=W||ny>=H) continue;
+                const i=ny*W+nx;
+                if (reachable[i]||this.tiles[ny][nx]!==TileTypes.EMPTY) continue;
+                reachable[i]=1;
+                stack.push([nx, ny]);
+            }
+        }
+        return reachable;
+    }
+
+    // Deepest reachable spot with room around it, for siting the Core Chamber.
+    findDeepReachableSite() {
+        const W=this.width, H=this.height;
+        const reachable=this.reachableFromSpawn();
+        // Deepest reachable tile anywhere below the halfway mark, not just
+        // inside a narrow Core band. A hard band meant that on seeds where the
+        // caves stopped a little short, no site qualified and the chamber fell
+        // back to the map centre -- which then needed a ~2300-tile tunnel.
+        const maxY=H-20;                     // clear of the solid floor
+        const minY=Math.floor(H*0.5);        // still unambiguously "deep"
+        const margin=Math.floor(W*0.10)+3;   // room for the chamber's width
+
+        for (let y=maxY; y>=minY; y--) {
+            for (let x=margin; x<W-margin; x++) {
+                if (reachable[y*W+x]) return {x, y};
+            }
+        }
+        return null;
+    }
+
+    // Guarantee the Core Chamber can actually be flown to from the spawn.
+    //
+    // Boring upward until the shaft "hits open space" is not enough: on roughly
+    // one seed in three it broke into an isolated pocket that connects to
+    // nothing, leaving the chamber sealed and the game unwinnable. So compute
+    // what is genuinely reachable from the spawn first, then bore until the
+    // shaft touches THAT set.
+    ensureCoreReachable() {
+        if (!this.corePosition||!this.spawnPosition) return false;
+
+        const W=this.width, H=this.height;
+        const reachable=new Uint8Array(W*H);
+        const sx=Math.floor(this.spawnPosition.x/this.tileSize);
+        const sy=Math.floor(this.spawnPosition.y/this.tileSize);
+        if (sx<0||sy<0||sx>=W||sy>=H) return false;
+
+        const stack=[[sx, sy]];
+        reachable[sy*W+sx]=1;
+        while (stack.length) {
+            const [x, y]=stack.pop();
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nx=x+dx, ny=y+dy;
+                if (nx<0||ny<0||nx>=W||ny>=H) continue;
+                const i=ny*W+nx;
+                if (reachable[i]||this.tiles[ny][nx]!==TileTypes.EMPTY) continue;
+                reachable[i]=1;
+                stack.push([nx, ny]);
+            }
+        }
+
+        const {cx, cy, ry}=this.coreChamber;
+        if (reachable[cy*W+cx]) {
+            this.coreChamber.shaftTiles=0;
+            return true;
+        }
+
+        // Only bridge a SHORT gap. On roughly a third of seeds the natural caves
+        // stop shallow, so "reachable by flight" is simply not how you get down
+        // -- you mine, which is the game. Forcing a connection there cut
+        // 2400-tile corridors across the map to solve a problem that did not
+        // exist: rock is always minable, so the Core is never truly sealed.
+        // A short link is still worth carving so the chamber reads as part of
+        // the cave system rather than a sealed bubble.
+        const MAX_LINK_TILES=45;
+
+        let best=null, bestDist=Infinity;
+        for (let y=1; y<H-1; y++) {
+            for (let x=1; x<W-1; x++) {
+                if (!reachable[y*W+x]) continue;
+                const d=(x-cx)*(x-cx)+(y-cy)*(y-cy);
+                if (d<bestDist) {bestDist=d; best={x, y};}
+            }
+        }
+        if (!best||Math.sqrt(bestDist)>MAX_LINK_TILES) {
+            // Too far to bridge honestly -- leave it to the drill.
+            this.coreChamber.shaftTiles=0;
+            this.coreChamber.reachedByMining=true;
+            return true;
+        }
+
+        // Straight corridor from the chamber roof to that tile, 3 tiles wide.
+        const x0=cx, y0=cy-ry, x1=best.x, y1=best.y;
+        const steps=Math.max(Math.abs(x1-x0), Math.abs(y1-y0));
+        let carved=0;
+        for (let i=0; i<=steps; i++) {
+            const t=steps===0? 0:i/steps;
+            const px=Math.round(x0+(x1-x0)*t);
+            const py=Math.round(y0+(y1-y0)*t);
+            for (let ox=-1; ox<=1; ox++) {
+                for (let oy=-1; oy<=1; oy++) {
+                    const nx=px+ox, ny=py+oy;
+                    if (nx<=1||ny<=1||nx>=W-2||ny>=H-2) continue;
+                    if (this.tiles[ny][nx]!==TileTypes.EMPTY) carved++;
+                    this.tiles[ny][nx]=TileTypes.EMPTY;
+                }
+            }
+        }
+
+        this.coreChamber.shaftTiles=carved;
+        this.coreChamber.linkedTo=best;
+        return true;
     }
 
     getBuildingLocation(id) {

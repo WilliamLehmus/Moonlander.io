@@ -2641,14 +2641,26 @@ export class Game {
         // already had it; this one set gameEnded but never read it.
         if (this.gameEnded) return;
 
-        // Win: reach the Core Chamber at the bottom of the map. Depth comes from
-        // VoxelMap's authoritative scale rather than a hardcoded surface Y --
-        // the old constant (1200) sat ~270m above the real surface, so the game
-        // was won at 4732m in the Crystal Caverns while claiming 5000m.
+        // Win: physically reach the Core Chamber. Depth comes from VoxelMap's
+        // authoritative scale rather than a hardcoded surface Y -- the old
+        // constant (1200) sat ~270m above the real surface, so the game was won
+        // at 4732m in the Crystal Caverns while claiming 5000m.
+        //
+        // Arrival is a place now, not a depth line: you have to be inside the
+        // chamber. The depth threshold is kept as a fallback for maps generated
+        // without one, so a missing chamber can never make the game unwinnable.
         const TARGET_DEPTH=this.voxelMap.TOTAL_DEPTH_METERS*CORE_WIN_DEPTH_FRACTION;
+        const core=this.voxelMap.corePosition;
+        const CORE_RADIUS=this.voxelMap.coreChamber
+            ? this.voxelMap.coreChamber.rx*this.voxelMap.tileSize
+            : 0;
 
         for (const player of this.players.values()) {
-            if (!player.dead&&this.voxelMap.getDepthMeters(player.y)>=TARGET_DEPTH) {
+            if (player.dead) continue;
+            const reached=core
+                ? Math.hypot(player.x-core.x, player.y-core.y)<=CORE_RADIUS
+                : this.voxelMap.getDepthMeters(player.y)>=TARGET_DEPTH;
+            if (reached) {
                 this.broadcast('gameOver', {
                     won: true,
                     reason: 'core_reached',
@@ -2729,6 +2741,8 @@ export class Game {
                 return s;
             }),
             seed: this.seed,
+            // Where the ending actually happens, so the client can point at it.
+            corePosition: this.voxelMap.corePosition||null,
             totalDepth: this.voxelMap.TOTAL_DEPTH_METERS,
             coreDepth: Math.round(this.voxelMap.TOTAL_DEPTH_METERS*CORE_WIN_DEPTH_FRACTION),
             // Placement rules, so the ghost preview draws the same zones the
