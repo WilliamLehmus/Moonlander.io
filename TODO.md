@@ -82,8 +82,17 @@ several bugs found so far only appeared on some seeds.
       Game and sent in state, so a map can be identified and shared.
 - [ ] Moonlander landing legs clip into the ground. *(Untouched — collision
       shape work.)*
-- [ ] Sync all light emissions (including thruster flames) in multiplayer.
-      *(Untouched.)*
+- [x] ~~Sync all light emissions (including thruster flames).~~ **Fixed.**
+      Position lights and spotlights were already synced and drawn for every
+      player; thruster flames emitted no light at all, despite `thrusting`
+      being synced and the flame being drawn. A firing engine now casts a
+      flickering warm glow — often the only light a player has once their
+      power is gone. Powered buildings emit light too, so a browned-out or
+      uncabled base visibly goes dark.
+      Found while doing it: **Placeable Light was never buildable** — it was
+      specced in `NetworkSystem` and listed in the shed order, but absent from
+      the buildings table and cost list, so the one building whose entire job
+      is lighting could not be placed. Now buildable at 20 Basic.
 
 ## 4. Deferred on purpose
 

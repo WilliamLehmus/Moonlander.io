@@ -633,6 +633,43 @@ export class Renderer {
                 if (player.spotlightOn!==false) {
                     this.drawSpotlight(lCtx, screenX, screenY, player.spotlightAngle||0, finalIntensity, player.id===myId);
                 }
+
+                // Thruster flame. `thrusting` was already synced for every
+                // player and the flame was already drawn, but it emitted no
+                // light -- so a burning engine lit nothing, for you or anyone
+                // watching you. It is often the only light source a player has
+                // left when their power is gone.
+                if (player.thrusting) {
+                    this.drawThrusterGlow(lCtx, screenX, screenY, player.angle||0, time+player.id.charCodeAt(0));
+                }
+            }
+        }
+
+        // Powered buildings emit light. Placeable Lights exist purely for this;
+        // everything else gets a smaller working glow so a live base reads as
+        // inhabited and, more usefully, so an unpowered one visibly goes dark.
+        if (this._lightNodes) {
+            for (const node of this._lightNodes) {
+                const bx=node.x-cameraX;
+                const by=node.y-cameraY;
+                if (bx<-400||by<-400||bx>this.canvas.width+400||by>this.canvas.height+400) continue;
+
+                const isLamp=node.key==='placeable_light';
+                const radius=isLamp? 190:110;
+                const strength=isLamp? 1:0.55;
+
+                const g=lCtx.createRadialGradient(bx, by-10, 0, bx, by-10, radius);
+                if (isDark) {
+                    g.addColorStop(0, `rgba(255,255,255,${strength})`);
+                    g.addColorStop(1, 'rgba(255,255,255,0)');
+                } else {
+                    g.addColorStop(0, `rgba(255,235,190,${0.28*strength})`);
+                    g.addColorStop(1, 'rgba(255,235,190,0)');
+                }
+                lCtx.fillStyle=g;
+                lCtx.beginPath();
+                lCtx.arc(bx, by-10, radius, 0, Math.PI*2);
+                lCtx.fill();
             }
         }
 
@@ -751,6 +788,30 @@ export class Renderer {
     }
 
     // Draw the main spotlight with raycasted occlusion
+    // Warm, unsteady glow under a firing engine. Drawn into the same lighting
+    // layer as the other emitters, so it carves darkness in caves and adds
+    // additive glow in daylight exactly like position lights do.
+    drawThrusterGlow(ctx, x, y, angle, time) {
+        // The flame sits below the lander in its local frame.
+        const offset=18;
+        const fx=x+Math.sin(angle)*offset;
+        const fy=y+Math.cos(angle)*offset;
+
+        // Rapid flicker so it reads as combustion rather than a lamp.
+        const flicker=0.75+Math.sin(time*47)*0.15+Math.sin(time*23)*0.10;
+        const radius=70*flicker;
+
+        const g=ctx.createRadialGradient(fx, fy, 0, fx, fy, radius);
+        g.addColorStop(0, `rgba(255, 220, 150, ${0.95*flicker})`);
+        g.addColorStop(0.45, `rgba(255, 150, 60, ${0.45*flicker})`);
+        g.addColorStop(1, 'rgba(255, 120, 40, 0)');
+
+        ctx.fillStyle=g;
+        ctx.beginPath();
+        ctx.arc(fx, fy, radius, 0, Math.PI*2);
+        ctx.fill();
+    }
+
     drawSpotlight(ctx, x, y, spotlightAngle, intensity, isLocalPlayer) {
         const range=this.spotlightRange*intensity;
         const coneAngle=this.spotlightAngle;
@@ -1270,6 +1331,10 @@ export class Renderer {
         this.ctx.restore();
 
         // Draw lighting overlay (after restoring camera transform)
+        // Only buildings that actually have power emit light, so a browned-out
+        // or uncabled base is visibly dark.
+        this._lightNodes=Object.values(state.networks?.nodes||{})
+            .filter(n => n.power==='ok'||n.power==='brownout');
         this.drawLighting(state.players, myId, this.cameraX, this.cameraY);
         this.ctx.drawImage(this.lightCanvas, 0, 0);
 

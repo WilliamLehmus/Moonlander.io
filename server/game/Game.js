@@ -128,7 +128,12 @@ export class Game {
 
             // Starts built alongside the Landing Pad: the Habitat is the colony's
             // generator, its 50m antenna, and its starter refinery (GDD 5.4).
-            habitat: {level: 1, name: 'Habitat', effect: 'utility', baseValue: 0, perLevel: 0, powerCost: 2, powerScale: 1}
+            habitat: {level: 1, name: 'Habitat', effect: 'utility', baseValue: 0, perLevel: 0, powerCost: 2, powerScale: 1},
+
+            // Was specced in NetworkSystem and listed in the shed order, but
+            // never appeared here or in buildingCosts -- so the one building
+            // whose entire job is lighting could not be built at all.
+            placeable_light: {level: 0, name: 'Placeable Light', effect: 'lighting', baseValue: 0, perLevel: 0, powerCost: 1, powerScale: 0}
         };
 
         // Building upgrade costs (materials required per level)
@@ -155,7 +160,8 @@ export class Game {
             communications_antenna: generateCost(20, 5, 5, 5),
             ship_factory: generateCost(50, 30, 30, 30),
             crafting_station: generateCost(20, 10, 10, 10),
-            habitat: generateCost(20, 5, 5, 5)
+            habitat: generateCost(20, 5, 5, 5),
+            placeable_light: generateCost(20, 5, 5, 5)
         };
 
         // Fix special costs manually
