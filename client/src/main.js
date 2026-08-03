@@ -5,9 +5,9 @@ import {Input} from './Input.js';
 import {SoundManager} from './SoundManager.js';
 
 // Determine server URL (localhost for dev, same origin for production)
-const serverUrl=window.location.hostname==='localhost'
-  ? 'http://localhost:3000'
-  :window.location.origin;
+const serverUrl = import.meta.env.VITE_SERVER_URL || (window.location.hostname === 'localhost'
+  ? 'http://localhost:3010'
+  : window.location.origin);
 
 const socket=io(serverUrl);
 
@@ -581,6 +581,9 @@ socket.on('tileUpdate', ({x, y, value}) => {
 
 socket.on('gameState', (state) => {
   gameState=state;
+  if (inventoryMenuOpen) {
+    renderInventory();
+  }
 });
 
 socket.on('respawnResult', (result) => {
@@ -857,6 +860,8 @@ function getShipInventorySlots(shipType) {
   }
 }
 
+let lastRenderedInventoryKey = '';
+
 function openInventoryMenu() {
   const myPlayer=gameState.players.find(p => p.id===myId);
   if (!myPlayer) return;
@@ -872,7 +877,7 @@ function openInventoryMenu() {
     stationInventorySection.classList.add('hidden');
   }
 
-  renderInventory();
+  renderInventory(true);
 }
 
 function closeInventoryMenu() {
@@ -880,12 +885,33 @@ function closeInventoryMenu() {
   inventoryMenuOpen=false;
   selectedShipSlot=null;
   selectedStationSlot=null;
+  lastRenderedInventoryKey = '';
   soundManager.playSound('menu_pop');
 }
 
-function renderInventory() {
+function renderInventory(force = false) {
   const myPlayer=gameState.players.find(p => p.id===myId);
   if (!myPlayer) return;
+
+  const droppedItems=gameState.droppedItems||[];
+  const myPos={x: myPlayer.x, y: myPlayer.y};
+  const nearby=droppedItems.filter(item => {
+    const dist=Math.sqrt(Math.pow(item.x-myPos.x, 2)+Math.pow(item.y-myPos.y, 2));
+    return dist<150; // Increased pickup range
+  });
+
+  const currentKey = JSON.stringify({
+    cargo: myPlayer.cargo,
+    shipType: myPlayer.shipType,
+    onPad: myPlayer.onPad,
+    stationOres: myPlayer.onPad ? gameState.baseResources?.ores : null,
+    nearby: nearby.map(i => i.id)
+  });
+
+  if (!force && currentKey === lastRenderedInventoryKey) {
+    return;
+  }
+  lastRenderedInventoryKey = currentKey;
 
   const shipSlots=getShipInventorySlots(myPlayer.shipType);
   const cargo=myPlayer.cargo||[];
@@ -920,14 +946,6 @@ function renderInventory() {
 
   // Render nearby items (Dropped items)
   nearbyInventoryEl.innerHTML='';
-  const droppedItems=gameState.droppedItems||[];
-
-  // Filter for items close to player
-  const myPos={x: myPlayer.x, y: myPlayer.y};
-  const nearby=droppedItems.filter(item => {
-    const dist=Math.sqrt(Math.pow(item.x-myPos.x, 2)+Math.pow(item.y-myPos.y, 2));
-    return dist<150; // Increased pickup range
-  });
 
   if (nearby.length===0) {
     nearbyInventoryEl.innerHTML='<div style="color: #666; font-size: 0.8rem; padding: 10px; grid-column: span 3; text-align: center;">No items nearby</div>';
@@ -1826,36 +1844,17 @@ function gameLoop() {
           const heldItem=myPlayer.cargo[input.quickbarSelection];
           if (heldItem&&heldItem.type&&typeof heldItem.type==='string'&&(heldItem.type.startsWith('cable_spool_')||heldItem.type.startsWith('cable_'))) {
             // Enable cable mode
+            input.setCableMode(true);
             input.state.cableMode=true;
-            // Extract type: cable_spool_power -> power, cable_red -> red
-            // Actually usually we want 'power', 'fuel', 'data' types for the cable system logic?
-            // The CableSystem just stores the type string. 
-            // Previous code: input.state.cableType=heldItem.type.replace('cable_spool_', '');
-            // This would result in 'power', 'fuel', 'data'.
-            // Now we have 'cable_red', 'cable_blue'.
-            // Let's just use the raw type or map it?
-            // If the Cable System expects 'power', 'fuel', 'data' for functionality, we might need to map.
-            // But CableSystem.js seemed generic.
-            // Let's pass the simple name if possible, or just the type.
-            // Let's pass 'red', 'green', 'blue' or 'power', 'fuel', 'data'.
-            // User requested red/blue/green cables.
-            // Let's try to map to functionality if needed, otherwise just use suffix.
             let cType=heldItem.type.replace('cable_spool_', '').replace('cable_', '');
-            // Map red->power, green->fuel, blue->data if we want to maintain compat?
-            // But let's just use the suffix for now.
             input.state.cableType=cType;
           } else {
-            // Disable cable mode if not holding cable
-            // Only disable if we are not currently dragging a line? 
-            // Factorio: You stop building if you switch item.
-            // If dragging, we might want to cancel or finish?
-            // Existing logic cancels placement if cableStartPoint=null.
-            // Let's disable mode.
+            input.setCableMode(false);
             input.state.cableMode=false;
-            if (cableStartPoint) {
-              cableStartPoint=null; // Cancel current placement
-            }
           }
+        } else {
+          input.setCableMode(false);
+          input.state.cableMode=false;
         }
 
         // Update mining sound - Fix: only when actually mining resources
