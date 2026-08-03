@@ -80,8 +80,13 @@ several bugs found so far only appeared on some seeds.
       Terrain was already per-game (each Room builds its own Game; two rooms
       verified to differ), but the seed was discarded. It is now recorded on the
       Game and sent in state, so a map can be identified and shared.
-- [ ] Moonlander landing legs clip into the ground. *(Untouched — collision
-      shape work.)*
+- [x] ~~Moonlander landing legs clip into the ground.~~ **Fixed, and it was a
+      rendering offset rather than collision shape work.** A Scout collides as
+      20x28 but renders at 40x40, and both were centred on the body origin, so
+      the landing legs hung ~6 units below anything physics knew about — the
+      ship rested correctly while its legs visibly sank. The collider size is
+      now serialized and the sprite is lifted so its feet sit on the collider
+      base. No physics change, so flight feel is untouched.
 - [x] ~~Sync all light emissions (including thruster flames).~~ **Fixed.**
       Position lights and spotlights were already synced and drawn for every
       player; thruster flames emitted no light at all, despite `thrusting`

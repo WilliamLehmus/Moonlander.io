@@ -1990,11 +1990,21 @@ export class Renderer {
             const srcX=frameX*this.spriteFrameWidth;
             const srcY=frameY*this.spriteFrameHeight;
 
+            // Sit the sprite's feet on the collider's base.
+            //
+            // The sprite is drawn much larger than the physics box (a Scout
+            // collides as 20x28 but renders at 40x40) and both were centred on
+            // the body origin, so the bottom of the art -- the landing legs --
+            // hung ~6 units below anything the physics engine knew about. The
+            // ship rested correctly while its legs visibly sank into the ground.
+            const colliderH=player.colliderH||height;
+            const footOffset=Math.max(0, (height-colliderH)/2);
+
             this.ctx.drawImage(
                 sprite,
                 srcX, srcY,
                 this.spriteFrameWidth, this.spriteFrameHeight,
-                -width/2, -height/2,
+                -width/2, -height/2-footOffset,
                 width, height
             );
 

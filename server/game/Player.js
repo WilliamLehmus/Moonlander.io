@@ -524,6 +524,11 @@ export class Player {
             maxFuel: this.maxFuel,
             damage: this.damage,
             thrusting: this.inputs.thrust,
+            // Physics collider size. The client draws the sprite larger than the
+            // collider, so it needs these to sit the ship's feet on the ground
+            // instead of sinking them into it.
+            colliderW: (SHIP_TYPES[this.shipType]||SHIP_TYPES.scout).width,
+            colliderH: (SHIP_TYPES[this.shipType]||SHIP_TYPES.scout).height,
             thrustForce: this.thrustForce, // Added for EVA
             color: this.color,
             dead: this.dead,
