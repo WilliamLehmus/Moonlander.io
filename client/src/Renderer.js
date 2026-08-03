@@ -2673,6 +2673,10 @@ export class Renderer {
         // DEPTH -- the whole point of the game is to reach the core, and until
         // now there was no way to see how far down you were.
         this.drawDepthGauge(myPlayer, state, topOffset);
+
+        // Hand-fill prompt: pouring ship fuel into a building tank is how a
+        // remote base gets bootstrapped, and it is undiscoverable unless said.
+        this.drawHandFillPrompt(myPlayer);
         // Draw Station UI if landed
         // if (myPlayer.onPad) {
         //     this.drawStationUI(myPlayer, state);
@@ -2828,6 +2832,48 @@ export class Renderer {
     // Depth readout plus a vertical gauge showing progress toward the Core.
     // Depth is sent by the server so the HUD, the win condition and the victory
     // screen can never disagree.
+    // "PRESS [F] TO FUEL <building>" with a tank gauge, shown whenever the
+    // player is close enough to pour fuel into something.
+    drawHandFillPrompt(myPlayer) {
+        const t=myPlayer?.handFillTarget;
+        if (!t) return;
+
+        const ctx=this.ctx;
+        const cx=this.canvas.width/2;
+        const y=this.canvas.height-140;
+        const filling=myPlayer.fuel>0;
+        const label=filling
+            ? `PRESS [F] TO FUEL ${t.name.toUpperCase()}`
+            : `${t.name.toUpperCase()} NEEDS FUEL — YOUR TANK IS EMPTY`;
+
+        ctx.save();
+        ctx.font='12px Consolas, monospace';
+        ctx.textAlign='center';
+        const w=Math.max(230, ctx.measureText(label).width+30);
+
+        ctx.fillStyle='rgba(4,8,14,0.85)';
+        ctx.fillRect(cx-w/2, y-18, w, 42);
+        ctx.strokeStyle=filling? '#ffb347':'#ff5555';
+        ctx.lineWidth=1;
+        ctx.strokeRect(cx-w/2, y-18, w, 42);
+
+        ctx.fillStyle=filling? '#ffb347':'#ff6666';
+        ctx.fillText(label, cx, y-3);
+
+        // Tank fill bar.
+        const bw=w-40;
+        const frac=t.capacity>0? Math.min(1, t.tank/t.capacity):0;
+        ctx.fillStyle='#222';
+        ctx.fillRect(cx-bw/2, y+6, bw, 6);
+        ctx.fillStyle='#ffb347';
+        ctx.fillRect(cx-bw/2, y+6, bw*frac, 6);
+
+        ctx.font='9px Consolas, monospace';
+        ctx.fillStyle='#8b95a1';
+        ctx.fillText(`${Math.round(t.tank)} / ${Math.round(t.capacity)}`, cx, y+22);
+        ctx.restore();
+    }
+
     drawDepthGauge(myPlayer, state, topOffset=0) {
         if (!myPlayer) return;
         const depth=myPlayer.depth;

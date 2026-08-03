@@ -1993,11 +1993,37 @@ export class Game {
             }
         }
 
+        // Hand-filling a building's tank from the ship (hold F near it).
+        for (const player of playerList) {
+            this.updateHandFill(player, dt);
+        }
+
         // Reset transfer state for players not transferring
         for (const player of playerList) {
             if (!player.fuelTransferring) {
                 player.fuelTransferred=0;
             }
+        }
+    }
+
+    // Pour fuel from a ship into a nearby building tank. This is how a remote
+    // base gets started: its Fuel Generator needs fuel, but fuel only flows from
+    // a POWERED Fuel Depot, which needs the generator already running. Flying
+    // fuel down and pouring it in by hand is what breaks that circle (GDD 6.3).
+    updateHandFill(player, dt) {
+        const targets=this.networks.handFillableAt(player.x, player.y);
+        player.handFillTarget=targets.length? targets[0]:null;
+
+        if (!player.inputs.transferFuel||player.fuel<=0||!targets.length) return;
+        // Don't fight the ship-to-ship transfer for the same keypress.
+        if (player.fuelTransferring) return;
+
+        const target=targets[0];
+        const wanted=Math.min(FUEL_TRANSFER_RATE*dt, player.fuel);
+        const poured=this.networks.fillTank(target.id, wanted);
+        if (poured>0) {
+            player.fuel-=poured;
+            player.handFilling=true;
         }
     }
 
@@ -2498,6 +2524,8 @@ export class Game {
             players: Array.from(this.players.values()).map(p => {
                 const s=p.serialize();
                 s.dataNet=this.networks.dataNetAt(p.x, p.y);
+                // Nearest tank the player could pour fuel into, for the HUD prompt.
+                s.handFillTarget=p.handFillTarget||null;
                 // Authoritative depth, so the HUD and the victory screen can
                 // never disagree with the win condition about how deep you are.
                 s.depth=Math.round(this.voxelMap.getDepthMeters(p.y));

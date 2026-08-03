@@ -233,18 +233,21 @@ export class NetworkSystem {
 
         // --- Base Bus: buildings on the landing pad deck are implicitly wired
         // together on all three networks and need no cable (GDD 5.2).
-        const pad=nodes.get('landing_pad');
+        // EVERY landing pad projects a bus, not just the first one. This used to
+        // read nodes.get('landing_pad'), which is only the home pad -- so a
+        // second base founded anywhere else was permanently disconnected and
+        // could never be powered no matter what the player built next to it.
+        const pads=[...nodes.values()].filter(n => n.key==='landing_pad');
         const busMembers=[];
-        if (pad) {
+        for (const pad of pads) {
             for (const node of nodes.values()) {
                 const dx=node.x-pad.x;
                 const dy=node.y-pad.y;
                 const onDeck=Math.abs(dy)<=this.baseBusElevationBand&&
                     Math.sqrt(dx*dx+dy*dy)<=this.baseBusRadius;
-                if (onDeck) busMembers.push(node);
-            }
-            for (const node of busMembers) {
+                if (!onDeck) continue;
                 node.onBus=true;
+                busMembers.push(node);
                 for (const net of NETWORKS) uf[net].union(pad.posKey, node.posKey);
             }
         }
@@ -295,6 +298,10 @@ export class NetworkSystem {
         if (!p||!p.gen) return 0;
         let gen=this.levelValue(p.gen, p.genPerLevel, node.level);
         if (p.solar) gen*=this.solarFactor(node);
+        // A fuel generator with a dry tank produces nothing. Without this it
+        // generated its full 50 kW forever on no fuel at all, which made the
+        // whole fuel network optional and remote bases free to power.
+        if (node.spec.fuel?.role==='burn'&&(this.fuelTanks.get(node.id)||0)<=0) return 0;
         return gen;
     }
 
@@ -671,6 +678,37 @@ export class NetworkSystem {
     // Fuel a landing pad can actually dispense right now.
     padFuelAvailable(nodeId='landing_pad') {
         return this.fuelTanks.get(nodeId)||0;
+    }
+
+    // Buildings with a local tank a player can hand-fill from their ship.
+    // This is the bootstrap for a remote base: its generator needs fuel, but
+    // fuel only flows from a POWERED depot, which needs the generator running.
+    // Flying fuel down in a ship is what breaks that circle (GDD 6.3).
+    handFillableAt(x, y, range=90) {
+        const topology=this.getTopology();
+        const out=[];
+        for (const node of topology.nodes.values()) {
+            if (!node.spec.fuel?.tank) continue;
+            if (Math.hypot(node.x-x, node.y-y)>range) continue;
+            const cap=this.tankCapacityOf(node);
+            const tank=this.fuelTanks.get(node.id)||0;
+            if (tank>=cap) continue;
+            out.push({id: node.id, name: node.name, tank, capacity: cap,
+                dist: Math.hypot(node.x-x, node.y-y)});
+        }
+        return out.sort((a, b) => a.dist-b.dist);
+    }
+
+    // Pour `amount` into a building's tank; returns how much it actually took.
+    fillTank(nodeId, amount) {
+        const topology=this.getTopology();
+        const node=topology.nodes.get(nodeId);
+        if (!node||!node.spec.fuel?.tank) return 0;
+        const cap=this.tankCapacityOf(node);
+        const tank=this.fuelTanks.get(nodeId)||0;
+        const taken=Math.max(0, Math.min(amount, cap-tank));
+        this.fuelTanks.set(nodeId, tank+taken);
+        return taken;
     }
 
     consumePadFuel(amount, nodeId='landing_pad') {

@@ -30,12 +30,14 @@ several bugs found so far only appeared on some seeds.
       Cheap to add (`Game.structures.delete` + refund a fraction) and it will be
       the first thing anyone asks for.
 
-- [ ] **Second bases have no way to get power.** A remote Landing Pad starts
-      dark and correctly stays dark, but the only generators are the Habitat
-      (starts at home, cannot be built), the Solar Array (dies below 60m depth)
-      and the Fuel Generator (needs a fuel line). Check that founding a working
-      underground base is actually *possible* end to end — I verified the pad
-      places and stays unpowered, but never played the full loop through.
+- [x] ~~**Second bases have no way to get power.**~~ **Done, and it was broken
+      two ways.** The Base Bus only formed around the node literally named
+      `landing_pad`, so every remote base was permanently disconnected; and a
+      Fuel Generator produced its full 50 kW on an empty tank, which made the
+      fuel network decorative. Both fixed, and hand-filling a generator from a
+      ship's tank (GDD 6.3, never implemented) is now the bootstrap that breaks
+      the generator-needs-fuel-needs-powered-depot-needs-generator circle.
+      Covered by `tests/remote-base.test.mjs`.
 
 ## 2. Known-wrong numbers
 
