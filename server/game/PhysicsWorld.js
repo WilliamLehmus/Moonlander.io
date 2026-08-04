@@ -6,6 +6,11 @@ export class PhysicsWorld {
         this.world=null;
         this.isReady=false;
         this.bodies=[];
+        // Thickness of the thinnest thing a moving body can hit -- one terrain
+        // tile. Sets how eagerly continuous collision engages in createBox().
+        // VoxelMap.setPhysicsWorld() overwrites this with its real tile size so
+        // the two cannot drift apart.
+        this.terrainThickness=8;
     }
 
     async init() {
@@ -66,6 +71,31 @@ export class PhysicsWorld {
         const angularFactor=new A.btVector3(0, 0, 1);
         body.setLinearFactor(linearFactor);
         body.setAngularFactor(angularFactor);
+
+        // Continuous collision for anything that moves. Terrain collision is a
+        // one-tile shell -- only surface tiles get bodies, the rock behind them
+        // is hollow -- so a body that skips past the shell in a single step
+        // falls through the entire moon. Gravity alone cannot do it (damping
+        // caps a fall at ~189 u/s), but holding thrust straight down reaches
+        // ~1000 u/s, well past the ~400-800 u/s where the shell gives way.
+        //
+        // The usual Bullet recipe sets the threshold to the body's own smallest
+        // dimension, which assumes obstacles at least that thick. Here the wall
+        // is one 8-unit tile, so a 30x30 cargo lander would never trigger CCD at
+        // all and sailed straight through. Take whichever is smaller, halved:
+        // sweeping has to begin before a single step can cross the wall, not as
+        // it happens. Measured -- the full value still let cargo through at 800.
+        //
+        // A falling body reaches ~189 u/s, roughly 3 units per step, so for
+        // every ship this stays dormant in ordinary flight.
+        if (mass>0) {
+            const minDimension=Math.min(width, height);
+            body.setCcdMotionThreshold(Math.min(minDimension, this.terrainThickness)/2);
+            // The box's inscribed sphere. Smaller sweeps (0.35, 0.45) measurably
+            // let bodies through; this never extends beyond the box itself, so
+            // it cannot cause contact to register early.
+            body.setCcdSweptSphereRadius(minDimension/2);
+        }
 
         // The body outlives its shape and motion state only if we keep hold of
         // them -- Bullet does not own them, so removeBody() needs them to free.

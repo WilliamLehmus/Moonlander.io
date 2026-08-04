@@ -737,9 +737,12 @@ export class Player {
         const vel=this.getVelocity();
         // const rot = this.getRotation(); // Angle in Z - not used for new body orientation (always upright)
 
-        // Remove old body
+        // Remove old body. Through the physics world, not straight to
+        // removeRigidBody -- that left the discarded body in PhysicsWorld.bodies
+        // with its WASM memory still allocated, so every ship switch and every
+        // EVA exit leaked one.
         if (this.body) {
-            this.physicsWorld.world.removeRigidBody(this.body);
+            this.physicsWorld.removeBody(this.body);
         }
 
         // Create new body

@@ -79,6 +79,10 @@ export class VoxelMap {
 
     setPhysicsWorld(physicsWorld) {
         this.physicsWorld=physicsWorld;
+        // Terrain is a one-tile-thick collision shell, so the tile size is the
+        // thinnest wall anything can hit. Continuous collision is tuned against
+        // it -- tell the physics world rather than leaving it to guess.
+        if (physicsWorld) physicsWorld.terrainThickness=this.tileSize;
     }
 
     generate(seed=Math.random()) {
