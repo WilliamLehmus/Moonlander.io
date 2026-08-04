@@ -526,24 +526,30 @@ canvas {
   border-radius: 2px;
 }
 
-/* Tooltip styles */
+/* Tooltip styles. The text is a name plus a description separated by \n, so it
+   wraps to a fixed-width card instead of running off as one nowrap line. */
 .inventory-slot::after {
   content: attr(data-tooltip);
   position: absolute;
   bottom: 110%;
   left: 50%;
   transform: translateX(-50%);
-  background-color: rgba(0, 0, 0, 0.9);
+  background-color: rgba(0, 0, 0, 0.95);
   color: #fff;
-  padding: 4px 8px;
+  padding: 6px 9px;
   border-radius: 4px;
   font-size: 0.75rem;
-  white-space: nowrap;
+  line-height: 1.35;
+  text-align: left;
+  white-space: pre-line;
+  width: max-content;
+  max-width: 240px;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.2s;
   z-index: 1000;
   border: 1px solid #444;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
 }
 
 .inventory-slot:hover::after {

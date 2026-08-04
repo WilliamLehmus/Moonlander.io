@@ -91,6 +91,10 @@ export class Player {
         this.dead=false;
         this.landed=false;
         this.onPad=false;
+        // Within reach of any built structure, not just a landing pad. Gates
+        // opening the station menu; pad-only services still check onPad.
+        this.nearBuilding=false;
+        this.nearBuildingId=null;
         this.deathTime=null;
         this.spawnX=spawnX;
         this.spawnY=spawnY;
@@ -534,6 +538,7 @@ export class Player {
             dead: this.dead,
             landed: this.landed,
             onPad: this.onPad,
+            nearBuilding: this.nearBuilding,
             deathTime: this.deathTime,
             spotlightAngle: this.spotlightAngle,
             // Power system

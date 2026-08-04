@@ -11,7 +11,12 @@ export class CableSystem {
         this.activeLines=new Map();
 
         this.nextId=1;
-        this.MAX_LENGTH=game.config?.difficulty?.buildCableMaxLength??120;
+        this.MAX_LENGTH=game.config?.difficulty?.buildCableMaxLength??1000;
+        // How far a dropped spool may drift from its anchor before the tether
+        // hauls it back. This used to share MAX_LENGTH, which meant raising the
+        // run limit to 1000 quietly untethered every spool -- a dropped reel
+        // would tumble down a shaft with nothing pulling on it.
+        this.SPOOL_TETHER=game.config?.difficulty?.spoolTetherLength??120;
         // 90 in the client + 40 slack for movement between click and arrival.
         this.ATTACH_RANGE=game.config?.difficulty?.cableAttachRange??130;
     }
@@ -19,6 +24,66 @@ export class CableSystem {
     // Any change to the laid cable invalidates the resolved network graph.
     markNetworksDirty() {
         this.game.networks?.markDirty();
+    }
+
+    // How much buried rock a single run may tunnel through before it is
+    // refused. Not zero: cable is strung between anchors that sit ON the
+    // ground, so a run along the surface grazes the top rock layer for its
+    // whole length and a zero tolerance would refuse every cable ever laid.
+    // What this stops is a run driven through the body of a ridge or across a
+    // cavern floor -- four tiles of unbroken buried rock is a wall.
+    get maxTerrainCrossing() {
+        return this.game.config?.difficulty?.cableMaxTerrainCrossing??32;
+    }
+
+    // Is this point inside the body of the rock, rather than skimming its
+    // surface? A cable lying along the ground is solid at the sample but open a
+    // short way off to one side; a cable driven through a hill is solid on both
+    // sides too. `px,py` is the unit normal of the cable, so "to one side"
+    // means across the run rather than along it.
+    buried(map, x, y, px, py) {
+        if (!map.isSolidAtWorld(x, y)) return false;
+        const probe=map.tileSize*2;
+        return map.isSolidAtWorld(x+px*probe, y+py*probe)
+            &&map.isSolidAtWorld(x-px*probe, y-py*probe);
+    }
+
+    // Does the span from (x1,y1) to (x2,y2) tunnel through solid rock?
+    //
+    // Only the interior counts. Both ends are legitimately inside solid tiles:
+    // a building's anchor sits ON the ground (see Game.canPlaceBuilding, which
+    // tests headroom rather than the anchor for exactly this reason), and
+    // attaching to bare rock plants a pylon on purpose. Testing the endpoints
+    // would refuse every run ever laid.
+    spanBlocked(x1, y1, x2, y2) {
+        const map=this.game.voxelMap;
+        if (!map) return false;
+
+        const ts=map.tileSize;
+        const lead=ts*2; // Matches the headroom margin used for buildings.
+        const dx=x2-x1;
+        const dy=y2-y1;
+        const len=Math.hypot(dx, dy);
+        if (len<=lead*2) return false; // No interior to test.
+
+        // Unit normal of the run, for the burial probe.
+        const px=-dy/len;
+        const py=dx/len;
+
+        const step=ts/2;
+        const limit=this.maxTerrainCrossing;
+        let run=0;
+
+        for (let d=lead; d<=len-lead; d+=step) {
+            const t=d/len;
+            if (this.buried(map, x1+dx*t, y1+dy*t, px, py)) {
+                run+=step;
+                if (run>limit) return true;
+            } else {
+                run=0;
+            }
+        }
+        return false;
     }
 
     // A player must physically be at a connector to hook a cable onto it.
@@ -60,6 +125,10 @@ export class CableSystem {
         const dy=y2-y1;
         if (Math.sqrt(dx*dx+dy*dy)>this.MAX_LENGTH) {
             return {success: false, reason: 'too_long'};
+        }
+
+        if (this.spanBlocked(x1, y1, x2, y2)) {
+            return {success: false, reason: 'blocked_by_terrain'};
         }
 
         const segment={id: this.nextId++, type: net, x1, y1, x2, y2};
@@ -165,6 +234,13 @@ export class CableSystem {
                 return {success: false, reason: 'too_long'};
             }
 
+            // Joining two loose ends freezes BOTH the spool's trailing rope and
+            // the new link into fixed segments, so both have to clear the rock.
+            if (this.spanBlocked(spool.anchorX, spool.anchorY, spool.x, spool.y)
+                ||this.spanBlocked(line.anchorX, line.anchorY, spool.x, spool.y)) {
+                return {success: false, reason: 'blocked_by_terrain'};
+            }
+
             // 1. Convert Spool's loose rope to a fixed segment
             this.segments.push({
                 id: this.nextId++,
@@ -203,6 +279,10 @@ export class CableSystem {
         const dist=Math.sqrt(dx*dx+dy*dy);
 
         if (dist>this.MAX_LENGTH) return {success: false, reason: 'too_long'};
+
+        if (this.spanBlocked(line.anchorX, line.anchorY, x, y)) {
+            return {success: false, reason: 'blocked_by_terrain'};
+        }
 
         // Create Segment
         const segment={
@@ -251,9 +331,9 @@ export class CableSystem {
                     const dy=spool.y-spool.anchorY;
                     const dist=Math.sqrt(dx*dx+dy*dy);
 
-                    if (dist>this.MAX_LENGTH) {
+                    if (dist>this.SPOOL_TETHER) {
                         // Pull back hard
-                        const factor=(dist-this.MAX_LENGTH)*0.1; // Spring k
+                        const factor=(dist-this.SPOOL_TETHER)*0.1; // Spring k
                         const angle=Math.atan2(dy, dx);
                         const fx=-Math.cos(angle)*factor*500;
                         const fy=-Math.sin(angle)*factor*500;

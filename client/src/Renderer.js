@@ -2315,9 +2315,12 @@ export class Renderer {
             controls.push(['X', 'Exit (hold 2s)']);
         }
 
-        // Context: On landing pad
-        if (myPlayer.onPad) {
+        // Context: At a building. The station menu opens beside any structure,
+        // so the hint has to appear at outposts too, not only on the pad.
+        if (myPlayer.onPad||myPlayer.nearBuilding) {
             controls.push(['B', 'Station Menu']);
+        }
+        if (myPlayer.onPad) {
             controls.push(['T', 'Transfer Cargo']);
         }
 

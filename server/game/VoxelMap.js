@@ -1084,22 +1084,22 @@ export class VoxelMap {
         const key=`${gx},${gy}`;
         const body=this.collisionBodies.get(key);
         if (body) {
-            // Remove the body from physics world
-            this.physicsWorld.world.removeRigidBody(body);
-
-            // If it's a merged body, clean up all its cell mappings in the Map
-            if (body._voxelRange) {
-                const {startX, endX, y}=body._voxelRange;
-                for (let x=startX; x<=endX; x++) {
-                    this.collisionBodies.delete(`${x},${y}`);
+            // Read the range before the body is freed, and drop every mapping
+            // that points at it -- a merged body is reachable under many keys,
+            // and a stale key would hand out a destroyed body later.
+            const range=body._voxelRange;
+            if (range) {
+                for (let x=range.startX; x<=range.endX; x++) {
+                    this.collisionBodies.delete(`${x},${range.y}`);
                 }
             } else {
                 this.collisionBodies.delete(key);
             }
 
-            // Clean up Ammo object (optional but good practice)
-            // Note: In some Ammo builds, you should destroy shapes etc. 
-            // but here we reuse shapes if possible or let Ammo handle it.
+            // Go through the physics world rather than poking removeRigidBody
+            // directly: that left the body in PhysicsWorld.bodies forever and
+            // never freed its WASM memory, so every mined tile leaked.
+            this.physicsWorld.removeBody(body);
         }
     }
 

@@ -114,6 +114,11 @@ class Room {
             clearInterval(this.gameLoop);
             this.gameLoop = null;
         }
+        // Stopping the loop is not enough: the game's Bullet world lives in
+        // ammo.js's fixed 64MB WASM heap, outside the reach of JS garbage
+        // collection. Skipping this leaked every finished game and aborted the
+        // whole server -- every room on it -- after about five.
+        this.game?.destroy();
     }
 
     getInfo() {

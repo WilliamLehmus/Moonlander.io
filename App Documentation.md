@@ -28,9 +28,9 @@ Buildings placed on the Landing Pad deck are auto-connected across all networks 
 
 ### Manual Cabling (Off-Deck & Underground Outposts)
 Buildings built away from the deck require manual cable wiring:
-1. 🔴 **Power Network (Red Cable)**: Flow-based electricity in kW with a kJ buffer. Generators include Habitat (15 kW starter), Solar Array (10 kW, surface only), and Fuel Generator (50 kW, burns fuel). Automated load shedding handles grid deficits.
-2. 🟢 **Fuel Network (Green Pipe)**: Routes refined fuel from Refineries/Depots to Landing Pads and Fuel Generators.
-3. 🔵 **Data Network (Blue Cable)**: Merges radar feeds between Comm Antennas.
+1. 🔴 **Power Network (Power Cable (Red))**: Flow-based electricity in kW with a kJ buffer. Generators include Habitat (15 kW starter), Solar Array (10 kW, surface only), and Fuel Generator (50 kW, burns fuel). Automated load shedding handles grid deficits.
+2. 🟢 **Fuel Network (Fuel Pipe (Green))**: Routes refined fuel from Refineries/Depots to Landing Pads and Fuel Generators.
+3. 🔵 **Data Network (Data Cable (Blue))**: Merges radar feeds between Comm Antennas.
 
 ---
 

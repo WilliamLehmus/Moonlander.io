@@ -900,11 +900,19 @@ window.addEventListener('keydown', (e) => {
     }
   }
 
-  // Open Station Menu (B)
+  // Open Station Menu (B). Any building you are standing next to will do --
+  // requiring a landing pad made this feel broken at every outpost. Pressing B
+  // out of range used to do nothing at all, which is most of why it felt
+  // finicky, so say why instead of staying silent.
   if (e.key==='b'||e.key==='B') {
     const myPlayer=gameState.players.find(p => p.id===myId);
-    if (myPlayer&&myPlayer.onPad) {
+    if (!myPlayer) return;
+    if (stationMenuOpen) {
+      closeStationMenu();
+    } else if (myPlayer.onPad||myPlayer.nearBuilding) {
       openStationMenu();
+    } else {
+      renderer?.showMessage('Move closer to a building to open the station menu');
     }
   }
 
@@ -935,9 +943,19 @@ window.addEventListener('keydown', (e) => {
 
 let stationMenuOpen=false;
 
+// The menu opens next to any building, but the hangar and the kit press are
+// pad machinery and the server still enforces that. Ask here so the buttons
+// can grey out with a reason instead of failing silently when you click them.
+function atLandingPad() {
+  return !!gameState.players?.find(p => p.id===myId)?.onPad;
+}
+
+const PAD_ONLY_HINT='Land on a Landing Pad to use this';
+
 function openStationMenu() {
   stationMenuEl.classList.remove('hidden');
   stationMenuOpen=true;
+  lastPadStateInMenu=atLandingPad();
   soundManager.playSound('menu_pop');
 
   // Default to Overview if valid, or just update everything
@@ -968,10 +986,22 @@ socket.on('gameState', (state) => {
   }
 });
 
+// Pad-only controls are drawn greyed out, so they have to be redrawn the moment
+// the player touches down or lifts off -- otherwise the menu keeps showing
+// "Needs Pad" on a ship that just landed.
+let lastPadStateInMenu=null;
+
 function refreshStationOverview() {
   const activeTab=document.querySelector('.station-tabs .tab-btn.active');
   if (activeTab&&activeTab.dataset.tab==='overview') {
     updateStationOverview();
+  }
+
+  const onPad=atLandingPad();
+  if (onPad!==lastPadStateInMenu) {
+    lastPadStateInMenu=onPad;
+    renderShipList();
+    renderBuildingList();
   }
 }
 
@@ -1059,21 +1089,32 @@ function renderInventory(force = false) {
     return dist<150; // Increased pickup range
   });
 
-  const currentKey = JSON.stringify({
-    cargo: myPlayer.cargo,
+  const shipSlots=getShipInventorySlots(myPlayer.shipType);
+  const cargo=myPlayer.cargo||[];
+
+  const stationOresNow=gameState.baseResources?.ores||{};
+
+  // Which slot holds what -- deliberately WITHOUT the amounts. Refining changes
+  // ore counts by fractions every tick, so keying on amounts rebuilt every slot
+  // several times a second. That silently destroyed the element the cursor was
+  // over, so CSS :hover reset and the tooltip could never stay up: the hover
+  // text existed all along but was unreachable. Rebuild only when the actual
+  // contents change; when it is just the numbers moving, update them in place.
+  const structureKey=JSON.stringify({
+    cargo: cargo.map(i => i&&i.type),
     shipType: myPlayer.shipType,
     onPad: myPlayer.onPad,
-    stationOres: myPlayer.onPad ? gameState.baseResources?.ores : null,
+    stationTypes: myPlayer.onPad
+      ? Object.entries(stationOresNow).filter(([, a]) => a>0).map(([t]) => t)
+      :null,
     nearby: nearby.map(i => i.id)
   });
 
-  if (!force && currentKey === lastRenderedInventoryKey) {
+  if (!force&&structureKey===lastRenderedInventoryKey) {
+    refreshInventoryAmounts(cargo, stationOresNow, myPlayer.onPad, nearby);
     return;
   }
-  lastRenderedInventoryKey = currentKey;
-
-  const shipSlots=getShipInventorySlots(myPlayer.shipType);
-  const cargo=myPlayer.cargo||[];
+  lastRenderedInventoryKey=structureKey;
 
   // Update title
   document.getElementById('shipInventoryTitle').textContent=
@@ -1116,23 +1157,47 @@ function renderInventory(force = false) {
   }
 }
 
+// Ore counts move constantly while the refinery runs. Writing the new numbers
+// into the existing slots keeps the elements alive, so a tooltip the player is
+// reading stays open instead of being torn out from under the cursor.
+function refreshInventoryAmounts(cargo, stationOres, onPad, nearby) {
+  const write=(container, items) => {
+    const slots=container.querySelectorAll('.inventory-slot');
+    slots.forEach((slot, i) => {
+      const el=slot.querySelector('.item-amount');
+      if (el&&items[i]) el.textContent=formatItemAmount(items[i].amount);
+    });
+  };
+
+  write(shipInventoryEl, cargo);
+  if (onPad) {
+    write(stationInventoryEl, Object.entries(stationOres)
+      .filter(([, amount]) => amount>0)
+      .map(([type, amount]) => ({type: type.toUpperCase()+'_ORE', amount})));
+  }
+  write(nearbyInventoryEl, nearby);
+}
+
+// Ore arrives as a running float (470.9689999999994), which overflowed the slot
+// and read as noise. Whole numbers only. A slot that holds a real but tiny
+// fraction still shows 1 rather than 0 -- an occupied slot reading "0" looks
+// like a bug.
+function formatItemAmount(amount) {
+  const n=Number(amount);
+  if (!isFinite(n)||n<=0) return '0';
+  return String(Math.max(1, Math.round(n)));
+}
+
 function createInventorySlot(item, index, location) {
   const slot=document.createElement('div');
   slot.className='inventory-slot'+(item? '':' empty');
   slot.dataset.index=index;
   slot.dataset.location=location;
 
-  // Tooltip
+  // Tooltip. Name AND what the thing is for -- the name alone is already
+  // printed under the icon, so a name-only tooltip told the player nothing.
   if (item) {
-    let itemName='';
-    if (item.type.includes('cable')) {
-      itemName=item.type.replace('cable_', '').replace('_', ' ').toUpperCase()+' CABLE';
-    } else if (item.type.includes('_ORE')) {
-      itemName=item.type.replace('_ORE', '').replace('_', ' ')+' ORE';
-    } else {
-      itemName=item.type.replace('_', ' ').toUpperCase();
-    }
-    slot.setAttribute('data-tooltip', itemName);
+    slot.setAttribute('data-tooltip', itemTooltip(item.type));
   }
 
   // Click handler for pickup (only for dropped items)
@@ -1237,7 +1302,7 @@ function createInventorySlot(item, index, location) {
 
     const amount=document.createElement('div');
     amount.className='item-amount';
-    amount.textContent=item.amount;
+    amount.textContent=formatItemAmount(item.amount);
     slot.appendChild(amount);
   }
 
@@ -1272,11 +1337,70 @@ function createInventorySlot(item, index, location) {
   return slot;
 }
 
+// What every carryable thing actually IS. Most materials still render as a flat
+// coloured square, so the icon tells the player nothing and the name under it
+// ('quantum', 'bitite') is jargon until you already know the economy. This is
+// the text that makes an unlabelled square legible.
+const ITEM_INFO={
+  // --- Raw ore, in the order it appears with depth -------------------------
+  IRON_ORE: 'Raw ore, found from 10m down. Refines into Basic material.',
+  COPPER_ORE: 'Raw ore, found in the shallows. Refines into Basic material.',
+  SILVER_ORE: 'Raw ore from the mid depths. Refines into Industrial material.',
+  TITANIUM_ORE: 'Raw ore from the mid depths. Refines into Industrial material.',
+  GOLD_ORE: 'Deep raw ore. Refines into Advanced material.',
+  PLATINUM_ORE: 'Deep raw ore. Refines into Advanced material.',
+  DIAMOND: 'Very rare, 900m+. Refines into Quantum material.',
+  HELIUM3: 'Very rare, 800m+. Refines into Quantum material.',
+  BITITE: 'Volatile ore. Synthesised into liquid lander fuel, not into material.',
+
+  // --- Refined materials, the things buildings actually cost ---------------
+  BASIC: 'Tier 1 refined material. Builds most structures and pays for cable runs.',
+  INDUSTRIAL: 'Tier 2 refined material. Upgrades buildings to Level 2.',
+  ADVANCED: 'Tier 3 refined material. Upgrades buildings to Level 3.',
+  QUANTUM: 'Tier 4 refined material. Upgrades buildings to Level 4.',
+  FUEL: 'Refined liquid fuel. Burned by landers and by the Fuel Generator.',
+
+  // --- Cable, the three networks ------------------------------------------
+  cable_red: 'Carries electricity (kW) from generators to buildings. Costs 1 Basic per run laid.',
+  cable_green: 'Pipes refined fuel to Landing Pads and Fuel Generators. Costs 1 Basic per run laid.',
+  cable_blue: 'Merges radar feeds between Comm Antennas for shared team vision. Costs 1 Basic per run laid.',
+
+  light: 'A placeable lamp. Needs power to shine.'
+};
+
+// One tooltip string: bold-ish name on the first line, what it does below.
+function itemTooltip(type) {
+  const name=formatOreName(type);
+  const title=name.charAt(0).toUpperCase()+name.slice(1);
+
+  if (typeof type==='string'&&type.startsWith('kit_')) {
+    const key=type.slice(4);
+    const b=gameState.buildings?.[key];
+    const effect=b?.currentEffect? ` Effect: ${b.currentEffect}.`:'';
+    return `${b?.name||title} Kit\nA packed building. Fly it to the site and press Place to erect it.${effect}`;
+  }
+
+  // Spools are the same three cables under older type names. cableNet() matches
+  // on substrings, so it must only be consulted for things that are actually
+  // cable -- bare 'FUEL' is the refined material and would answer 'fuel'.
+  const isCable=/cable|spool/i.test(String(type));
+  const net=isCable? cableNet(type):null;
+  const key=net? ({power: 'cable_red', fuel: 'cable_green', data: 'cable_blue'})[net]
+    :String(type).toUpperCase();
+
+  const desc=ITEM_INFO[key]||ITEM_INFO[type];
+  return desc? `${title}\n${desc}`:title;
+}
+
 function formatOreName(type) {
   if (typeof type==='string'&&type.startsWith('kit_')) {
     return type.slice(4).replace(/_/g, ' ').toUpperCase()+' KIT';
   }
-  if (typeof type==='string'&&(type.startsWith('cable_spool_')||type.startsWith('cable_'))) {
+  if (typeof type==='string'&&(type.startsWith('cable_spool_')||type.startsWith('cable_')||type.includes('cable'))) {
+    const s=type.toLowerCase();
+    if (s.includes('power')||s.includes('red')) return 'Power Cable (Red)';
+    if (s.includes('fuel')||s.includes('green')) return 'Fuel Pipe (Green)';
+    if (s.includes('data')||s.includes('blue')) return 'Data Cable (Blue)';
     return type.replace('cable_spool_', '').replace('cable_', '').toUpperCase()+' CABLE';
   }
   if (['BASIC', 'INDUSTRIAL', 'ADVANCED', 'QUANTUM', 'FUEL'].includes(type.toUpperCase())) {
@@ -1450,8 +1574,8 @@ const NET_INFO={
   data: {label: 'Data', item: 'Data Cable (Blue)', colour: '#4488ff', dim: 'rgba(68,136,255,0.35)'}
 };
 
-// Must match difficulty.buildCableMaxLength on the server (default 120).
-const CABLE_MAX_RUN=120;
+// Must match difficulty.buildCableMaxLength on the server (default 1000).
+const CABLE_MAX_RUN=1000;
 
 // Normalises every cable vocabulary the client deals with ('red', 'cable_red',
 // 'power') down to the three network keys the server uses.
@@ -1650,6 +1774,7 @@ function renderShipList() {
   if (!myPlayer) return;
 
   const factoryLevel=gameState.buildings?.ship_factory?.level||0;
+  const onPad=atLandingPad();
 
   SHIP_TYPES.forEach(ship => {
     const card=document.createElement('div');
@@ -1657,6 +1782,7 @@ function renderShipList() {
 
     const isLocked=ship.reqFactory&&factoryLevel<ship.reqFactory;
     const isCurrent=myPlayer.shipType===ship.id;
+    const disabled=isCurrent||isLocked||!onPad;
 
     card.innerHTML=`
             <h4>${ship.name} ${isCurrent? '(Current)':''}</h4>
@@ -1666,14 +1792,15 @@ function renderShipList() {
             </div>
             <p style="font-size: 0.8rem; color: #888; margin-top: 5px;">${ship.desc}</p>
             ${isLocked? `<p style="color: #f44; font-size: 0.8rem;">Requires Ship Factory Lv${ship.reqFactory}</p>`:''}
-            <button class="select-btn" ${isCurrent||isLocked? 'disabled':''} onclick="switchShip('${ship.id}')">
-                ${isCurrent? 'Selected':(isLocked? 'Locked':'Switch')}
+            ${!onPad&&!isCurrent&&!isLocked? `<p style="color: #f90; font-size: 0.8rem;">${PAD_ONLY_HINT}</p>`:''}
+            <button class="select-btn" ${disabled? 'disabled':''} title="${!onPad&&!isCurrent&&!isLocked? PAD_ONLY_HINT:''}">
+                ${isCurrent? 'Selected':(isLocked? 'Locked':(onPad? 'Switch':'Needs Pad'))}
             </button>
         `;
 
     // Attach event listener directly to avoid global scope issues
     const btn=card.querySelector('button');
-    if (!isCurrent&&!isLocked) {
+    if (!disabled) {
       btn.onclick=() => handleSwitchShip(ship.id);
     }
 
@@ -1705,6 +1832,8 @@ function renderBuildingList() {
   if (!gameState.buildings) return;
 
   const buildings=Object.entries(gameState.buildings);
+  // Kits are pressed at a pad; placing one you already carry is not.
+  const onPad=atLandingPad();
 
   // Sort: constructed first, then unbuilt
   buildings.sort((a, b) => {
@@ -1755,8 +1884,9 @@ function renderBuildingList() {
         ${instanceHtml}
         ${costHtml}
         <div style="display:flex; gap:6px; margin-top:8px">
-          <button class="upgrade-btn select-btn" style="flex:1" onclick="handleCraftKit('${key}')">
-              Craft Kit
+          <button class="upgrade-btn select-btn" style="flex:1" ${onPad? '':'disabled'}
+                  title="${onPad? '':PAD_ONLY_HINT}" onclick="handleCraftKit('${key}')">
+              ${onPad? 'Craft Kit':'Kit — Needs Pad'}
           </button>
           <button class="upgrade-btn select-btn" style="flex:1" onclick="handlePlaceBuilding('${key}')">
               Place
@@ -1879,7 +2009,7 @@ function renderCraftingList() {
       cost: {basic: 20}
     },
     {
-      name: 'Fuel Cable (Green)',
+      name: 'Fuel Pipe (Green)',
       type: 'cable_green',
       icon: '/sprites/cable_green.png',
       cost: {basic: 20}
@@ -2025,8 +2155,64 @@ const CABLE_ERRORS={
   cable_type_mismatch: 'That spool is a different cable type',
   invalid_cable_type: 'Unknown cable type',
   out_of_range: 'Move closer to attach',
-  no_active_line: 'Start a run at a building first'
+  no_active_line: 'Start a run at a building first',
+  blocked_by_terrain: 'Rock in the way — cable cannot pass through it. Mine a channel or anchor around it'
 };
+
+// The same rule the server enforces in CableSystem.spanBlocked(), run locally so
+// the preview can turn red before the click instead of failing after it. The
+// client is sent the full tile grid and patches it as tiles are mined, so this
+// agrees with the server exactly. Keep the two in step.
+const CABLE_MAX_TERRAIN_CROSSING=32;
+
+// Matches VoxelMap.isSolidAtWorld(): out of bounds is solid, and EMPTY(0),
+// PAD(2) and BASE(3) are open deck rather than rock.
+function solidAtWorld(x, y) {
+  const map=renderer?.voxelMap;
+  const ts=renderer.tileSize;
+  const gx=Math.floor(x/ts);
+  const gy=Math.floor(y/ts);
+  if (gy<0||gx<0||gy>=map.length||gx>=map[0].length) return true;
+  const tile=map[gy][gx];
+  return tile!==0&&tile!==2&&tile!==3;
+}
+
+function cableSpanBlocked(x1, y1, x2, y2) {
+  if (!renderer?.voxelMap) return false;
+
+  const ts=renderer.tileSize;
+  const lead=ts*2; // Endpoints are legitimately in rock; only the interior counts.
+  const dx=x2-x1;
+  const dy=y2-y1;
+  const len=Math.hypot(dx, dy);
+  if (len<=lead*2) return false;
+
+  // Unit normal of the run. A cable lying along the ground is solid at the
+  // sample but open just off to one side; one driven through a hill is solid
+  // on both sides. Only the latter counts as blocked.
+  const px=-dy/len;
+  const py=dx/len;
+  const probe=ts*2;
+  const step=ts/2;
+  let run=0;
+
+  for (let d=lead; d<=len-lead; d+=step) {
+    const t=d/len;
+    const sx=x1+dx*t;
+    const sy=y1+dy*t;
+    const buried=solidAtWorld(sx, sy)
+      &&solidAtWorld(sx+px*probe, sy+py*probe)
+      &&solidAtWorld(sx-px*probe, sy-py*probe);
+
+    if (buried) {
+      run+=step;
+      if (run>CABLE_MAX_TERRAIN_CROSSING) return true;
+    } else {
+      run=0;
+    }
+  }
+  return false;
+}
 
 function cableResult(res) {
   if (!res) return;
@@ -2197,6 +2383,31 @@ function updateCablePreview() {
   if (target&&target.outOfRange) {
     actionText='TOO FAR — FLY CLOSER';
     color='#888';
+  }
+
+  // Where the segment would actually land, and whether the rock between here
+  // and there would refuse it. Drawing the span the server will validate --
+  // anchor to cursor, not anchor to ship -- is the only way to see a blocked
+  // run before committing to it.
+  if (activeLine&&!(target&&target.outOfRange)) {
+    const endX=target? target.x:worldMouseX;
+    const endY=target? target.y:worldMouseY;
+    const blocked=cableSpanBlocked(activeLine.x1, activeLine.y1, endX, endY);
+
+    if (blocked) {
+      actionText='ROCK IN THE WAY';
+      color='#f44';
+    }
+
+    ctx.save();
+    ctx.setLineDash(blocked? [4, 4]:[2, 6]);
+    ctx.strokeStyle=blocked? '#ff4444':'rgba(255,255,255,0.35)';
+    ctx.lineWidth=blocked? 2:1;
+    ctx.beginPath();
+    ctx.moveTo(activeLine.x1-renderer.cameraX, activeLine.y1-renderer.cameraY);
+    ctx.lineTo(endX-renderer.cameraX, endY-renderer.cameraY);
+    ctx.stroke();
+    ctx.restore();
   }
 
   if (actionText) {

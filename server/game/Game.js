@@ -462,6 +462,24 @@ export class Game {
         return this.config?.difficulty?.buildSpacing??100;
     }
 
+    // How close you must be to a structure to bring up the station menu.
+    // Sprites render 92 units wide, so 150 reaches a building you are visibly
+    // standing next to without letting you open it from across the base.
+    get stationRange() {
+        return this.config?.difficulty?.stationRange??150;
+    }
+
+    // Which built structure, if any, is close enough to interact with? The
+    // station menu used to require standing on a landing pad, which meant an
+    // outpost of five buildings had no way to open its own menu.
+    structureNear(x, y) {
+        for (const s of this.structures.values()) {
+            if (s.level<=0) continue;
+            if (Math.hypot(s.x-x, s.y-y)<=this.stationRange) return s.id;
+        }
+        return null;
+    }
+
     // Can `type` be placed at (x,y)? Returns {ok} or {ok:false, reason}.
     canPlaceBuilding(type, x, y) {
         const def=this.buildings[type];
@@ -814,6 +832,18 @@ export class Game {
     // For backward compatibility with index.js terrain.serialize()
     get terrain() {
         return this.voxelMap;
+    }
+
+    // Release everything this game holds in the shared ammo.js heap. Called when
+    // the room is torn down; without it a finished game's physics world lives on
+    // until the process dies, and ammo's heap is a fixed 64MB for the whole
+    // server, so a handful of games is enough to abort it.
+    destroy() {
+        this.physics?.destroy();
+        this.voxelMap?.collisionBodies?.clear();
+        this.players.clear();
+        this.io=null;
+        this.ready=false;
     }
 
     destroyTile(gx, gy, triggeredByPlayer=null) {
@@ -1313,6 +1343,11 @@ export class Game {
             player.landed=isLanded;
             player.onPad=isOnPad;
             player.padId=padId;
+
+            // Standing on a pad always counts as being at a building, so the
+            // menu still opens on a bare pad with nothing built beside it.
+            player.nearBuildingId=isOnPad? padId:this.structureNear(pos.x, pos.y);
+            player.nearBuilding=!!player.nearBuildingId;
 
             // A pad with no power provides no services at all (GDD 5.2).
             const padPowered=padId? this.networks.isPowered(padId):false;
